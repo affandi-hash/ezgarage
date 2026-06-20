@@ -1,0 +1,19 @@
+export const JOB_STATUS = {
+  RECEIVED: 'received',
+  INSPECTING: 'inspecting',
+  WAITING_APPROVAL: 'waiting_approval',
+  IN_PROGRESS: 'in_progress',
+  WAITING_FOR_PARTS: 'waiting_for_parts',
+  DONE: 'done',
+  COLLECTED: 'collected',
+}
+
+export const JOB_STATUS_FLOW = [
+  JOB_STATUS.RECEIVED,
+  JOB_STATUS.INSPECTING,
+  JOB_STATUS.WAITING_APPROVAL,
+  JOB_STATUS.IN_PROGRESS,
+  JOB_STATUS.WAITING_FOR_PARTS,
+  JOB_STATUS.DONE,
+  JOB_STATUS.COLLECTED,
+]
