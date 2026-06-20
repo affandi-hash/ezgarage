@@ -19,6 +19,9 @@ app.get('/health', (req, res) => {
 // app.use('/api/auth', authRoutes)
 // app.use('/api/jobs', jobRoutes)
 
+import staffRoutes from './routes/staff.js'
+app.use('/api/staff', staffRoutes)
+
 app.listen(PORT, () => {
   console.log(`Motoverse backend running on port ${PORT}`)
 })
