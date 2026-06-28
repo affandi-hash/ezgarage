@@ -129,6 +129,9 @@ interface JobRow extends Job {
   assigned_mechanic?: { full_name: string } | null
   next_action?: string | null
   status_updated_at?: string | null
+  plate_number?: string | null
+  customer_name?: string | null
+  tenant_id?: string | null
 }
 
 interface CustomerOption { id: string; full_name: string; phone: string }
@@ -193,7 +196,7 @@ interface StatusModalProps {
   onRequestApproval: (jobId: string, toStatus: JobStatus, fromStatus: string, question: string, nextAction: string, note: string) => Promise<void>
 }
 
-function StatusUpdateModal({ job, userRole, userName, userId, tenantId, onClose, onConfirmDirect, onRequestApproval }: StatusModalProps) {
+function StatusUpdateModal({ job, userRole, onClose, onConfirmDirect, onRequestApproval }: StatusModalProps) {
   const allowedNext = ALLOWED_TRANSITIONS[job.status] ?? []
   const [selectedStatus, setSelectedStatus] = useState<JobStatus>(allowedNext[0] ?? job.status)
   const [nextAction, setNextAction] = useState(job.next_action ?? '')
@@ -720,7 +723,7 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
             <div style={{ backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 10, padding: 14 }}>
               <p style={{ color: '#A0A0A0', fontSize: 11, margin: '0 0 4px' }}>PAYMENT</p>
               {editMode ? (
-                <select value={editData.payment_status} onChange={e => setEditData(d => ({ ...d, payment_status: e.target.value }))} style={{ ...inputStyle, padding: '6px 10px' }}>
+                <select value={editData.payment_status} onChange={e => setEditData(d => ({ ...d, payment_status: e.target.value as PaymentStatus }))} style={{ ...inputStyle, padding: '6px 10px' }}>
                   <option value="unpaid">Unpaid</option>
                   <option value="partial">Partial</option>
                   <option value="paid">Paid</option>
@@ -835,7 +838,7 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
             <p style={{ color: '#A0A0A0', fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 6 }}>
               <Camera size={13} /> JOB PHOTOS
             </p>
-            <PhotoUploader jobId={job.id} branchId={job.branch_id} tenantId={user?.tenant_id ?? ''} uploadedBy={user?.id ?? ''} currentStatus={job.status} />
+            <PhotoUploader jobId={job.id} branchId={job.branch_id ?? ''} tenantId={user?.tenant_id ?? ''} uploadedBy={user?.id ?? ''} currentStatus={job.status} />
           </div>
         </div>
 
@@ -1338,7 +1341,7 @@ function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, o
           style={{ flex: 1, padding: '5px 0', border: '1px solid #2A2A2A', borderRadius: 6, backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 11, cursor: 'pointer' }}>
           Add Note
         </button>
-        <QuickPhotoUpload jobId={job.id} branchId={job.branch_id} tenantId={job.tenant_id ?? ''} uploadedBy={userId} currentStatus={job.status} />
+        <QuickPhotoUpload jobId={job.id} branchId={job.branch_id ?? ''} tenantId={job.tenant_id ?? ''} uploadedBy={userId} currentStatus={job.status} />
         <button onClick={() => onView(job)}
           style={{ flex: 1, padding: '5px 0', border: '1px solid #2A2A2A', borderRadius: 6, backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 11, cursor: 'pointer' }}>
           View

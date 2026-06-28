@@ -48,6 +48,10 @@ interface StaffProfile {
   emergency_relation: string | null
   users?: { role: string; approval_status: string } | null
   branches?: { name: string } | null
+  work_start?: string | null
+  work_end?: string | null
+  late_threshold_min?: number | null
+  ot_threshold_min?: number | null
 }
 
 interface AttendanceRecord {

@@ -11,7 +11,6 @@ import {
   User,
   Calendar,
   Gauge,
-  Hash,
   Wrench,
   Plus,
   X,
@@ -850,7 +849,7 @@ function VehicleListItem({
             {vehicle.make} {vehicle.model}
             {vehicle.year ? ` (${vehicle.year})` : ''}
           </p>
-          <p style={{ fontSize: 12, marginTop: 2, color: '#A0A0A0', margin: 0, marginTop: 2 }}>
+          <p style={{ fontSize: 12, color: '#A0A0A0', margin: 0, marginTop: 2 }}>
             {vehicle.customers?.full_name ?? '—'}
           </p>
         </div>
@@ -1395,7 +1394,7 @@ export function VehiclesPage() {
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
               <h2 style={{ color: '#F0F0F0', fontSize: 16, fontWeight: 600, margin: 0 }}>Vehicles</h2>
-              <p style={{ color: '#A0A0A0', fontSize: 12, marginTop: 4, margin: 0, marginTop: 4 }}>
+              <p style={{ color: '#A0A0A0', fontSize: 12, margin: 0, marginTop: 4 }}>
                 {filtered.length} {filtered.length === 1 ? 'record' : 'records'}
               </p>
             </div>
