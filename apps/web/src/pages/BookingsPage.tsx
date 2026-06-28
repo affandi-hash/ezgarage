@@ -101,7 +101,6 @@ interface BookingRow extends Booking {
   vehicle_brand?: string | null
   vehicle_model?: string | null
   customer_ic_last4?: string | null
-  notes?: string | null
   assigned_staff?: string | null
 }
 
@@ -1064,35 +1063,6 @@ export function BookingsPage() {
       toast('Booking status updated')
     } else {
       toast(err.message, 'error')
-    }
-  }
-
-  // BUG-003: Convert a confirmed/arrived booking to a job card
-  const _convertBookingToJob = async (booking: BookingRow) => {
-    if (!branchId) return
-    try {
-      const { error: jobErr } = await supabase.from('jobs').insert({
-        branch_id: branchId,
-        tenant_id: user?.tenant_id ?? null,
-        customer_id: booking.customers ? (booking as BookingRow & { customer_id?: string }).customer_id ?? null : null,
-        vehicle_id: booking.vehicles ? (booking as BookingRow & { vehicle_id?: string }).vehicle_id ?? null : null,
-        service_type: booking.service_type ?? 'service',
-        arrival_mode: booking.arrival_mode ?? 'booked',
-        status: 'checked_in',
-        vehicle_type: 'car',
-        source: booking.source ?? 'website',
-        customer_complaint: (booking as BookingRow & { problem_description?: string }).problem_description ?? null,
-        checked_in_at: new Date().toISOString(),
-        payment_status: 'unpaid',
-      })
-      if (jobErr) throw jobErr
-
-      // Mark booking as arrived/completed
-      await supabase.from('bookings').update({ status: 'arrived' }).eq('id', booking.id)
-      setBookings((prev) => prev.map((b) => b.id === booking.id ? { ...b, status: 'arrived' } : b))
-      toast('Job card created from booking')
-    } catch (e: unknown) {
-      toast(e instanceof Error ? e.message : 'Failed to create job card', 'error')
     }
   }
 

@@ -552,7 +552,7 @@ function OverviewTab({
           <div
             style={{ borderRadius: 12, marginTop: 24, background: '#1A0E0E', border: '1px solid #7f1d1d', padding: '16px 20px' }}
           >
-            <p style={{ fontSize: 12, fontWeight: 600, marginBottom: 16, color: '#F87171', marginBottom: 16 }}>Danger Zone</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: '#F87171', marginBottom: 16 }}>Danger Zone</p>
             <button
               onClick={handleDeleteCustomer}
               disabled={deleting}
@@ -698,7 +698,7 @@ function VehiclesTab({ customerId, branchId }: { customerId: string; branchId: s
             <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 16, color: '#F15A22' }}>
               {v.plate_number}
             </span>
-            <p style={{ fontSize: 14, marginTop: 2, color: '#F0F0F0', marginTop: 2 }}>
+            <p style={{ fontSize: 14, color: '#F0F0F0', marginTop: 2 }}>
               {v.make} {v.model}{v.year ? ` (${v.year})` : ''}
             </p>
           </div>
@@ -878,8 +878,8 @@ function JobsTab({ customerId }: { customerId: string }) {
                   {job.status.replace(/_/g, ' ')}
                 </span>
               </div>
-              <p style={{ fontSize: 14, marginTop: 2, color: '#F0F0F0', marginTop: 2 }}>{job.service_type}</p>
-              <p style={{ fontSize: 12, marginTop: 2, color: '#A0A0A0', marginTop: 2 }}>
+              <p style={{ fontSize: 14, color: '#F0F0F0', marginTop: 2 }}>{job.service_type}</p>
+              <p style={{ fontSize: 12, color: '#A0A0A0', marginTop: 2 }}>
                 {formatDate(job.checked_in_at)}
               </p>
             </div>

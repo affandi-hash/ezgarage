@@ -104,7 +104,7 @@ export function Sidebar() {
 
   if (!user) return null
 
-  const _initials = user.full_name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
+  // initials available if needed for avatar display
 
   const visibleGroups = NAV_GROUPS
     .map(group => ({ ...group, items: group.items.filter(item => item.roles.includes(user.role)) }))
