@@ -432,7 +432,7 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
                         }}>
                           <Edit2 size={11} />
                         </button>
-                        {r.ot_hours && r.ot_hours > 0 && (
+                        {!!(r.ot_hours && r.ot_hours > 0) && (
                           <button
                             onClick={() => handleApproveOT(r.id)}
                             style={{
