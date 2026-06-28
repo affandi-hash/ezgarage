@@ -98,8 +98,6 @@ const DATE_FILTER_OPTIONS = [
 interface BookingRow extends Booking {
   customers?: { full_name: string; phone: string } | null
   vehicles?: { plate_number: string; make: string; model: string } | null
-  vehicle_brand?: string | null
-  vehicle_model?: string | null
   customer_ic_last4?: string | null
   assigned_staff?: string | null
 }
