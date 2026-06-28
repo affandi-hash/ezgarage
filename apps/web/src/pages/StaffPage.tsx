@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Search,
   Plus,
@@ -10,10 +10,7 @@ import {
   Calendar,
   Building2,
   Shield,
-  Clock,
   CheckCircle,
-  XCircle,
-  AlertCircle,
   Briefcase,
   Edit2,
   UserX,
@@ -48,6 +45,7 @@ interface StaffProfile {
   emergency_relation: string | null
   users?: { role: string; approval_status: string } | null
   branches?: { name: string } | null
+  work_days?: string[] | null
   work_start?: string | null
   work_end?: string | null
   late_threshold_min?: number | null

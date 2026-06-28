@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  FileText, Plus, Search, X, MoreVertical, Check,
-  ChevronDown, Trash2, MessageCircle, Copy, Printer,
+  FileText, Plus, Search, X, MoreVertical,
+  Trash2, Printer,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -657,7 +657,7 @@ export function QuotationsPage() {
     fetchQuotes()
   }
 
-  function whatsappQuote(q: QuoteRow) {
+  function _whatsappQuote(q: QuoteRow) {
     const num = q.customer_phone.replace(/\D/g, '')
     const wa = num.startsWith('0') ? '6' + num : num
     const msg = encodeURIComponent(

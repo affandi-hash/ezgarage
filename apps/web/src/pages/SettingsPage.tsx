@@ -790,7 +790,7 @@ function StatusColorsSection({ tenantId }: { tenantId: string | null }) {
 // ─── Branch Settings ───────────────────────────────────────────────────────────
 
 function BranchSettingsSection({ branchId }: { branchId: string | null }) {
-  const [branch, setBranch] = useState<BranchSettings | null>(null)
+  const [_branch, setBranch] = useState<BranchSettings | null>(null)
   const [form, setForm] = useState<Partial<BranchSettings>>({})
   const [logoUploading, setLogoUploading] = useState(false)
   const [logoError, setLogoError] = useState('')
@@ -972,7 +972,7 @@ function BranchSettingsSection({ branchId }: { branchId: string | null }) {
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 function WorkingHoursSection({ branchId }: { branchId: string | null }) {
-  const [wh, setWH] = useState<WorkingHours | null>(null)
+  const [_wh, setWH] = useState<WorkingHours | null>(null)
   const [form, setForm] = useState<Partial<WorkingHours>>({
     work_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
     work_start_time: '09:00', work_end_time: '18:00',
@@ -1109,7 +1109,7 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
     if (!tenantId) { setLoading(false); return }
     supabase
       .from('tenants')
-      .select('google_review_link, whatsapp_number, wati_api_key')
+      .select('google_review_link, whatsapp_number, wati_api_key, sst_rate')
       .eq('id', tenantId)
       .single()
       .then(({ data }) => {

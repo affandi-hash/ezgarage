@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
 import { logAudit } from '@/lib/audit'
 import { PhotoUploader, QuickPhotoUpload } from '@/components/ui/PhotoUploader'
-import type { Job, JobStatus, ServiceType, ArrivalMode } from '@/types'
+import type { Job, JobStatus, ServiceType, ArrivalMode, PaymentStatus } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Status config

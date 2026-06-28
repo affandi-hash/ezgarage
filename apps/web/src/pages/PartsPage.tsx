@@ -1194,7 +1194,7 @@ export function PartsPage() {
   // Order-confirmation modal state
   const [orderModal, setOrderModal] = useState<{ open: boolean; part: PartRequest | null }>({ open: false, part: null })
   const [orderForm, setOrderForm] = useState({ ordered_qty: '', catalogue_part_id: '' })
-  const [catalogueParts, setCatalogueParts] = useState<CataloguePart[]>([])
+  const [catalogueParts, setCatalogueParts] = useState<{ id: string; name: string; part_number: string | null; stock_qty: number }[]>([])
   const [orderSaving, setOrderSaving] = useState(false)
 
   // Link-before-receive modal state (stock purchases with no catalogue link)
