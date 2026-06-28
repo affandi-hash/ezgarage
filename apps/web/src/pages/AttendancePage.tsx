@@ -360,7 +360,7 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #2A2A2A' }}>
-                  {['Staff', 'Role', 'Clock In', 'Clock Out', 'Status', 'Late (min)', 'OT (hrs)', 'Selfie', 'Location', 'Actions'].map(h => (
+                  {['Staff', 'Role', 'Clock In', 'Clock Out', 'Status', 'Late (min)', 'OT (hrs)', 'In Selfie', 'Out Selfie', 'Location', 'Actions'].map(h => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: '#666', fontWeight: 500, fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -403,9 +403,19 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
                       {(r as any).clock_in_selfie_url ? (
                         <img
                           src={(r as any).clock_in_selfie_url}
-                          alt="selfie"
+                          alt="clock-in selfie"
                           style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', border: '1px solid #2A2A2A', cursor: 'pointer' }}
                           onClick={() => window.open((r as any).clock_in_selfie_url, '_blank')}
+                        />
+                      ) : <span style={{ color: '#444', fontSize: 11 }}>{'—'}</span>}
+                    </td>
+                    <td style={{ padding: '10px 14px' }}>
+                      {(r as any).clock_out_selfie_url ? (
+                        <img
+                          src={(r as any).clock_out_selfie_url}
+                          alt="clock-out selfie"
+                          style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', border: '1px solid #2A2A2A', cursor: 'pointer' }}
+                          onClick={() => window.open((r as any).clock_out_selfie_url, '_blank')}
                         />
                       ) : <span style={{ color: '#444', fontSize: 11 }}>{'—'}</span>}
                     </td>
