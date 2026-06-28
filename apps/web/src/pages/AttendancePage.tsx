@@ -207,7 +207,7 @@ function EditAttendanceModal({ record, onClose, onSaved }: {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <p style={{ color: '#F0F0F0', fontWeight: 700, fontSize: 15, margin: 0 }}>Edit Attendance</p>
-            <p style={{ color: '#A0A0A0', fontSize: 12, margin: '2px 0 0' }}>{record.staff_profiles?.full_name ?? 'â€"'} Â· {record.date}</p>
+            <p style={{ color: '#A0A0A0', fontSize: 12, margin: '2px 0 0' }}>{record.staff_profiles?.full_name ?? '—'} Â· {record.date}</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#A0A0A0', cursor: 'pointer' }}><X size={16} /></button>
         </div>
@@ -254,7 +254,7 @@ function EditAttendanceModal({ record, onClose, onSaved }: {
           <button onClick={onClose} style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
           <button onClick={handleSave} disabled={saving}
             style={{ padding: '8px 20px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
-            {saving ? 'Savingâ€¦' : 'Save'}
+            {saving ? 'Saving—' : 'Save'}
           </button>
         </div>
       </div>
@@ -360,7 +360,7 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #2A2A2A' }}>
-                  {['Staff', 'Role', 'Clock In', 'Clock Out', 'Status', 'Late (min)', 'OT (hrs)', 'Location', 'Actions'].map(h => (
+                  {['Staff', 'Role', 'Clock In', 'Clock Out', 'Status', 'Late (min)', 'OT (hrs)', 'Selfie', 'Location', 'Actions'].map(h => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: '#666', fontWeight: 500, fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -372,7 +372,7 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <Avatar name={r.staff_profiles?.full_name ?? '?'} />
                         <div>
-                          <p style={{ fontSize: 13, color: '#F0F0F0', margin: 0 }}>{r.staff_profiles?.full_name ?? 'â€"'}</p>
+                          <p style={{ fontSize: 13, color: '#F0F0F0', margin: 0 }}>{r.staff_profiles?.full_name ?? '—'}</p>
                           <p style={{ fontSize: 11, color: '#666', margin: 0 }}>{r.staff_profiles?.department ?? ''}</p>
                         </div>
                       </div>
@@ -381,7 +381,7 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
                       <span style={{
                         fontSize: 11, padding: '2px 8px', borderRadius: 9999,
                         backgroundColor: '#1E1E1E', color: '#A0A0A0', border: '1px solid #2A2A2A',
-                      }}>{r.staff_profiles?.position ?? 'â€"'}</span>
+                      }}>{r.staff_profiles?.position ?? '—'}</span>
                     </td>
                     <td style={{
                       padding: '10px 14px', fontFamily: 'monospace', fontSize: 12,
@@ -394,15 +394,25 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
                       <StatusBadge status={r.status} map={ATTENDANCE_STATUS} />
                     </td>
                     <td style={{ padding: '10px 14px', color: r.late_minutes && r.late_minutes > 0 ? '#EF4444' : '#666', fontSize: 12 }}>
-                      {r.late_minutes ? `${r.late_minutes} min` : 'â€"'}
+                      {r.late_minutes ? `${r.late_minutes} min` : '—'}
                     </td>
                     <td style={{ padding: '10px 14px', color: r.ot_hours && r.ot_hours > 0 ? '#F15A22' : '#666', fontSize: 12, fontWeight: r.ot_hours ? 600 : 400 }}>
-                      {r.ot_hours ? `${r.ot_hours}h` : 'â€"'}
+                      {r.ot_hours ? `${r.ot_hours}h` : '—'}
+                    </td>
+                    <td style={{ padding: '10px 14px' }}>
+                      {(r as any).clock_in_selfie_url ? (
+                        <img
+                          src={(r as any).clock_in_selfie_url}
+                          alt="selfie"
+                          style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', border: '1px solid #2A2A2A', cursor: 'pointer' }}
+                          onClick={() => window.open((r as any).clock_in_selfie_url, '_blank')}
+                        />
+                      ) : <span style={{ color: '#444', fontSize: 11 }}>{'—'}</span>}
                     </td>
                     <td style={{ padding: '10px 14px' }}>
                       {r.location_verified === true && <MapPin size={14} color="#22C55E" />}
                       {r.location_verified === false && <MapPin size={14} color="#EF4444" />}
-                      {r.location_verified === null && <span style={{ color: '#666', fontSize: 11 }}>â€"</span>}
+                      {r.location_verified === null && <span style={{ color: '#666', fontSize: 11 }}>—</span>}
                     </td>
                     <td style={{ padding: '10px 14px' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -522,7 +532,7 @@ function LeaveRequestsTab({ branchId }: { branchId: string | null }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <Avatar name={r.staff_profiles?.full_name ?? '?'} />
                         <div>
-                          <p style={{ fontSize: 13, color: '#F0F0F0', margin: 0 }}>{r.staff_profiles?.full_name ?? 'â€"'}</p>
+                          <p style={{ fontSize: 13, color: '#F0F0F0', margin: 0 }}>{r.staff_profiles?.full_name ?? '—'}</p>
                           <p style={{ fontSize: 11, color: '#666', margin: 0 }}>{r.staff_profiles?.position ?? ''}</p>
                         </div>
                       </div>
@@ -537,7 +547,7 @@ function LeaveRequestsTab({ branchId }: { branchId: string | null }) {
                     <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12 }}>{fmtDate(r.date_to)}</td>
                     <td style={{ padding: '10px 14px', color: '#F0F0F0', fontWeight: 600, fontSize: 13 }}>{r.total_days}</td>
                     <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12, maxWidth: 200 }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.reason ?? 'â€"'}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.reason ?? '—'}</span>
                     </td>
                     <td style={{ padding: '10px 14px' }}>
                       <StatusBadge status={r.status} map={REQUEST_STATUS} />
@@ -630,7 +640,7 @@ function OTRequestsTab({ branchId }: { branchId: string | null }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Avatar name={r.staff_profiles?.full_name ?? '?'} />
                       <div>
-                        <p style={{ fontSize: 13, color: '#F0F0F0', margin: 0 }}>{r.staff_profiles?.full_name ?? 'â€"'}</p>
+                        <p style={{ fontSize: 13, color: '#F0F0F0', margin: 0 }}>{r.staff_profiles?.full_name ?? '—'}</p>
                         <p style={{ fontSize: 11, color: '#666', margin: 0 }}>{r.staff_profiles?.position ?? ''}</p>
                       </div>
                     </div>
@@ -638,7 +648,7 @@ function OTRequestsTab({ branchId }: { branchId: string | null }) {
                   <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12 }}>{fmtDate(r.date)}</td>
                   <td style={{ padding: '10px 14px', color: '#F15A22', fontWeight: 700, fontSize: 13 }} colSpan={2}>{r.ot_hours}h</td>
                   <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12, maxWidth: 180 }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.reason ?? 'â€"'}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.reason ?? '—'}</span>
                   </td>
                   <td style={{ padding: '10px 14px' }}>
                     <StatusBadge status={r.status} map={REQUEST_STATUS} />
@@ -1003,12 +1013,12 @@ function MyLeaveTab({ staffId, branchId }: { staffId: string; branchId: string }
           <div>
             <label style={{ fontSize: 11, color: '#666', display: 'block', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Reason (optional)</label>
             <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-              style={{ ...iS, resize: 'vertical', minHeight: 64 }} placeholder="Reason for leaveâ€¦" />
+              style={{ ...iS, resize: 'vertical', minHeight: 64 }} placeholder="Reason for leave—" />
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button onClick={submitLeave} disabled={saving || !form.date_from || !form.date_to}
               style={{ background: '#F15A22', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, padding: '8px 20px', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Submittingâ€¦' : 'Submit Request'}
+              {saving ? 'Submitting—' : 'Submit Request'}
             </button>
           </div>
         </div>
@@ -1041,7 +1051,7 @@ function MyLeaveTab({ staffId, branchId }: { staffId: string; branchId: string }
                   <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12 }}>{fmtDate(r.date_to)}</td>
                   <td style={{ padding: '10px 14px', color: '#F0F0F0', fontWeight: 600 }}>{r.total_days}</td>
                   <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12, maxWidth: 200 }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.reason ?? 'â€"'}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.reason ?? '—'}</span>
                   </td>
                   <td style={{ padding: '10px 14px' }}><StatusBadge status={r.status} map={REQUEST_STATUS} /></td>
                 </tr>
@@ -1130,7 +1140,7 @@ function MyOTTab({ staffId, branchId }: { staffId: string; branchId: string }) {
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button onClick={submitOT} disabled={saving || !form.date || !form.ot_hours}
               style={{ background: '#F15A22', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, padding: '8px 20px', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
-              {saving ? 'Submittingâ€¦' : 'Submit OT Request'}
+              {saving ? 'Submitting—' : 'Submit OT Request'}
             </button>
           </div>
         </div>
@@ -1157,7 +1167,7 @@ function MyOTTab({ staffId, branchId }: { staffId: string; branchId: string }) {
                   <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12 }}>{fmtDate(r.date)}</td>
                   <td style={{ padding: '10px 14px', color: '#F15A22', fontWeight: 700 }}>{r.ot_hours}h</td>
                   <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12, maxWidth: 240 }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.reason ?? 'â€"'}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.reason ?? '—'}</span>
                   </td>
                   <td style={{ padding: '10px 14px' }}><StatusBadge status={r.status} map={REQUEST_STATUS} /></td>
                 </tr>
@@ -1328,7 +1338,7 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
               </button>
               <button onClick={confirm} disabled={saving}
                 style={{ flex: 2, padding: '10px 0', borderRadius: 8, border: 'none', background: accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
-                {saving ? 'Savingâ€¦' : `Confirm ${label}`}
+                {saving ? 'Saving—' : `Confirm ${label}`}
               </button>
             </>
           ) : (
@@ -1433,7 +1443,7 @@ export function AttendancePage() {
           </p>
         </div>
 
-        {/* Clock In / Out button â€" only if user has a staff profile */}
+        {/* Clock In / Out button — only if user has a staff profile */}
         {clockChecked && myStaffId && myBranchId && (() => {
           const alreadyOut = !!(todayRecord?.clock_out_time)
           const alreadyIn  = !!(todayRecord?.clock_in_time)
@@ -1473,7 +1483,7 @@ export function AttendancePage() {
         })()}
       </div>
 
-      {/* KPI cards â€" managers only */}
+      {/* KPI cards — managers only */}
       {isManager && (
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <KpiCard label="Present Today"    value={kpiLoading ? 0 : kpi.present}    icon={CheckCircle}    color="#22C55E" />
@@ -1484,7 +1494,7 @@ export function AttendancePage() {
         </div>
       )}
 
-      {/* Dashboard tabs â€" managers only */}
+      {/* Dashboard tabs — managers only */}
       {isManager && (
         <>
           <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #2A2A2A' }}>
@@ -1509,7 +1519,7 @@ export function AttendancePage() {
         </>
       )}
 
-      {/* Staff self-service tabs â€" ALL staff including managers */}
+      {/* Staff self-service tabs — ALL staff including managers */}
       {myStaffId && myBranchId && (
         <>
           {/* Section heading for managers only */}
