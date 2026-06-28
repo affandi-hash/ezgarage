@@ -578,7 +578,7 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
   const [form, setForm] = useState<StockPurchaseForm>(EMPTY_STOCK_FORM)
   const [errors, setErrors] = useState<Partial<Record<keyof StockPurchaseForm, string>>>({})
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([])
-  const [catalogueParts, setCatalogueParts] = useState<{ id: string; name: string; part_number: string | null; stock_qty: number }[]>([])
+  const [catalogueParts, setCatalogueParts] = useState<{ id: string; name: string; part_number?: string | null; stock_qty: number }[]>([])
   const [showAddSupplier, setShowAddSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', contact_person: '', phone: '', address: '' })
   const [savingSupplier, setSavingSupplier] = useState(false)
@@ -1194,7 +1194,7 @@ export function PartsPage() {
   // Order-confirmation modal state
   const [orderModal, setOrderModal] = useState<{ open: boolean; part: PartRequest | null }>({ open: false, part: null })
   const [orderForm, setOrderForm] = useState({ ordered_qty: '', catalogue_part_id: '' })
-  const [catalogueParts, setCatalogueParts] = useState<{ id: string; name: string; part_number: string | null; stock_qty: number }[]>([])
+  const [catalogueParts, setCatalogueParts] = useState<{ id: string; name: string; part_number?: string | null; stock_qty: number; division?: string; selling_price?: number | null; suppliers?: { name: string } | null }[]>([])
   const [orderSaving, setOrderSaving] = useState(false)
 
   // Link-before-receive modal state (stock purchases with no catalogue link)
@@ -1646,7 +1646,7 @@ export function PartsPage() {
           </button>
         )}
         {mainTab === 'requests' && requestsSubTab === 'parts_requests' && (
-          <button onClick={() => { supabase.from('parts_catalogue').select('id,name,part_number,stock_qty,division,selling_price,suppliers(name)').eq('tenant_id', tenantId).eq('is_active', true).order('name').then(({ data }) => setCatalogueParts((data ?? []) as CataloguePart[])); setGrabGoForm({ catalogue_part_id: '', part_search: '', qty: '1', job_id: '', job_search: '', job_vehicle_type: '', selling_price: '', supplier_name: '', notes: '' }); setGrabGoJobResults([]); setShowGrabGoModal(true) }} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 10, padding: '0 20px', minHeight: 44, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          <button onClick={() => { supabase.from('parts_catalogue').select('id,name,part_number,stock_qty,division,selling_price,suppliers(name)').eq('tenant_id', tenantId).eq('is_active', true).order('name').then(({ data }) => setCatalogueParts(data ?? [])); setGrabGoForm({ catalogue_part_id: '', part_search: '', qty: '1', job_id: '', job_search: '', job_vehicle_type: '', selling_price: '', supplier_name: '', notes: '' }); setGrabGoJobResults([]); setShowGrabGoModal(true) }} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F59E0B', color: '#fff', border: 'none', borderRadius: 10, padding: '0 20px', minHeight: 44, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             <Zap size={16} /> Grab &amp; Go
           </button>
         )}

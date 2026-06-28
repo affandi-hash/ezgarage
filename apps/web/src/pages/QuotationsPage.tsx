@@ -657,20 +657,6 @@ export function QuotationsPage() {
     fetchQuotes()
   }
 
-  function _whatsappQuote(q: QuoteRow) {
-    const num = q.customer_phone.replace(/\D/g, '')
-    const wa = num.startsWith('0') ? '6' + num : num
-    const msg = encodeURIComponent(
-      `Dear ${q.customer_name},\n\nThank you for your enquiry. Please find your quotation below:\n\n` +
-      `📋 *Quotation: ${q.quote_number}*\n` +
-      `🚗 Vehicle: ${q.vehicle_plate} ${q.vehicle_make} ${q.vehicle_model}\n` +
-      `💰 Total: ${formatRM(q.total_amount)}\n` +
-      `📅 Valid until: ${q.valid_until ? formatDate(q.valid_until) : 'N/A'}\n\n` +
-      (q.notes ? `📝 Notes: ${q.notes}\n\n` : '') +
-      `Please confirm your acceptance to proceed with booking.\n\nThank you! 🙏`
-    )
-    window.open(`https://wa.me/${wa}?text=${msg}`, '_blank')
-  }
 
   const statusCounts = quotes.reduce((acc, q) => { acc[q.status] = (acc[q.status] || 0) + 1; return acc }, {} as Record<string, number>)
 
