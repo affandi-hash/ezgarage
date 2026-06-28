@@ -32,9 +32,10 @@ const DEFAULT_SLOTS = [
 export interface DatePickerInputProps {
   value: string
   onChange: (val: string) => void
-  min?: string                    // "YYYY-MM-DD" — days before this are disabled
-  style?: React.CSSProperties     // applied to the trigger element (match your inputStyle)
-  dark?: boolean                  // default true
+  min?: string
+  placeholder?: string
+  style?: React.CSSProperties
+  dark?: boolean
 }
 
 export function DatePickerInput({ value, onChange, min, style, dark = true }: DatePickerInputProps) {

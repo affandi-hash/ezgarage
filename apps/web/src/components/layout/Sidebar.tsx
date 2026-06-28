@@ -23,7 +23,6 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
-import { ROLE_LABELS } from '@/types'
 import type { Role } from '@/types'
 
 interface NavItem {
@@ -105,7 +104,7 @@ export function Sidebar() {
 
   if (!user) return null
 
-  const initials = user.full_name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
+  const _initials = user.full_name.split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase()
 
   const visibleGroups = NAV_GROUPS
     .map(group => ({ ...group, items: group.items.filter(item => item.roles.includes(user.role)) }))

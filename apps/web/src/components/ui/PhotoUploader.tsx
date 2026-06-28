@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Camera, Upload, X, Loader2, Trash2, Image } from 'lucide-react'
+import { Camera, X, Loader2, Trash2, Image } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { toast } from './Toast'
 import { ConfirmModal } from './ConfirmModal'

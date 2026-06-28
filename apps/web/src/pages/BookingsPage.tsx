@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
   CalendarCheck, Plus, Search, X, MoreVertical,
-  ChevronDown, Check, Phone, Car, Clock, Ban, Trash2,
+  ChevronDown, Check, Phone, Clock, Ban, Trash2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -100,7 +100,6 @@ interface BookingRow extends Booking {
   vehicles?: { plate_number: string; make: string; model: string } | null
   vehicle_brand?: string | null
   vehicle_model?: string | null
-  booking_time?: string | null
   customer_ic_last4?: string | null
   notes?: string | null
   assigned_staff?: string | null
@@ -171,7 +170,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function SourceBadge({ source }: { source: string | null }) {
-  if (!source) return <span style={{ color: '#A0A0A0', fontSize: 11 }}>—</span>
+  if (!source) return <span style={{ color: '#A0A0A0', fontSize: 11 }}>â€”</span>
   const colors = SOURCE_BADGE_COLORS[source] ?? { bg: 'rgba(107,114,128,0.2)', text: '#9CA3AF' }
   const label = SOURCE_OPTIONS.find((s) => s.value === source)?.label ?? source
   return (
@@ -189,7 +188,7 @@ function SourceBadge({ source }: { source: string | null }) {
 }
 
 function ModeBadge({ mode }: { mode: string | null }) {
-  if (!mode) return <span style={{ color: '#A0A0A0', fontSize: 11 }}>—</span>
+  if (!mode) return <span style={{ color: '#A0A0A0', fontSize: 11 }}>â€”</span>
   const colors = MODE_BADGE_COLORS[mode] ?? { bg: 'rgba(107,114,128,0.2)', text: '#9CA3AF' }
   const modeMap: Record<string, string> = {
     walk_in: 'Walk-in', booked: 'Drive-in', fleet: 'Fleet',
@@ -280,7 +279,7 @@ setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
             {[
               { label: 'Confirm Booking', action: () => { onConfirm(booking.id); setOpen(false) }, color: '#86EFAC', show: booking.status === 'pending', icon: <Check size={13} /> },
               { label: 'Check In', action: () => { onCheckIn(booking.id); setOpen(false) }, color: '#A78BFA', show: booking.status === 'confirmed', icon: null },
-              { label: '→ Convert to Job Card', action: () => { onConvertToJob(booking); setOpen(false) }, color: '#F15A22', show: booking.status === 'confirmed' || booking.status === 'arrived', icon: null },
+              { label: 'â†’ Convert to Job Card', action: () => { onConvertToJob(booking); setOpen(false) }, color: '#F15A22', show: booking.status === 'confirmed' || booking.status === 'arrived', icon: null },
               {
                 label: 'Cancel Booking',
                 action: () => {
@@ -683,7 +682,7 @@ function NewBookingPanel({
               opacity: saving ? 0.7 : 1,
             }}
           >
-            {saving ? 'Creating…' : 'Create Booking'}
+            {saving ? 'Creatingâ€¦' : 'Create Booking'}
           </button>
         </div>
       </div>
@@ -692,7 +691,7 @@ function NewBookingPanel({
 }
 
 // ---------------------------------------------------------------------------
-// Convert to Job Card modal — Option B: search & link customer + vehicle
+// Convert to Job Card modal â€” Option B: search & link customer + vehicle
 // ---------------------------------------------------------------------------
 interface ConvertModalProps {
   booking: BookingRow
@@ -708,7 +707,7 @@ interface CustomerRow { id: string; full_name: string; phone: string; email?: st
 interface VehicleRow  { id: string; plate_number: string; make: string; model: string; year?: number | null }
 
 function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: ConvertModalProps) {
-  // ── Customer state ──────────────────────────────────────────────────────────
+  // â”€â”€ Customer state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [custSearch,   setCustSearch]   = useState(booking.customer_phone ?? booking.customer_name ?? '')
   const [custResults,  setCustResults]  = useState<CustomerRow[]>([])
   const [custMode,     setCustMode]     = useState<LinkMode>('search')
@@ -716,7 +715,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
   const [newCustName,  setNewCustName]  = useState(booking.customer_name ?? '')
   const [newCustPhone, setNewCustPhone] = useState(booking.customer_phone ?? '')
 
-  // ── Vehicle state ───────────────────────────────────────────────────────────
+  // â”€â”€ Vehicle state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [vehSearch,    setVehSearch]    = useState(booking.vehicle_plate ?? '')
   const [vehResults,   setVehResults]   = useState<VehicleRow[]>([])
   const [vehMode,      setVehMode]      = useState<LinkMode>('search')
@@ -727,7 +726,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
 
   const [saving, setSaving] = useState(false)
 
-  // ── Customer search ─────────────────────────────────────────────────────────
+  // â”€â”€ Customer search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (custMode !== 'search' || custSearch.trim().length < 2) { setCustResults([]); return }
     const t = setTimeout(async () => {
@@ -743,7 +742,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
     return () => clearTimeout(t)
   }, [custSearch, custMode, branchId])
 
-  // ── Vehicle search ──────────────────────────────────────────────────────────
+  // â”€â”€ Vehicle search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (vehMode !== 'search' || vehSearch.trim().length < 2) { setVehResults([]); return }
     const t = setTimeout(async () => {
@@ -758,7 +757,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
     return () => clearTimeout(t)
   }, [vehSearch, vehMode])
 
-  // ── Submit ──────────────────────────────────────────────────────────────────
+  // â”€â”€ Submit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async function handleCreate() {
     setSaving(true)
     try {
@@ -820,7 +819,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
   const canCreate = (custMode === 'selected' || custMode === 'new') &&
                     (vehMode  === 'selected' || vehMode  === 'new')
 
-  // ── Styles ──────────────────────────────────────────────────────────────────
+  // â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const S = {
     overlay:   { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 },
     modal:     { background: '#161616', border: '1px solid #2A2A2A', borderRadius: 14, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' as const, boxShadow: '0 24px 60px rgba(0,0,0,0.6)' },
@@ -840,7 +839,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
     if (custMode === 'selected' && selCust) return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={S.chip}>
-          <Check size={12} /> {selCust.full_name} · {selCust.phone}
+          <Check size={12} /> {selCust.full_name} Â· {selCust.phone}
         </div>
         <button style={S.btnGhost} onClick={() => { setCustMode('search'); setSelCust(null) }}>Change</button>
       </div>
@@ -866,7 +865,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
     return (
       <div>
         <input
-          style={S.input} value={custSearch} placeholder="Search by name or phone…"
+          style={S.input} value={custSearch} placeholder="Search by name or phoneâ€¦"
           onChange={e => { setCustSearch(e.target.value); setCustMode('search') }}
           autoFocus
         />
@@ -898,7 +897,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
     if (vehMode === 'selected' && selVeh) return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={S.chip}>
-          <Check size={12} /> {selVeh.plate_number} · {selVeh.make} {selVeh.model}
+          <Check size={12} /> {selVeh.plate_number} Â· {selVeh.make} {selVeh.model}
         </div>
         <button style={S.btnGhost} onClick={() => { setVehMode('search'); setSelVeh(null) }}>Change</button>
       </div>
@@ -929,7 +928,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
       <div>
         <input
           style={{ ...S.input, textTransform: 'uppercase', letterSpacing: 1 }}
-          value={vehSearch} placeholder="Search by plate number…"
+          value={vehSearch} placeholder="Search by plate numberâ€¦"
           onChange={e => { setVehSearch(e.target.value.toUpperCase()); setVehMode('search') }}
         />
         {vehResults.length > 0 && (
@@ -966,8 +965,8 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
             <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', padding: 4 }}><X size={18} /></button>
           </div>
           <span style={{ fontSize: 12, color: '#666' }}>
-            Booking {(booking as any).booking_number ?? booking.id.slice(0, 8)} ·{' '}
-            {booking.customer_name ?? ''}{booking.vehicle_plate ? ` · ${booking.vehicle_plate}` : ''}
+            Booking {(booking as any).booking_number ?? booking.id.slice(0, 8)} Â·{' '}
+            {booking.customer_name ?? ''}{booking.vehicle_plate ? ` Â· ${booking.vehicle_plate}` : ''}
           </span>
         </div>
 
@@ -980,7 +979,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
             </div>
             {booking.customer_name || booking.customer_phone ? (
               <div style={{ fontSize: 12, color: '#666', marginBottom: 10 }}>
-                From booking: <span style={{ color: '#A0A0A0' }}>{booking.customer_name}{booking.customer_phone ? ` · ${booking.customer_phone}` : ''}</span>
+                From booking: <span style={{ color: '#A0A0A0' }}>{booking.customer_name}{booking.customer_phone ? ` Â· ${booking.customer_phone}` : ''}</span>
               </div>
             ) : null}
             <CustSection />
@@ -994,7 +993,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
             {booking.vehicle_plate ? (
               <div style={{ fontSize: 12, color: '#666', marginBottom: 10 }}>
                 From booking: <span style={{ color: '#A0A0A0', fontFamily: 'monospace' }}>{booking.vehicle_plate}</span>
-                {(booking.vehicle_brand || booking.vehicle_model) ? <span style={{ color: '#666' }}> · {booking.vehicle_brand} {booking.vehicle_model}</span> : null}
+                {(booking.vehicle_brand || booking.vehicle_model) ? <span style={{ color: '#666' }}> Â· {booking.vehicle_brand} {booking.vehicle_model}</span> : null}
               </div>
             ) : null}
             <VehSection />
@@ -1004,7 +1003,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4 }}>
             <button style={S.btnGhost} onClick={onClose}>Cancel</button>
             <button style={S.btnOrange} disabled={!canCreate || saving} onClick={handleCreate}>
-              {saving ? 'Creating…' : 'Create Job Card'}
+              {saving ? 'Creatingâ€¦' : 'Create Job Card'}
             </button>
           </div>
         </div>
@@ -1069,7 +1068,7 @@ export function BookingsPage() {
   }
 
   // BUG-003: Convert a confirmed/arrived booking to a job card
-  const convertBookingToJob = async (booking: BookingRow) => {
+  const _convertBookingToJob = async (booking: BookingRow) => {
     if (!branchId) return
     try {
       const { error: jobErr } = await supabase.from('jobs').insert({
@@ -1263,7 +1262,7 @@ export function BookingsPage() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ width: 36, height: 36, border: '3px solid #2A2A2A', borderTopColor: '#F15A22', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-              <p style={{ color: '#A0A0A0', fontSize: 13 }}>Loading bookings…</p>
+              <p style={{ color: '#A0A0A0', fontSize: 13 }}>Loading bookingsâ€¦</p>
             </div>
           </div>
         ) : error ? (
@@ -1299,18 +1298,18 @@ export function BookingsPage() {
               </div>
             ) : (
               filtered.map((booking, idx) => {
-                const name = booking.customers?.full_name ?? booking.customer_name ?? '—'
+                const name = booking.customers?.full_name ?? booking.customer_name ?? 'â€”'
                 const phone = booking.customers?.phone ?? booking.customer_phone ?? ''
-                const plate = booking.vehicles?.plate_number ?? booking.vehicle_plate ?? '—'
+                const plate = booking.vehicles?.plate_number ?? booking.vehicle_plate ?? 'â€”'
                 const vehicleStr = [
                   booking.vehicles?.make ?? booking.vehicle_brand,
                   booking.vehicles?.model ?? booking.vehicle_model,
                 ].filter(Boolean).join(' ')
                 const dateStr = booking.booking_date
                   ? new Date(booking.booking_date + 'T00:00').toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
-                  : '—'
+                  : 'â€”'
                 const timeStr = booking.booking_time ?? ''
-                const serviceLabel = SERVICE_TYPES.find((s) => s.value === booking.service_type)?.label ?? booking.service_type ?? '—'
+                const serviceLabel = SERVICE_TYPES.find((s) => s.value === booking.service_type)?.label ?? booking.service_type ?? 'â€”'
 
                 return (
                   <div
@@ -1328,7 +1327,7 @@ export function BookingsPage() {
                   >
                     {/* Booking # */}
                     <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'rgba(241,90,34,0.9)', fontWeight: 600 }}>
-                      {booking.booking_number ?? '—'}
+                      {booking.booking_number ?? 'â€”'}
                     </span>
 
                     {/* Customer */}

@@ -8,6 +8,7 @@
   | 'finance'
   | 'fleet_admin'
   | 'driver'
+  | 'hr_manager'
   | 'customer'
 
 export type JobStatus =

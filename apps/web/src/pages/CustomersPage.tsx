@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import {
   Search,
   Plus,
@@ -22,7 +22,7 @@ import { useAuthStore } from '@/store/authStore'
 import { logAudit } from '@/lib/audit'
 import { formatName, formatPhone, formatEmail, formatIC, formatPlate, formatTitleCase } from '@/lib/formatters'
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Customer {
   id: string
@@ -83,7 +83,7 @@ interface EditForm {
   notes: string
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function getInitial(name: string): string {
   return name.trim().charAt(0).toUpperCase()
@@ -131,7 +131,7 @@ function typeBadgeColor(type: string): { bg: string; text: string } {
   }
 }
 
-// ─── Shared UI atoms ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Shared UI atoms â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Spinner() {
   return (
@@ -202,7 +202,7 @@ function Avatar({ name, size = 36 }: { name: string; size?: number }) {
   )
 }
 
-// ─── Customer Row ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Customer Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function CustomerRow({
   customer,
@@ -262,7 +262,7 @@ function CustomerRow({
   )
 }
 
-// ─── InfoField ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ InfoField â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function InfoField({
   icon,
@@ -284,7 +284,7 @@ function InfoField({
   )
 }
 
-// ─── Overview Tab ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Overview Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function OverviewTab({
   customer,
@@ -552,7 +552,7 @@ function OverviewTab({
           <div
             style={{ borderRadius: 12, marginTop: 24, background: '#1A0E0E', border: '1px solid #7f1d1d', padding: '16px 20px' }}
           >
-            <p style={{ fontSize: 12, fontWeight: 600, marginBottom: 16, color: '#F87171', margin: 0, marginBottom: 16 }}>Danger Zone</p>
+            <p style={{ fontSize: 12, fontWeight: 600, marginBottom: 16, color: '#F87171', marginBottom: 16 }}>Danger Zone</p>
             <button
               onClick={handleDeleteCustomer}
               disabled={deleting}
@@ -582,7 +582,7 @@ function OverviewTab({
   )
 }
 
-// ─── Vehicles Tab ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Vehicles Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function VehiclesTab({ customerId, branchId }: { customerId: string; branchId: string }) {
   const { user } = useAuthStore()
@@ -698,7 +698,7 @@ function VehiclesTab({ customerId, branchId }: { customerId: string; branchId: s
             <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 16, color: '#F15A22' }}>
               {v.plate_number}
             </span>
-            <p style={{ fontSize: 14, marginTop: 2, color: '#F0F0F0', margin: 0, marginTop: 2 }}>
+            <p style={{ fontSize: 14, marginTop: 2, color: '#F0F0F0', marginTop: 2 }}>
               {v.make} {v.model}{v.year ? ` (${v.year})` : ''}
             </p>
           </div>
@@ -737,7 +737,7 @@ function VehiclesTab({ customerId, branchId }: { customerId: string; branchId: s
         <div
           style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 12, padding: 20 }}
         >
-          <p style={{ color: '#F0F0F0', fontSize: 14, fontWeight: 600, marginBottom: 20, margin: 0, marginBottom: 20 }}>New Vehicle</p>
+          <p style={{ color: '#F0F0F0', fontSize: 14, fontWeight: 600, marginBottom: 20 }}>New Vehicle</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
               <p style={{ color: '#A0A0A0', fontSize: 12, marginBottom: 6 }}>Plate Number *</p>
@@ -822,7 +822,7 @@ function VehiclesTab({ customerId, branchId }: { customerId: string; branchId: s
   )
 }
 
-// ─── Jobs Tab ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Jobs Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function JobsTab({ customerId }: { customerId: string }) {
   const [jobs, setJobs] = useState<Job[]>([])
@@ -878,8 +878,8 @@ function JobsTab({ customerId }: { customerId: string }) {
                   {job.status.replace(/_/g, ' ')}
                 </span>
               </div>
-              <p style={{ fontSize: 14, marginTop: 2, color: '#F0F0F0', margin: 0, marginTop: 2 }}>{job.service_type}</p>
-              <p style={{ fontSize: 12, marginTop: 2, color: '#A0A0A0', margin: 0, marginTop: 2 }}>
+              <p style={{ fontSize: 14, marginTop: 2, color: '#F0F0F0', marginTop: 2 }}>{job.service_type}</p>
+              <p style={{ fontSize: 12, marginTop: 2, color: '#A0A0A0', marginTop: 2 }}>
                 {formatDate(job.checked_in_at)}
               </p>
             </div>
@@ -895,7 +895,7 @@ function JobsTab({ customerId }: { customerId: string }) {
   )
 }
 
-// ─── Notes Tab ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Notes Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function NotesTab({
   customer,
@@ -969,7 +969,7 @@ function NotesTab({
   )
 }
 
-// ─── Customer Detail (tabbed right panel) ─────────────────────────────────────
+// â”€â”€â”€ Customer Detail (tabbed right panel) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function CustomerDetail({
   customer,
@@ -1033,7 +1033,7 @@ function CustomerDetail({
   )
 }
 
-// ─── New Customer Slide-in Panel ──────────────────────────────────────────────
+// â”€â”€â”€ New Customer Slide-in Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function NewCustomerPanel({
   branchId,
@@ -1248,7 +1248,7 @@ function NewCustomerPanel({
   )
 }
 
-// ─── Main Export ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Main Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function CustomersPage() {
   const { user } = useAuthStore()
@@ -1357,7 +1357,7 @@ export function CustomersPage() {
     <div
       style={{ display: 'flex', overflow: 'hidden', background: '#0E0E0E', color: '#F0F0F0', height: 'calc(100vh - 104px)' }}
     >
-      {/* ── Left panel (380px fixed) ── */}
+      {/* â”€â”€ Left panel (380px fixed) â”€â”€ */}
       <div
         style={{
           width: 380,
@@ -1376,7 +1376,7 @@ export function CustomersPage() {
             <div>
               <h1 style={{ fontSize: 16, fontWeight: 600, color: '#F0F0F0', margin: 0 }}>Customers</h1>
               {!loading && (
-                <p style={{ fontSize: 12, marginTop: 2, color: '#A0A0A0', margin: 0, marginTop: 2 }}>
+                <p style={{ fontSize: 12, color: '#A0A0A0', marginTop: 2 }}>
                   {filtered.length} {filtered.length === 1 ? 'record' : 'records'}
                 </p>
               )}
@@ -1478,7 +1478,7 @@ export function CustomersPage() {
         </div>
       </div>
 
-      {/* ── Right panel (flex-1) ── */}
+      {/* â”€â”€ Right panel (flex-1) â”€â”€ */}
       <div style={{ flex: 1, height: '100%', overflow: 'hidden', background: '#0E0E0E' }}>
         {selectedCustomer ? (
           <CustomerDetail
@@ -1498,7 +1498,7 @@ export function CustomersPage() {
         )}
       </div>
 
-      {/* ── New Customer slide-in ── */}
+      {/* â”€â”€ New Customer slide-in â”€â”€ */}
       {showNewPanel && (
         <NewCustomerPanel
           branchId={branchId}
