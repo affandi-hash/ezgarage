@@ -1185,7 +1185,7 @@ interface FuelLog {
 }
 
 function FuelLogTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null; isSuperAdmin: boolean }) {
-  const { user, tenant } = useAuthStore();
+  const { user } = useAuthStore();
   const [logs, setLogs] = useState<FuelLog[]>([]);
   const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1662,7 +1662,7 @@ function ServiceAlertsBar({ vehicles, records }: { vehicles: FleetVehicle[]; rec
 }
 
 export function FleetPage() {
-  const { user, tenant } = useAuthStore();
+  const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'vehicles' | 'trips' | 'issues' | 'maintenance' | 'fuel' | 'documents'>('vehicles');
 
   const isSuperAdmin = user?.role === 'super_admin';

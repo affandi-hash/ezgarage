@@ -114,10 +114,6 @@ function formatDate(dateStr?: string | null): string {
   })
 }
 
-function formatCurrency(amount?: number | null): string {
-  if (amount == null) return '—'
-  return `RM ${amount.toFixed(2)}`
-}
 
 const STATUS_COLORS: Record<PartRequest['status'], string> = {
   pending: '#F59E0B',
@@ -244,11 +240,12 @@ function NewRequestModal({ onClose, onSubmit, loading, tenantId }: NewRequestMod
         .ilike('job_number', `%${num}%`)
         .limit(3)
       if (data && data.length > 0) {
-        const j = data[0] as { id: string; job_number: string; service_type: string; vehicles?: { plate_number: string } | null }
+        const j = data[0] as { id: string; job_number: string; service_type: string; vehicles?: { plate_number: string }[] | { plate_number: string } | null }
+        const veh = Array.isArray(j.vehicles) ? j.vehicles[0] : j.vehicles
         const resolved: ResolvedJob = {
           id: j.id,
           job_number: j.job_number,
-          plate: j.vehicles?.plate_number ?? '—',
+          plate: veh?.plate_number ?? '—',
           service: j.service_type,
         }
         setResolvedJob(resolved)
@@ -536,8 +533,8 @@ interface Supplier {
   email?: string | null
   address?: string | null
   notes?: string | null
-  is_active: boolean
-  created_at: string
+  is_active?: boolean
+  created_at?: string
 }
 
 interface CataloguePart {
@@ -1194,7 +1191,7 @@ export function PartsPage() {
   // Order-confirmation modal state
   const [orderModal, setOrderModal] = useState<{ open: boolean; part: PartRequest | null }>({ open: false, part: null })
   const [orderForm, setOrderForm] = useState({ ordered_qty: '', catalogue_part_id: '' })
-  const [catalogueParts, setCatalogueParts] = useState<{ id: string; name: string; part_number?: string | null; stock_qty: number; division?: string; selling_price?: number | null; suppliers?: { name: string } | null }[]>([])
+  const [catalogueParts, setCatalogueParts] = useState<{ id: string; name: string; part_number?: string | null; stock_qty: number; division?: string; selling_price?: number | null; suppliers?: { name: string }[] | { name: string } | null }[]>([])
   const [orderSaving, setOrderSaving] = useState(false)
 
   // Link-before-receive modal state (stock purchases with no catalogue link)

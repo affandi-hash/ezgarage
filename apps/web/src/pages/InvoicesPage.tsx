@@ -261,7 +261,7 @@ export function InvoicesPage() {
   const [showPartPicker, setShowPartPicker] = useState(false)
   const [partPickerSearch, setPartPickerSearch] = useState('')
   const [catalogueParts, setCatalogueParts] = useState<CataloguePart[]>([])
-  const [installedParts, setInstalledParts] = useState<InstalledPart[]>([])
+  const [_installedParts, setInstalledParts] = useState<InstalledPart[]>([])
   const [loadingParts, setLoadingParts] = useState(false)
   const [autoLoadedCount, setAutoLoadedCount] = useState(0)
   const [jobsLoading, setJobsLoading] = useState(false)
