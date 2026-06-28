@@ -836,7 +836,9 @@ function MyAttendanceTab({ staffId }: { staffId: string }) {
   useEffect(() => {
     setLoading(true)
     const from = `${month}-01`
-    const to   = `${month}-31`
+    const [y, m] = month.split('-').map(Number)
+    const lastDay = new Date(y, m, 0).getDate()
+    const to = `${month}-${String(lastDay).padStart(2, '0')}`
     supabase.from('attendance_records')
       .select('*')
       .eq('staff_id', staffId)
