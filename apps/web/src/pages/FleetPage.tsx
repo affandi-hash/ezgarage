@@ -135,12 +135,6 @@ function Badge({ label, color }: { label: string; color: string }) {
   );
 }
 
->
-      {label}
-    </button>
-  );
-}
-
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div style={{
