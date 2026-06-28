@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useAppointmentsStore } from '@/hooks/useAppointments'
 
@@ -20,9 +20,20 @@ function fmtDay(date: Date): string {
   return date.toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
+const C = {
+  bg: '#0E0E0E',
+  surface: '#161616',
+  border: '#2A2A2A',
+  text: '#F0F0F0',
+  muted: '#A0A0A0',
+  orange: '#F15A22',
+  rowHover: '#1E1E1E',
+} as const
+
 export function MechanicScheduleView({ weekStart }: Props) {
   const user = useAuthStore((s) => s.user)
   const { mechanicSchedules, getMechanicSchedule } = useAppointmentsStore()
+  const [hoveredRow, setHoveredRow] = useState<number | null>(null)
 
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
 
@@ -45,19 +56,40 @@ export function MechanicScheduleView({ weekStart }: Props) {
 
   const mechanics = Array.from(mechanicMap.values())
 
+  const thStyle: React.CSSProperties = {
+    padding: '10px 16px',
+    background: C.surface,
+    borderBottom: `1px solid ${C.border}`,
+    fontSize: 11,
+    fontWeight: 500,
+    color: C.muted,
+    textAlign: 'left',
+  }
+
+  const thCenterStyle: React.CSSProperties = {
+    ...thStyle,
+    textAlign: 'center',
+    minWidth: 100,
+    padding: '10px 12px',
+  }
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm border-separate border-spacing-0">
+    <div style={{ overflowX: 'auto' }}>
+      <table
+        style={{
+          width: '100%',
+          fontSize: 13,
+          borderCollapse: 'separate',
+          borderSpacing: 0,
+        }}
+      >
         <thead>
           <tr>
-            <th className="text-left px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 min-w-[140px]">
+            <th style={{ ...thStyle, minWidth: 140 }}>
               Mechanic
             </th>
             {days.map((day) => (
-              <th
-                key={toISODate(day)}
-                className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 text-center min-w-[100px]"
-              >
+              <th key={toISODate(day)} style={thCenterStyle}>
                 {fmtDay(day)}
               </th>
             ))}
@@ -66,34 +98,92 @@ export function MechanicScheduleView({ weekStart }: Props) {
         <tbody>
           {mechanics.length === 0 ? (
             <tr>
-              <td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-sm">
+              <td
+                colSpan={8}
+                style={{
+                  padding: '32px 16px',
+                  textAlign: 'center',
+                  color: C.muted,
+                  fontSize: 13,
+                  borderBottom: `1px solid ${C.border}`,
+                }}
+              >
                 No schedule data for this week.
               </td>
             </tr>
           ) : (
             mechanics.map(({ name, scheduleByDate }, idx) => (
-              <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="px-4 py-2 font-medium text-gray-700 whitespace-nowrap">{name}</td>
+              <tr
+                key={idx}
+                onMouseEnter={() => setHoveredRow(idx)}
+                onMouseLeave={() => setHoveredRow(null)}
+                style={{
+                  background: hoveredRow === idx ? C.rowHover : 'transparent',
+                  borderBottom: `1px solid ${C.border}`,
+                  transition: 'background 0.15s',
+                }}
+              >
+                <td
+                  style={{
+                    padding: '10px 16px',
+                    fontWeight: 500,
+                    color: C.text,
+                    whiteSpace: 'nowrap',
+                    borderBottom: `1px solid ${C.border}`,
+                  }}
+                >
+                  {name}
+                </td>
                 {days.map((day) => {
                   const dateKey = toISODate(day)
                   const entry = scheduleByDate.get(dateKey)
                   return (
-                    <td key={dateKey} className="px-3 py-2 text-center">
+                    <td
+                      key={dateKey}
+                      style={{
+                        padding: '10px 12px',
+                        textAlign: 'center',
+                        borderBottom: `1px solid ${C.border}`,
+                      }}
+                    >
                       {entry ? (
                         entry.is_available ? (
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: 2,
+                            }}
+                          >
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                background: '#4ADE80',
+                              }}
+                            />
                             {entry.shift_start && entry.shift_end && (
-                              <span className="text-xs text-gray-400">
+                              <span style={{ fontSize: 11, color: C.muted }}>
                                 {entry.shift_start}–{entry.shift_end}
                               </span>
                             )}
                           </div>
                         ) : (
-                          <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              width: 8,
+                              height: 8,
+                              borderRadius: '50%',
+                              background: '#F87171',
+                            }}
+                          />
                         )
                       ) : (
-                        <span className="text-gray-300 text-xs">—</span>
+                        <span style={{ color: C.border, fontSize: 11 }}>—</span>
                       )}
                     </td>
                   )
@@ -105,15 +195,43 @@ export function MechanicScheduleView({ weekStart }: Props) {
       </table>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 px-4 py-2 text-xs text-gray-500">
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 rounded-full bg-green-400" /> Available
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+          padding: '10px 16px',
+          fontSize: 11,
+          color: C.muted,
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            style={{
+              display: 'inline-block',
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: '#4ADE80',
+            }}
+          />
+          Available
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 rounded-full bg-red-400" /> Off / Leave
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            style={{
+              display: 'inline-block',
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: '#F87171',
+            }}
+          />
+          Off / Leave
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className="text-gray-300">—</span> Not scheduled
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ color: C.border }}>—</span>
+          Not scheduled
         </span>
       </div>
     </div>

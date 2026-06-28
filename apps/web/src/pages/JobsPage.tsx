@@ -31,6 +31,7 @@ export function JobsPage() {
   const [tab, setTab] = useState<TabFilter>('all')
   const [showNewModal, setShowNewModal] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null)
 
   const canCreate = user?.role && ['ceo', 'branch_manager', 'operation_manager'].includes(user.role)
 
@@ -58,19 +59,26 @@ export function JobsPage() {
   return (
     <>
       <Header title="Job Orders" />
-      <div className="p-6">
+      <div style={{ padding: '24px' }}>
         {/* Top bar */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '4px', backgroundColor: '#1E1E1E', borderRadius: '12px', padding: '4px' }}>
             {TAB_FILTERS.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  tab === t.id
-                    ? 'bg-white text-gray-800 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
+                style={{
+                  padding: '6px 16px',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'background 0.15s, color 0.15s',
+                  backgroundColor: tab === t.id ? '#2A2A2A' : 'transparent',
+                  color: tab === t.id ? '#F0F0F0' : '#A0A0A0',
+                  boxShadow: tab === t.id ? '0 1px 3px rgba(0,0,0,0.4)' : 'none',
+                }}
               >
                 {t.label}
               </button>
@@ -79,7 +87,16 @@ export function JobsPage() {
           {canCreate && (
             <button
               onClick={() => setShowNewModal(true)}
-              className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors"
+              style={{
+                padding: '8px 18px',
+                backgroundColor: '#F15A22',
+                color: '#FFFFFF',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: 500,
+                border: 'none',
+                cursor: 'pointer',
+              }}
             >
               + New Job
             </button>
@@ -87,45 +104,56 @@ export function JobsPage() {
         </div>
 
         {/* Table */}
-        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+        <div style={{ backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: '12px', overflow: 'hidden' }}>
           {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0' }}>
+              <div style={{
+                width: '24px', height: '24px',
+                border: '2px solid #F15A22',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'spin 0.7s linear infinite',
+              }} />
             </div>
           ) : filtered.length === 0 ? (
-            <div className="py-16 text-center">
-              <p className="text-gray-400 text-sm">No job orders found.</p>
+            <div style={{ padding: '64px 0', textAlign: 'center' }}>
+              <p style={{ color: '#A0A0A0', fontSize: '14px' }}>No job orders found.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Job No.</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Customer</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Vehicle</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Service</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Mechanic</th>
-                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
+                  <tr style={{ borderBottom: '1px solid #2A2A2A', backgroundColor: '#0E0E0E' }}>
+                    {['Job No.', 'Customer', 'Vehicle', 'Service', 'Status', 'Mechanic', 'Date'].map((h) => (
+                      <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: '11px', fontWeight: 500, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody>
                   {filtered.map((job) => (
                     <tr
                       key={job.id}
                       onClick={() => setSelectedJobId(job.id)}
-                      className="hover:bg-gray-50 cursor-pointer transition-colors"
+                      onMouseEnter={() => setHoveredRow(job.id)}
+                      onMouseLeave={() => setHoveredRow(null)}
+                      style={{
+                        borderBottom: '1px solid #1E1E1E',
+                        cursor: 'pointer',
+                        backgroundColor: hoveredRow === job.id ? '#1E1E1E' : 'transparent',
+                        transition: 'background 0.12s',
+                      }}
                     >
-                      <td className="px-4 py-3 font-mono text-xs font-medium text-orange-600">{job.job_number}</td>
-                      <td className="px-4 py-3 text-gray-800">{job.customer?.full_name ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-600 font-mono text-xs">{job.vehicle?.plate_number ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{job.service_type}</td>
-                      <td className="px-4 py-3">
+                      <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: '12px', fontWeight: 500, color: '#F15A22' }}>{job.job_number}</td>
+                      <td style={{ padding: '12px 16px', color: '#F0F0F0' }}>{job.customer?.full_name ?? '—'}</td>
+                      <td style={{ padding: '12px 16px', color: '#A0A0A0', fontFamily: 'monospace', fontSize: '12px' }}>{job.vehicle?.plate_number ?? '—'}</td>
+                      <td style={{ padding: '12px 16px', color: '#A0A0A0' }}>{job.service_type}</td>
+                      <td style={{ padding: '12px 16px' }}>
                         <StatusBadge status={job.status} />
                       </td>
-                      <td className="px-4 py-3 text-gray-500">{job.assigned_mechanic?.full_name ?? '—'}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(job.created_at)}</td>
+                      <td style={{ padding: '12px 16px', color: '#A0A0A0' }}>{job.assigned_mechanic?.full_name ?? '—'}</td>
+                      <td style={{ padding: '12px 16px', color: '#606060', fontSize: '12px' }}>{formatDate(job.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -136,7 +164,7 @@ export function JobsPage() {
 
         {/* Count */}
         {!loading && (
-          <p className="text-xs text-gray-400 mt-3">
+          <p style={{ fontSize: '12px', color: '#606060', marginTop: '12px' }}>
             {filtered.length} job{filtered.length !== 1 ? 's' : ''} shown
           </p>
         )}

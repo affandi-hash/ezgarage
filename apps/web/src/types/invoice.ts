@@ -8,7 +8,7 @@ export interface InvoiceItem {
   id: string
   invoice_id: string
   description: string
-  type: LineItemType
+  item_type: LineItemType
   quantity: number
   unit_price: number
   total: number
@@ -26,7 +26,7 @@ export interface Invoice {
   subtotal: number
   discount: number
   tax: number
-  total_amount: number
+  total: number
   notes: string | null
   created_by: string
   created_at: string
@@ -64,7 +64,7 @@ export interface CreateInvoicePayload {
 export interface CreateInvoiceItemPayload {
   invoice_id: string
   description: string
-  type: LineItemType
+  item_type: LineItemType
   quantity: number
   unit_price: number
 }

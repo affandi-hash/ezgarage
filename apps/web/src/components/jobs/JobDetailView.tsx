@@ -26,6 +26,37 @@ function formatDate(iso: string) {
   })
 }
 
+// Shared style tokens
+const card: React.CSSProperties = {
+  backgroundColor: '#161616',
+  border: '1px solid #2A2A2A',
+  borderRadius: '12px',
+  padding: '24px',
+}
+
+const labelStyle: React.CSSProperties = {
+  fontSize: '0.7rem',
+  color: '#A0A0A0',
+  marginBottom: '2px',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+}
+
+const valueStyle: React.CSSProperties = {
+  fontSize: '0.875rem',
+  fontWeight: 500,
+  color: '#F0F0F0',
+}
+
+const sectionTitle: React.CSSProperties = {
+  fontSize: '0.8rem',
+  fontWeight: 600,
+  color: '#F0F0F0',
+  marginBottom: '16px',
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+}
+
 export function JobDetailView({ jobId, onBack }: JobDetailViewProps) {
   const { selectedJob, statusLogs, mechanics, loading, getJobById, updateJobStatus, clearSelected } = useJobsStore()
   const user = useAuthStore((s) => s.user)
@@ -65,8 +96,18 @@ export function JobDetailView({ jobId, onBack }: JobDetailViewProps) {
 
   if (loading || !selectedJob) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div
+          style={{
+            width: '24px',
+            height: '24px',
+            border: '2px solid #2A2A2A',
+            borderTopColor: '#F15A22',
+            borderRadius: '50%',
+            animation: 'spin 0.75s linear infinite',
+          }}
+        />
       </div>
     )
   }
@@ -74,25 +115,67 @@ export function JobDetailView({ jobId, onBack }: JobDetailViewProps) {
   const currentStatusIndex = STATUS_ORDER.indexOf(selectedJob.status)
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div style={{ padding: '24px', maxWidth: '900px', margin: '0 auto' }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
       {/* Back */}
-      <button onClick={onBack} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-6">
+      <button
+        onClick={onBack}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          fontSize: '0.875rem',
+          color: '#A0A0A0',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          marginBottom: '28px',
+          padding: 0,
+          transition: 'color 0.15s',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.color = '#F0F0F0')}
+        onMouseLeave={(e) => (e.currentTarget.style.color = '#A0A0A0')}
+      >
         ← Back to Jobs
       </button>
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: '16px',
+          marginBottom: '28px',
+        }}
+      >
         <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-xl font-bold text-gray-800">{selectedJob.job_number}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+            <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F0F0F0', margin: 0 }}>
+              {selectedJob.job_number}
+            </h1>
             <StatusBadge status={selectedJob.status} />
           </div>
-          <p className="text-sm text-gray-500">{selectedJob.service_type}</p>
+          <p style={{ fontSize: '0.875rem', color: '#A0A0A0', margin: 0 }}>{selectedJob.service_type}</p>
         </div>
         {canManage && (
           <button
             onClick={() => setShowStatusChange(!showStatusChange)}
-            className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#F15A22',
+              color: '#fff',
+              borderRadius: '8px',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
           >
             Update Status
           </button>
@@ -101,44 +184,97 @@ export function JobDetailView({ jobId, onBack }: JobDetailViewProps) {
 
       {/* Status change panel */}
       {showStatusChange && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6 space-y-3">
-          <p className="text-sm font-medium text-orange-800">Change Job Status</p>
-          <div className="flex flex-wrap gap-2">
-            {JOB_STATUSES.map((s) => (
-              <button
-                key={s}
-                onClick={() => setTargetStatus(s)}
-                disabled={s === selectedJob.status}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                  targetStatus === s
-                    ? 'bg-orange-500 text-white border-orange-500'
-                    : s === selectedJob.status
-                    ? 'opacity-40 cursor-not-allowed border-gray-200 text-gray-400'
-                    : 'border-gray-200 text-gray-600 hover:border-orange-400 hover:text-orange-600'
-                }`}
-              >
-                {s.replace(/_/g, ' ')}
-              </button>
-            ))}
+        <div
+          style={{
+            backgroundColor: '#1a1000',
+            border: '1px solid #3a2500',
+            borderRadius: '12px',
+            padding: '20px',
+            marginBottom: '28px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+          }}
+        >
+          <p style={{ fontSize: '0.875rem', fontWeight: 500, color: '#F15A22', margin: 0 }}>Change Job Status</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {JOB_STATUSES.map((s) => {
+              const isTarget = targetStatus === s
+              const isCurrent = s === selectedJob.status
+              return (
+                <button
+                  key={s}
+                  onClick={() => setTargetStatus(s)}
+                  disabled={isCurrent}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '9999px',
+                    fontSize: '0.75rem',
+                    fontWeight: 500,
+                    border: `1px solid ${isTarget ? '#F15A22' : '#2A2A2A'}`,
+                    backgroundColor: isTarget ? '#F15A22' : 'transparent',
+                    color: isTarget ? '#fff' : isCurrent ? '#A0A0A0' : '#F0F0F0',
+                    cursor: isCurrent ? 'not-allowed' : 'pointer',
+                    opacity: isCurrent ? 0.4 : 1,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {s.replace(/_/g, ' ')}
+                </button>
+              )
+            })}
           </div>
           <textarea
             rows={2}
             placeholder="Notes (optional)..."
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="w-full border border-orange-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none bg-white"
+            style={{
+              width: '100%',
+              border: '1px solid #2A2A2A',
+              borderRadius: '8px',
+              padding: '10px 12px',
+              fontSize: '0.875rem',
+              backgroundColor: '#0E0E0E',
+              color: '#F0F0F0',
+              resize: 'none',
+              outline: 'none',
+              boxSizing: 'border-box',
+            }}
           />
-          <div className="flex gap-2">
+          <div style={{ display: 'flex', gap: '8px' }}>
             <button
               onClick={() => { setShowStatusChange(false); setTargetStatus(''); setNotes('') }}
-              className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+              style={{
+                padding: '10px 18px',
+                border: '1px solid #2A2A2A',
+                borderRadius: '8px',
+                fontSize: '0.875rem',
+                color: '#A0A0A0',
+                backgroundColor: 'transparent',
+                cursor: 'pointer',
+                transition: 'background-color 0.15s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1a1a1a')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
               Cancel
             </button>
             <button
               onClick={handleStatusUpdate}
               disabled={!targetStatus || updatingStatus}
-              className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50"
+              style={{
+                padding: '10px 18px',
+                backgroundColor: '#F15A22',
+                color: '#fff',
+                borderRadius: '8px',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                border: 'none',
+                cursor: !targetStatus || updatingStatus ? 'not-allowed' : 'pointer',
+                opacity: !targetStatus || updatingStatus ? 0.5 : 1,
+                transition: 'opacity 0.15s',
+              }}
             >
               {updatingStatus ? 'Saving...' : 'Confirm'}
             </button>
@@ -146,95 +282,142 @@ export function JobDetailView({ jobId, onBack }: JobDetailViewProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Two-column grid */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '24px',
+          alignItems: 'start',
+        }}
+      >
         {/* Left column */}
-        <div className="lg:col-span-2 space-y-5">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', gridColumn: 'span 2' }}>
           {/* Job info */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Job Information</h3>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-              <div>
-                <dt className="text-xs text-gray-400">Customer</dt>
-                <dd className="font-medium text-gray-800">{selectedJob.customer?.full_name ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-400">Phone</dt>
-                <dd className="font-medium text-gray-800">{selectedJob.customer?.phone ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-400">Vehicle</dt>
-                <dd className="font-medium text-gray-800">{selectedJob.vehicle?.plate_number ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-400">Make / Model</dt>
-                <dd className="font-medium text-gray-800">
-                  {selectedJob.vehicle ? `${selectedJob.vehicle.make} ${selectedJob.vehicle.model}` : '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-400">Service Type</dt>
-                <dd className="font-medium text-gray-800">{selectedJob.service_type}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-400">Assigned Mechanic</dt>
-                <dd className="font-medium text-gray-800">{selectedJob.assigned_mechanic?.full_name ?? 'Unassigned'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-400">Created</dt>
-                <dd className="font-medium text-gray-800">{formatDate(selectedJob.created_at)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-gray-400">Last Updated</dt>
-                <dd className="font-medium text-gray-800">{formatDate(selectedJob.updated_at)}</dd>
-              </div>
+          <div style={card}>
+            <h3 style={sectionTitle}>Job Information</h3>
+            <dl
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                columnGap: '24px',
+                rowGap: '14px',
+                margin: 0,
+              }}
+            >
+              {[
+                ['Customer', selectedJob.customer?.full_name ?? '—'],
+                ['Phone', selectedJob.customer?.phone ?? '—'],
+                ['Vehicle', selectedJob.vehicle?.plate_number ?? '—'],
+                ['Make / Model', selectedJob.vehicle ? `${selectedJob.vehicle.make} ${selectedJob.vehicle.model}` : '—'],
+                ['Service Type', selectedJob.service_type],
+                ['Assigned Mechanic', selectedJob.assigned_mechanic?.full_name ?? 'Unassigned'],
+                ['Created', formatDate(selectedJob.created_at)],
+                ['Last Updated', formatDate(selectedJob.updated_at)],
+              ].map(([label, val]) => (
+                <div key={label}>
+                  <dt style={labelStyle}>{label}</dt>
+                  <dd style={{ ...valueStyle, margin: 0 }}>{val}</dd>
+                </div>
+              ))}
             </dl>
             {selectedJob.description && (
-              <div className="mt-4 pt-4 border-t border-gray-100">
-                <dt className="text-xs text-gray-400 mb-1">Description</dt>
-                <dd className="text-sm text-gray-700">{selectedJob.description}</dd>
+              <div
+                style={{
+                  marginTop: '16px',
+                  paddingTop: '16px',
+                  borderTop: '1px solid #2A2A2A',
+                }}
+              >
+                <dt style={labelStyle}>Description</dt>
+                <dd style={{ fontSize: '0.875rem', color: '#F0F0F0', margin: 0, marginTop: '4px' }}>
+                  {selectedJob.description}
+                </dd>
               </div>
             )}
           </div>
 
           {/* Customer Approval */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <div className="flex items-center justify-between">
+          <div style={card}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h3 className="text-sm font-semibold text-gray-700">Customer Approval</h3>
-                <p className="text-xs text-gray-400 mt-0.5">Required before work can proceed past inspection</p>
+                <h3 style={{ ...sectionTitle, marginBottom: '4px' }}>Customer Approval</h3>
+                <p style={{ fontSize: '0.75rem', color: '#A0A0A0', margin: 0 }}>
+                  Required before work can proceed past inspection
+                </p>
               </div>
+              {/* Toggle */}
               <button
                 onClick={handleApprovalToggle}
                 disabled={!canManage}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                  selectedJob.customer_approval ? 'bg-green-500' : 'bg-gray-200'
-                } ${!canManage ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                style={{
+                  position: 'relative',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  width: '44px',
+                  height: '24px',
+                  borderRadius: '9999px',
+                  backgroundColor: selectedJob.customer_approval ? '#22c55e' : '#2A2A2A',
+                  border: 'none',
+                  cursor: canManage ? 'pointer' : 'not-allowed',
+                  opacity: canManage ? 1 : 0.5,
+                  transition: 'background-color 0.2s',
+                  flexShrink: 0,
+                }}
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    selectedJob.customer_approval ? 'translate-x-6' : 'translate-x-1'
-                  }`}
+                  style={{
+                    display: 'inline-block',
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '50%',
+                    backgroundColor: '#fff',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                    transform: selectedJob.customer_approval ? 'translateX(22px)' : 'translateX(4px)',
+                    transition: 'transform 0.2s',
+                  }}
                 />
               </button>
             </div>
-            <p className={`text-xs mt-2 font-medium ${selectedJob.customer_approval ? 'text-green-600' : 'text-yellow-600'}`}>
+            <p
+              style={{
+                fontSize: '0.75rem',
+                marginTop: '10px',
+                fontWeight: 500,
+                color: selectedJob.customer_approval ? '#22c55e' : '#fbbf24',
+              }}
+            >
               {selectedJob.customer_approval ? 'Approved — work can proceed' : 'Pending approval'}
             </p>
           </div>
 
           {/* Mechanics list */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Assigned Mechanics</h3>
+          <div style={card}>
+            <h3 style={sectionTitle}>Assigned Mechanics</h3>
             {mechanics.length === 0 ? (
-              <p className="text-xs text-gray-400">No additional mechanics assigned.</p>
+              <p style={{ fontSize: '0.75rem', color: '#A0A0A0', margin: 0 }}>No additional mechanics assigned.</p>
             ) : (
-              <ul className="space-y-2">
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {mechanics.map((m) => (
-                  <li key={m.id} className="flex items-center gap-2 text-sm">
-                    <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-bold">
+                  <li key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.875rem' }}>
+                    <span
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        backgroundColor: '#2a1500',
+                        color: '#F15A22',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
                       {m.mechanic?.full_name?.[0] ?? '?'}
                     </span>
-                    <span className="text-gray-700">{m.mechanic?.full_name ?? '—'}</span>
+                    <span style={{ color: '#F0F0F0' }}>{m.mechanic?.full_name ?? '—'}</span>
                   </li>
                 ))}
               </ul>
@@ -242,31 +425,77 @@ export function JobDetailView({ jobId, onBack }: JobDetailViewProps) {
           </div>
 
           {/* Photo placeholder */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Job Photos</h3>
-            <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center">
-              <p className="text-xs text-gray-400">Photo upload — coming in Phase 4</p>
+          <div style={card}>
+            <h3 style={sectionTitle}>Job Photos</h3>
+            <div
+              style={{
+                border: '2px dashed #2A2A2A',
+                borderRadius: '12px',
+                padding: '40px',
+                textAlign: 'center',
+              }}
+            >
+              <p style={{ fontSize: '0.75rem', color: '#A0A0A0', margin: 0 }}>Photo upload — coming in Phase 4</p>
             </div>
           </div>
         </div>
 
-        {/* Right column — status timeline */}
-        <div className="space-y-5">
+        {/* Right column — timeline */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+            gridColumn: 'span 1',
+          }}
+        >
           {/* Progress steps */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Progress</h3>
-            <ol className="relative border-l border-gray-200 ml-2 space-y-4">
+          <div style={card}>
+            <h3 style={sectionTitle}>Progress</h3>
+            <ol style={{ listStyle: 'none', margin: 0, padding: 0, position: 'relative', paddingLeft: '20px' }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '6px',
+                  top: '6px',
+                  bottom: '6px',
+                  width: '1px',
+                  backgroundColor: '#2A2A2A',
+                }}
+              />
               {STATUS_ORDER.map((s, i) => {
                 const past = i < currentStatusIndex
                 const current = i === currentStatusIndex
                 return (
-                  <li key={s} className="ml-4">
-                    <span className={`absolute -left-[7px] w-3.5 h-3.5 rounded-full border-2 ${
-                      current ? 'bg-orange-500 border-orange-500' :
-                      past ? 'bg-green-400 border-green-400' :
-                      'bg-white border-gray-300'
-                    }`} />
-                    <p className={`text-xs font-medium ${current ? 'text-orange-600' : past ? 'text-gray-500' : 'text-gray-300'}`}>
+                  <li
+                    key={s}
+                    style={{
+                      position: 'relative',
+                      paddingLeft: '16px',
+                      paddingBottom: i < STATUS_ORDER.length - 1 ? '16px' : 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: 'absolute',
+                        left: '-8px',
+                        top: '2px',
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '50%',
+                        border: `2px solid ${current ? '#F15A22' : past ? '#22c55e' : '#2A2A2A'}`,
+                        backgroundColor: current ? '#F15A22' : past ? '#22c55e' : '#0E0E0E',
+                        display: 'inline-block',
+                      }}
+                    />
+                    <p
+                      style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
+                        margin: 0,
+                        color: current ? '#F15A22' : past ? '#A0A0A0' : '#3a3a3a',
+                      }}
+                    >
                       {s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
                     </p>
                   </li>
@@ -275,22 +504,24 @@ export function JobDetailView({ jobId, onBack }: JobDetailViewProps) {
             </ol>
           </div>
 
-          {/* Status logs */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Activity Log</h3>
+          {/* Activity Log */}
+          <div style={card}>
+            <h3 style={sectionTitle}>Activity Log</h3>
             {statusLogs.length === 0 ? (
-              <p className="text-xs text-gray-400">No status changes yet.</p>
+              <p style={{ fontSize: '0.75rem', color: '#A0A0A0', margin: 0 }}>No status changes yet.</p>
             ) : (
-              <ol className="space-y-3">
+              <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {statusLogs.map((log) => (
-                  <li key={log.id} className="text-xs">
-                    <p className="font-medium text-gray-700">
+                  <li key={log.id} style={{ fontSize: '0.75rem' }}>
+                    <p style={{ fontWeight: 500, color: '#F0F0F0', margin: 0 }}>
                       {log.previous_status
                         ? `${log.previous_status.replace(/_/g, ' ')} → ${log.new_status.replace(/_/g, ' ')}`
                         : `Set to ${log.new_status.replace(/_/g, ' ')}`}
                     </p>
-                    {log.notes && <p className="text-gray-500 mt-0.5">{log.notes}</p>}
-                    <p className="text-gray-400 mt-0.5">
+                    {log.notes && (
+                      <p style={{ color: '#A0A0A0', margin: '2px 0 0' }}>{log.notes}</p>
+                    )}
+                    <p style={{ color: '#3a3a3a', margin: '2px 0 0' }}>
                       {log.changed_by_profile?.full_name ?? 'System'} · {formatDate(log.created_at)}
                     </p>
                   </li>

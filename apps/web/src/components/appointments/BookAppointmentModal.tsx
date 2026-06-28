@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { useAppointmentsStore } from '@/hooks/useAppointments'
+import { DatePickerInput, TimePickerInput } from '@/components/ui/DateTimePickers'
 import type { CreateAppointmentPayload } from '@/types/appointment'
 
 interface Props {
@@ -22,6 +23,36 @@ const SERVICE_TYPES = [
   'Other',
 ]
 
+const C = {
+  bg: '#0E0E0E',
+  surface: '#161616',
+  border: '#2A2A2A',
+  text: '#F0F0F0',
+  muted: '#A0A0A0',
+  orange: '#F15A22',
+  orangeHover: '#D94E1A',
+} as const
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  border: `1px solid ${C.border}`,
+  borderRadius: 8,
+  padding: '8px 12px',
+  fontSize: 14,
+  background: C.bg,
+  color: C.text,
+  outline: 'none',
+  boxSizing: 'border-box',
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: 11,
+  fontWeight: 500,
+  color: C.muted,
+  marginBottom: 4,
+}
+
 export function BookAppointmentModal({ onClose, onSuccess }: Props) {
   const user = useAuthStore((s) => s.user)
   const { createAppointment } = useAppointmentsStore()
@@ -41,6 +72,9 @@ export function BookAppointmentModal({ onClose, onSuccess }: Props) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [cancelHover, setCancelHover] = useState(false)
+  const [submitHover, setSubmitHover] = useState(false)
+  const [closeHover, setCloseHover] = useState(false)
 
   const set = (field: keyof typeof form, value: string | number | null) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -68,90 +102,140 @@ export function BookAppointmentModal({ onClose, onSuccess }: Props) {
     onClose()
   }
 
-  const inputCls =
-    'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400'
-  const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(0,0,0,0.6)',
+      }}
+    >
+      <div
+        style={{
+          background: C.surface,
+          borderRadius: 16,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+          width: '100%',
+          maxWidth: 520,
+          margin: '0 16px',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          border: `1px solid ${C.border}`,
+        }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-800">Book Appointment</h2>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '16px 24px',
+            borderBottom: `1px solid ${C.border}`,
+          }}
+        >
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: C.text, margin: 0 }}>
+            Book Appointment
+          </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            onMouseEnter={() => setCloseHover(true)}
+            onMouseLeave={() => setCloseHover(false)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 20,
+              lineHeight: 1,
+              color: closeHover ? C.text : C.muted,
+              padding: 4,
+              transition: 'color 0.15s',
+            }}
           >
             &times;
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="overflow-y-auto px-6 py-4 space-y-4 flex-1">
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            overflowY: 'auto',
+            padding: '20px 24px',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16,
+          }}
+        >
           {/* Customer */}
-          <div className="grid grid-cols-2 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label className={labelCls}>Phone *</label>
+              <label style={labelStyle}>Phone *</label>
               <input
                 type="tel"
                 required
                 value={form.customer_phone}
                 onChange={(e) => set('customer_phone', e.target.value)}
                 placeholder="01X-XXXXXXX"
-                className={inputCls}
+                style={inputStyle}
               />
             </div>
             <div>
-              <label className={labelCls}>Name *</label>
+              <label style={labelStyle}>Name *</label>
               <input
                 type="text"
                 required
                 value={form.customer_name}
                 onChange={(e) => set('customer_name', e.target.value)}
                 placeholder="Full name"
-                className={inputCls}
+                style={inputStyle}
               />
             </div>
           </div>
 
           {/* Vehicle */}
           <div>
-            <label className={labelCls}>Plate Number *</label>
+            <label style={labelStyle}>Plate Number *</label>
             <input
               type="text"
               required
               value={form.plate_number}
               onChange={(e) => set('plate_number', e.target.value.toUpperCase())}
               placeholder="ABC 1234"
-              className={inputCls}
+              style={inputStyle}
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <div>
-              <label className={labelCls}>Make *</label>
+              <label style={labelStyle}>Make *</label>
               <input
                 type="text"
                 required
                 value={form.vehicle_make}
                 onChange={(e) => set('vehicle_make', e.target.value)}
                 placeholder="e.g. Toyota"
-                className={inputCls}
+                style={inputStyle}
               />
             </div>
             <div>
-              <label className={labelCls}>Model *</label>
+              <label style={labelStyle}>Model *</label>
               <input
                 type="text"
                 required
                 value={form.vehicle_model}
                 onChange={(e) => set('vehicle_model', e.target.value)}
                 placeholder="e.g. Vios"
-                className={inputCls}
+                style={inputStyle}
               />
             </div>
             <div>
-              <label className={labelCls}>Year</label>
+              <label style={labelStyle}>Year</label>
               <input
                 type="number"
                 min={1980}
@@ -159,19 +243,19 @@ export function BookAppointmentModal({ onClose, onSuccess }: Props) {
                 value={form.vehicle_year ?? ''}
                 onChange={(e) => set('vehicle_year', e.target.value ? Number(e.target.value) : null)}
                 placeholder="2020"
-                className={inputCls}
+                style={inputStyle}
               />
             </div>
           </div>
 
           {/* Service */}
           <div>
-            <label className={labelCls}>Service Type *</label>
+            <label style={labelStyle}>Service Type *</label>
             <select
               required
               value={form.service_type}
               onChange={(e) => set('service_type', e.target.value)}
-              className={inputCls}
+              style={{ ...inputStyle, appearance: 'none' }}
             >
               <option value="">Select service…</option>
               {SERVICE_TYPES.map((s) => (
@@ -181,42 +265,40 @@ export function BookAppointmentModal({ onClose, onSuccess }: Props) {
           </div>
 
           {/* Date & Time */}
-          <div className="grid grid-cols-2 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label className={labelCls}>Date *</label>
-              <input
-                type="date"
-                required
-                value={form.appointment_date}
-                onChange={(e) => set('appointment_date', e.target.value)}
-                className={inputCls}
-              />
+              <label style={labelStyle}>Date *</label>
+              <DatePickerInput value={form.appointment_date} onChange={v => set('appointment_date', v)} style={inputStyle} />
             </div>
             <div>
-              <label className={labelCls}>Time *</label>
-              <input
-                type="time"
-                required
-                value={form.appointment_time}
-                onChange={(e) => set('appointment_time', e.target.value)}
-                className={inputCls}
-              />
+              <label style={labelStyle}>Time *</label>
+              <TimePickerInput value={form.appointment_time} onChange={v => set('appointment_time', v)} style={inputStyle} />
             </div>
           </div>
 
           {/* Source */}
           <div>
-            <label className={labelCls}>Booking Source</label>
-            <div className="flex gap-4">
+            <label style={labelStyle}>Booking Source</label>
+            <div style={{ display: 'flex', gap: 16 }}>
               {(['direct', 'mia_whatsapp'] as const).map((src) => (
-                <label key={src} className="flex items-center gap-2 text-sm cursor-pointer">
+                <label
+                  key={src}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 13,
+                    color: C.text,
+                    cursor: 'pointer',
+                  }}
+                >
                   <input
                     type="radio"
                     name="source"
                     value={src}
                     checked={form.source === src}
                     onChange={() => set('source', src)}
-                    className="accent-orange-500"
+                    style={{ accentColor: C.orange }}
                   />
                   {src === 'direct' ? 'Direct / Walk-in' : 'Mia (WhatsApp)'}
                 </label>
@@ -226,34 +308,66 @@ export function BookAppointmentModal({ onClose, onSuccess }: Props) {
 
           {/* Notes */}
           <div>
-            <label className={labelCls}>Notes</label>
+            <label style={labelStyle}>Notes</label>
             <textarea
               rows={3}
               value={form.notes ?? ''}
               onChange={(e) => set('notes', e.target.value)}
               placeholder="Any additional details…"
-              className={inputCls}
+              style={{ ...inputStyle, resize: 'vertical' }}
             />
           </div>
 
           {error && (
-            <p className="text-red-500 text-xs">{error}</p>
+            <p style={{ color: '#F87171', fontSize: 12, margin: 0 }}>{error}</p>
           )}
         </form>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 12,
+            padding: '16px 24px',
+            borderTop: `1px solid ${C.border}`,
+          }}
+        >
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+            onMouseEnter={() => setCancelHover(true)}
+            onMouseLeave={() => setCancelHover(false)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '8px 16px',
+              fontSize: 13,
+              color: cancelHover ? C.text : C.muted,
+              borderRadius: 8,
+              transition: 'color 0.15s',
+            }}
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit as unknown as React.MouseEventHandler}
             disabled={saving}
-            className="px-5 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors"
+            onMouseEnter={() => setSubmitHover(true)}
+            onMouseLeave={() => setSubmitHover(false)}
+            style={{
+              padding: '8px 20px',
+              background: saving ? C.muted : submitHover ? C.orangeHover : C.orange,
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.6 : 1,
+              transition: 'background 0.15s',
+            }}
           >
             {saving ? 'Booking…' : 'Book Appointment'}
           </button>

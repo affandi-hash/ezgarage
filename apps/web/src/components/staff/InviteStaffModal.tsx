@@ -30,12 +30,15 @@ export function InviteStaffModal({ onClose, onSuccess }: Props) {
     email: '',
     full_name: '',
     role: 'staff',
-    branch_id: user?.role !== 'ceo' ? (user?.branch_id ?? '') : '',
+    branch_id: (user?.role as string) !== 'ceo' && user?.role !== 'super_admin' ? (user?.branch_id ?? '') : '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [closeHover, setCloseHover] = useState(false)
+  const [cancelHover, setCancelHover] = useState(false)
+  const [submitHover, setSubmitHover] = useState(false)
 
-  const isCeo = user?.role === 'ceo'
+  const isCeo = (user?.role as string) === 'ceo' || user?.role === 'super_admin'
 
   useEffect(() => {
     if (!isCeo) return
@@ -70,56 +73,124 @@ export function InviteStaffModal({ onClose, onSuccess }: Props) {
     onClose()
   }
 
-  const inputCls =
-    'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400'
-  const labelCls = 'block text-xs font-medium text-gray-600 mb-1'
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    border: '1px solid #2A2A2A',
+    borderRadius: '8px',
+    padding: '8px 12px',
+    fontSize: '14px',
+    backgroundColor: '#161616',
+    color: '#F0F0F0',
+    outline: 'none',
+    boxSizing: 'border-box',
+  }
+
+  const disabledInputStyle: React.CSSProperties = {
+    ...inputStyle,
+    backgroundColor: '#0E0E0E',
+    color: '#A0A0A0',
+    cursor: 'not-allowed',
+  }
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: '12px',
+    fontWeight: 500,
+    color: '#A0A0A0',
+    marginBottom: '4px',
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 flex flex-col">
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: '#161616',
+          borderRadius: '16px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          width: '100%',
+          maxWidth: '448px',
+          margin: '0 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          border: '1px solid #2A2A2A',
+        }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-800">Invite Staff Member</h2>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '16px 24px',
+            borderBottom: '1px solid #2A2A2A',
+          }}
+        >
+          <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#F0F0F0', margin: 0 }}>
+            Invite Staff Member
+          </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            onMouseEnter={() => setCloseHover(true)}
+            onMouseLeave={() => setCloseHover(false)}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '20px',
+              lineHeight: 1,
+              cursor: 'pointer',
+              color: closeHover ? '#F0F0F0' : '#A0A0A0',
+              padding: '0 4px',
+            }}
           >
             &times;
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
+        >
           <div>
-            <label className={labelCls}>Full Name *</label>
+            <label style={labelStyle}>Full Name *</label>
             <input
               type="text"
               required
               value={form.full_name}
               onChange={(e) => setField('full_name', e.target.value)}
               placeholder="Ahmad bin Ali"
-              className={inputCls}
+              style={inputStyle}
             />
           </div>
 
           <div>
-            <label className={labelCls}>Email Address *</label>
+            <label style={labelStyle}>Email Address *</label>
             <input
               type="email"
               required
               value={form.email}
               onChange={(e) => setField('email', e.target.value)}
               placeholder="staff@motoverse.my"
-              className={inputCls}
+              style={inputStyle}
             />
           </div>
 
           <div>
-            <label className={labelCls}>Role *</label>
+            <label style={labelStyle}>Role *</label>
             <select
               required
               value={form.role}
               onChange={(e) => setField('role', e.target.value as StaffRole)}
-              className={inputCls}
+              style={inputStyle}
             >
               {ROLE_OPTIONS.map((r) => (
                 <option key={r.value} value={r.value}>{r.label}</option>
@@ -128,13 +199,13 @@ export function InviteStaffModal({ onClose, onSuccess }: Props) {
           </div>
 
           <div>
-            <label className={labelCls}>Branch *</label>
+            <label style={labelStyle}>Branch *</label>
             {isCeo ? (
               <select
                 required
                 value={form.branch_id}
                 onChange={(e) => setField('branch_id', e.target.value)}
-                className={inputCls}
+                style={inputStyle}
               >
                 <option value="">Select branch…</option>
                 {branches.map((b) => (
@@ -146,28 +217,58 @@ export function InviteStaffModal({ onClose, onSuccess }: Props) {
                 type="text"
                 disabled
                 value={user?.branch_id ?? ''}
-                className={`${inputCls} bg-gray-50 text-gray-400 cursor-not-allowed`}
+                style={disabledInputStyle}
               />
             )}
           </div>
 
           {error && (
-            <p className="text-red-500 text-xs">{error}</p>
+            <p style={{ color: '#ef4444', fontSize: '12px', margin: 0 }}>{error}</p>
           )}
         </form>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '12px',
+            padding: '16px 24px',
+            borderTop: '1px solid #2A2A2A',
+          }}
+        >
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+            onMouseEnter={() => setCancelHover(true)}
+            onMouseLeave={() => setCancelHover(false)}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: cancelHover ? '#F0F0F0' : '#A0A0A0',
+            }}
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit as unknown as React.MouseEventHandler}
             disabled={saving}
-            className="px-5 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors"
+            onMouseEnter={() => setSubmitHover(true)}
+            onMouseLeave={() => setSubmitHover(false)}
+            style={{
+              padding: '8px 20px',
+              backgroundColor: saving ? '#F15A22' : submitHover ? '#d94e1a' : '#F15A22',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: 500,
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.5 : 1,
+              transition: 'background-color 0.15s',
+            }}
           >
             {saving ? 'Sending Invite…' : 'Send Invite'}
           </button>

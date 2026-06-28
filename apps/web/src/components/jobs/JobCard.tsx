@@ -2,23 +2,35 @@ import type { JobStatus } from '@/types/job'
 
 interface StatusBadgeProps {
   status: JobStatus
-  className?: string
+  style?: React.CSSProperties
 }
 
-const STATUS_CONFIG: Record<JobStatus, { label: string; classes: string }> = {
-  received: { label: 'Received', classes: 'bg-gray-100 text-gray-700' },
-  inspecting: { label: 'Inspecting', classes: 'bg-blue-100 text-blue-700' },
-  waiting_approval: { label: 'Waiting Approval', classes: 'bg-yellow-100 text-yellow-700' },
-  in_progress: { label: 'In Progress', classes: 'bg-orange-100 text-orange-700' },
-  waiting_for_parts: { label: 'Waiting for Parts', classes: 'bg-red-100 text-red-700' },
-  done: { label: 'Done', classes: 'bg-green-100 text-green-700' },
-  collected: { label: 'Collected', classes: 'bg-slate-100 text-slate-700' },
+const STATUS_CONFIG: Record<JobStatus, { label: string; bg: string; color: string }> = {
+  received:         { label: 'Received',         bg: '#2A2A2A',   color: '#A0A0A0' },
+  inspecting:       { label: 'Inspecting',        bg: '#1a2a3a',   color: '#60a5fa' },
+  waiting_approval: { label: 'Waiting Approval',  bg: '#2a2200',   color: '#fbbf24' },
+  in_progress:      { label: 'In Progress',       bg: '#2a1500',   color: '#F15A22' },
+  waiting_for_parts:{ label: 'Waiting for Parts', bg: '#2a0f0f',   color: '#f87171' },
+  done:             { label: 'Done',              bg: '#0f2a1a',   color: '#34d399' },
+  collected:        { label: 'Collected',         bg: '#1a1a2a',   color: '#94a3b8' },
 }
 
-export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
-  const config = STATUS_CONFIG[status] ?? { label: status, classes: 'bg-gray-100 text-gray-600' }
+export function StatusBadge({ status, style }: StatusBadgeProps) {
+  const config = STATUS_CONFIG[status] ?? { label: status, bg: '#2A2A2A', color: '#A0A0A0' }
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.classes} ${className}`}>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '2px 10px',
+        borderRadius: '9999px',
+        fontSize: '0.75rem',
+        fontWeight: 500,
+        backgroundColor: config.bg,
+        color: config.color,
+        ...style,
+      }}
+    >
       {config.label}
     </span>
   )

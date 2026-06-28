@@ -21,13 +21,14 @@ const CATEGORY_LABELS: Record<ItemCategory, string> = {
   other: 'Other',
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-700',
-  approved_sender: 'bg-blue-100 text-blue-700',
-  approved_both: 'bg-indigo-100 text-indigo-700',
-  in_transit: 'bg-purple-100 text-purple-700',
-  received: 'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-700',
+// Status badge styles: [background, color]
+const STATUS_BADGE: Record<string, [string, string]> = {
+  pending:         ['rgba(234,179,8,0.15)',  '#FACC15'],
+  approved_sender: ['rgba(59,130,246,0.15)', '#60A5FA'],
+  approved_both:   ['rgba(99,102,241,0.15)', '#818CF8'],
+  in_transit:      ['rgba(168,85,247,0.15)', '#C084FC'],
+  received:        ['rgba(34,197,94,0.15)',  '#4ADE80'],
+  cancelled:       ['rgba(239,68,68,0.15)',  '#F87171'],
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -37,6 +38,21 @@ const STATUS_LABELS: Record<string, string> = {
   in_transit: 'In Transit',
   received: 'Received',
   cancelled: 'Cancelled',
+}
+
+// ─── Design tokens ───────────────────────────────────────────────────────────
+const C = {
+  bg:      '#0E0E0E',
+  surface: '#161616',
+  border:  '#2A2A2A',
+  text:    '#F0F0F0',
+  muted:   '#A0A0A0',
+  orange:  '#F15A22',
+  orangeHover: '#D94E1A',
+  green:   '#22C55E',
+  greenHover: '#16A34A',
+  red:     '#EF4444',
+  redHover: '#DC2626',
 }
 
 export function InventoryPage() {
@@ -59,8 +75,22 @@ export function InventoryPage() {
   const [showTransfer, setShowTransfer] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
+  // Hover states
+  const [hoveredTab, setHoveredTab] = useState<string | null>(null)
+  const [hoveredCat, setHoveredCat] = useState<string | null>(null)
+  const [hoveredTransferBtn, setHoveredTransferBtn] = useState(false)
+  const [hoveredAddBtn, setHoveredAddBtn] = useState(false)
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null)
+  const [hoveredApprove, setHoveredApprove] = useState<string | null>(null)
+  const [hoveredCancel, setHoveredCancel] = useState<string | null>(null)
+
   const branchId = user?.branch_id ?? ''
-  const isManager = user?.role === 'branch_manager' || user?.role === 'ceo' || user?.role === 'operation_manager'
+  const isManager =
+    (user?.role as string) === 'branch_manager' ||
+    (user?.role as string) === 'ceo' ||
+    (user?.role as string) === 'operation_manager' ||
+    user?.role === 'ops_manager' ||
+    user?.role === 'super_admin'
 
   useEffect(() => {
     if (!branchId) return
@@ -108,18 +138,51 @@ export function InventoryPage() {
     return null
   }
 
+  // ─── Shared style objects ───────────────────────────────────────────────────
+  const thStyles = {
+    textAlign: 'left' as const,
+    padding: '12px 16px',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: C.muted,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em',
+    borderBottom: `1px solid ${C.border}`,
+    background: C.surface,
+  }
+
+  const thRightStyles = { ...thStyles, textAlign: 'right' as const }
+
+  const tdStyles = {
+    padding: '12px 16px',
+    borderBottom: `1px solid ${C.border}`,
+    color: C.text,
+    fontSize: '14px',
+  }
+
+  const tdRightStyles = { ...tdStyles, textAlign: 'right' as const }
+
   return (
     <>
       <Header title="Inventory" />
-      <div className="p-6 space-y-4">
+
+      <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', background: C.bg, minHeight: '100%' }}>
 
         {/* Low stock alert */}
         {lowStockItems.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
-            <span className="text-red-500 text-lg leading-none mt-0.5">⚠</span>
+          <div style={{
+            background: 'rgba(239,68,68,0.08)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            borderRadius: '12px',
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '12px',
+          }}>
+            <span style={{ color: '#F87171', fontSize: '18px', lineHeight: 1, marginTop: '2px' }}>⚠</span>
             <div>
-              <p className="text-sm font-semibold text-red-700">Low Stock Alert</p>
-              <p className="text-xs text-red-600 mt-0.5">
+              <p style={{ fontSize: '13px', fontWeight: 600, color: '#F87171', margin: 0 }}>Low Stock Alert</p>
+              <p style={{ fontSize: '12px', color: '#FCA5A5', marginTop: '2px', marginBottom: 0 }}>
                 {lowStockItems.length} item{lowStockItems.length > 1 ? 's' : ''} below threshold:{' '}
                 {lowStockItems.map((i) => i.name).join(', ')}
               </p>
@@ -127,32 +190,78 @@ export function InventoryPage() {
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex items-center justify-between">
-          <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-            {(['stock', 'transfers'] as Tab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  tab === t ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {t === 'stock' ? 'Stock' : 'Transfers'}
-                {t === 'transfers' && transferRequests.filter((r) => r.status === 'pending').length > 0 && (
-                  <span className="ml-1.5 bg-orange-500 text-white text-xs rounded-full px-1.5 py-0.5">
-                    {transferRequests.filter((r) => r.status === 'pending').length}
-                  </span>
-                )}
-              </button>
-            ))}
+        {/* Tabs + action buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Tab switcher */}
+          <div style={{
+            display: 'flex',
+            gap: '4px',
+            background: C.surface,
+            borderRadius: '12px',
+            padding: '4px',
+            border: `1px solid ${C.border}`,
+          }}>
+            {(['stock', 'transfers'] as Tab[]).map((t) => {
+              const isActive = tab === t
+              const isHovered = hoveredTab === t
+              const pendingCount = transferRequests.filter((r) => r.status === 'pending').length
+              return (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  onMouseEnter={() => setHoveredTab(t)}
+                  onMouseLeave={() => setHoveredTab(null)}
+                  style={{
+                    padding: '6px 16px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'background 0.15s, color 0.15s',
+                    background: isActive ? '#232323' : isHovered ? '#1C1C1C' : 'transparent',
+                    color: isActive ? C.text : isHovered ? '#C0C0C0' : C.muted,
+                    boxShadow: isActive ? `0 1px 3px rgba(0,0,0,0.4)` : 'none',
+                  }}
+                >
+                  {t === 'stock' ? 'Stock' : 'Transfers'}
+                  {t === 'transfers' && pendingCount > 0 && (
+                    <span style={{
+                      background: C.orange,
+                      color: '#fff',
+                      fontSize: '11px',
+                      borderRadius: '9999px',
+                      padding: '1px 6px',
+                      fontWeight: 600,
+                    }}>
+                      {pendingCount}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </div>
 
-          <div className="flex gap-2">
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: '8px' }}>
             {tab === 'stock' && (
               <button
                 onClick={() => setShowTransfer(true)}
-                className="px-4 py-2 text-sm border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50"
+                onMouseEnter={() => setHoveredTransferBtn(true)}
+                onMouseLeave={() => setHoveredTransferBtn(false)}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  border: `1px solid ${C.border}`,
+                  color: hoveredTransferBtn ? C.text : C.muted,
+                  background: hoveredTransferBtn ? '#1C1C1C' : 'transparent',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
               >
                 Transfer Stock
               </button>
@@ -160,7 +269,19 @@ export function InventoryPage() {
             {tab === 'stock' && (
               <button
                 onClick={() => setShowAddItem(true)}
-                className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-medium"
+                onMouseEnter={() => setHoveredAddBtn(true)}
+                onMouseLeave={() => setHoveredAddBtn(false)}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  background: hoveredAddBtn ? C.orangeHover : C.orange,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'background 0.15s',
+                }}
               >
                 + Add Item
               </button>
@@ -168,85 +289,122 @@ export function InventoryPage() {
           </div>
         </div>
 
-        {/* Stock Tab */}
+        {/* ── Stock Tab ───────────────────────────────────────────────────────── */}
         {tab === 'stock' && (
           <>
-            {/* Category filter */}
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => setCategoryFilter('')}
-                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  categoryFilter === '' ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                All
-              </button>
-              {(Object.keys(CATEGORY_LABELS) as ItemCategory[]).map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setCategoryFilter(cat === categoryFilter ? '' : cat)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    categoryFilter === cat ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  {CATEGORY_LABELS[cat]}
-                </button>
-              ))}
+            {/* Category filter pills */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {(['', ...Object.keys(CATEGORY_LABELS)] as (ItemCategory | '')[]).map((cat) => {
+                const isActive = categoryFilter === cat
+                const isHov = hoveredCat === (cat === '' ? '__all__' : cat)
+                const label = cat === '' ? 'All' : CATEGORY_LABELS[cat as ItemCategory]
+                const key = cat === '' ? '__all__' : cat
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setCategoryFilter(cat === categoryFilter ? '' : cat)}
+                    onMouseEnter={() => setHoveredCat(key)}
+                    onMouseLeave={() => setHoveredCat(null)}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: '9999px',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      border: `1px solid ${isActive ? C.orange : C.border}`,
+                      background: isActive ? C.orange : isHov ? '#1C1C1C' : 'transparent',
+                      color: isActive ? '#fff' : isHov ? C.text : C.muted,
+                      cursor: 'pointer',
+                      transition: 'background 0.15s, color 0.15s, border-color 0.15s',
+                    }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
             </div>
 
             {/* Stock table */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+            <div style={{
+              background: C.surface,
+              border: `1px solid ${C.border}`,
+              borderRadius: '12px',
+              overflow: 'hidden',
+            }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                   <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50">
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">SKU</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Qty</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Threshold</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Cost (RM)</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Price (RM)</th>
+                    <tr>
+                      <th style={thStyles}>Item</th>
+                      <th style={thStyles}>SKU</th>
+                      <th style={thStyles}>Category</th>
+                      <th style={thRightStyles}>Qty</th>
+                      <th style={thRightStyles}>Threshold</th>
+                      <th style={thRightStyles}>Cost (RM)</th>
+                      <th style={thRightStyles}>Price (RM)</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading && (
                       <tr>
-                        <td colSpan={7} className="text-center py-8 text-gray-400 text-sm">Loading...</td>
+                        <td colSpan={7} style={{ ...tdStyles, textAlign: 'center', padding: '32px 16px', color: C.muted }}>
+                          Loading...
+                        </td>
                       </tr>
                     )}
                     {!loading && filteredItems.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="text-center py-8 text-gray-400 text-sm">No items found.</td>
+                        <td colSpan={7} style={{ ...tdStyles, textAlign: 'center', padding: '32px 16px', color: C.muted }}>
+                          No items found.
+                        </td>
                       </tr>
                     )}
                     {filteredItems.map((item) => {
                       const isLow = item.quantity < item.low_stock_threshold
+                      const isHov = hoveredRow === item.id
                       return (
                         <tr
                           key={item.id}
-                          className={`border-b border-gray-50 last:border-0 ${isLow ? 'bg-red-50' : 'hover:bg-gray-50'}`}
+                          onMouseEnter={() => !isLow && setHoveredRow(item.id)}
+                          onMouseLeave={() => setHoveredRow(null)}
+                          style={{
+                            background: isLow
+                              ? 'rgba(239,68,68,0.06)'
+                              : isHov
+                              ? '#1A1A1A'
+                              : 'transparent',
+                            transition: 'background 0.12s',
+                          }}
                         >
-                          <td className="px-4 py-3">
-                            <p className="font-medium text-gray-800">{item.name}</p>
+                          <td style={{ ...tdStyles, borderBottom: `1px solid ${C.border}` }}>
+                            <p style={{ fontWeight: 500, color: C.text, margin: 0 }}>{item.name}</p>
                             {item.supplier && (
-                              <p className="text-xs text-gray-400">{item.supplier.name}</p>
+                              <p style={{ fontSize: '12px', color: C.muted, margin: '2px 0 0' }}>{item.supplier.name}</p>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-gray-500 font-mono text-xs">{item.sku}</td>
-                          <td className="px-4 py-3">
-                            <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs">
+                          <td style={{ ...tdStyles, color: C.muted, fontFamily: 'monospace', fontSize: '12px' }}>
+                            {item.sku}
+                          </td>
+                          <td style={tdStyles}>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '9999px',
+                              background: '#232323',
+                              color: C.muted,
+                              fontSize: '12px',
+                            }}>
                               {CATEGORY_LABELS[item.category] ?? item.category}
                             </span>
                           </td>
-                          <td className={`px-4 py-3 text-right font-semibold ${isLow ? 'text-red-600' : 'text-gray-800'}`}>
+                          <td style={{ ...tdRightStyles, fontWeight: 600, color: isLow ? '#F87171' : C.text }}>
                             {item.quantity}
-                            <span className="text-xs font-normal text-gray-400 ml-1">{item.unit}</span>
-                            {isLow && <span className="ml-1 text-xs text-red-500">⚠</span>}
+                            <span style={{ fontSize: '11px', fontWeight: 400, color: C.muted, marginLeft: '4px' }}>
+                              {item.unit}
+                            </span>
+                            {isLow && <span style={{ marginLeft: '4px', fontSize: '12px', color: '#F87171' }}>⚠</span>}
                           </td>
-                          <td className="px-4 py-3 text-right text-gray-500">{item.low_stock_threshold}</td>
-                          <td className="px-4 py-3 text-right text-gray-700">{item.unit_cost.toFixed(2)}</td>
-                          <td className="px-4 py-3 text-right text-gray-700">{item.selling_price.toFixed(2)}</td>
+                          <td style={{ ...tdRightStyles, color: C.muted }}>{item.low_stock_threshold}</td>
+                          <td style={{ ...tdRightStyles, color: '#C0C0C0' }}>{item.unit_cost.toFixed(2)}</td>
+                          <td style={{ ...tdRightStyles, color: '#C0C0C0' }}>{item.selling_price.toFixed(2)}</td>
                         </tr>
                       )
                     })}
@@ -257,63 +415,100 @@ export function InventoryPage() {
           </>
         )}
 
-        {/* Transfers Tab */}
+        {/* ── Transfers Tab ───────────────────────────────────────────────────── */}
         {tab === 'transfers' && (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+          <div style={{
+            background: C.surface,
+            border: `1px solid ${C.border}`,
+            borderRadius: '12px',
+            overflow: 'hidden',
+          }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                 <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">From</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">To</th>
-                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Qty</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</th>
-                    {isManager && (
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
-                    )}
+                  <tr>
+                    <th style={thStyles}>Item</th>
+                    <th style={thStyles}>From</th>
+                    <th style={thStyles}>To</th>
+                    <th style={thRightStyles}>Qty</th>
+                    <th style={thStyles}>Status</th>
+                    <th style={thStyles}>Notes</th>
+                    {isManager && <th style={thRightStyles}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {loading && (
                     <tr>
-                      <td colSpan={7} className="text-center py-8 text-gray-400 text-sm">Loading...</td>
+                      <td colSpan={7} style={{ ...tdStyles, textAlign: 'center', padding: '32px 16px', color: C.muted }}>
+                        Loading...
+                      </td>
                     </tr>
                   )}
                   {!loading && transferRequests.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="text-center py-8 text-gray-400 text-sm">No transfer requests.</td>
+                      <td colSpan={7} style={{ ...tdStyles, textAlign: 'center', padding: '32px 16px', color: C.muted }}>
+                        No transfer requests.
+                      </td>
                     </tr>
                   )}
                   {transferRequests.map((t) => {
                     const approveLabel = getApproveLabel(t)
                     const canAct = isManager && approveLabel !== null && t.status !== 'received' && t.status !== 'cancelled'
                     const canCancel = isManager && t.status !== 'received' && t.status !== 'cancelled'
+                    const isHov = hoveredRow === t.id
+                    const [badgeBg, badgeColor] = STATUS_BADGE[t.status] ?? ['#232323', C.muted]
 
                     return (
-                      <tr key={t.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-gray-800">{t.item?.name ?? '—'}</p>
-                          <p className="text-xs text-gray-400 font-mono">{t.item?.sku}</p>
+                      <tr
+                        key={t.id}
+                        onMouseEnter={() => setHoveredRow(t.id)}
+                        onMouseLeave={() => setHoveredRow(null)}
+                        style={{
+                          background: isHov ? '#1A1A1A' : 'transparent',
+                          transition: 'background 0.12s',
+                        }}
+                      >
+                        <td style={tdStyles}>
+                          <p style={{ fontWeight: 500, color: C.text, margin: 0 }}>{t.item?.name ?? '—'}</p>
+                          <p style={{ fontSize: '12px', color: C.muted, fontFamily: 'monospace', margin: '2px 0 0' }}>{t.item?.sku}</p>
                         </td>
-                        <td className="px-4 py-3 text-gray-600">{t.from_branch?.name ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-600">{t.to_branch?.name ?? '—'}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-gray-800">{t.quantity}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[t.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                        <td style={{ ...tdStyles, color: C.muted }}>{t.from_branch?.name ?? '—'}</td>
+                        <td style={{ ...tdStyles, color: C.muted }}>{t.to_branch?.name ?? '—'}</td>
+                        <td style={{ ...tdRightStyles, fontWeight: 600 }}>{t.quantity}</td>
+                        <td style={tdStyles}>
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '9999px',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            background: badgeBg,
+                            color: badgeColor,
+                          }}>
                             {STATUS_LABELS[t.status] ?? t.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{t.notes ?? '—'}</td>
+                        <td style={{ ...tdStyles, color: C.muted, fontSize: '12px' }}>{t.notes ?? '—'}</td>
                         {isManager && (
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2 justify-end">
+                          <td style={tdStyles}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                               {canAct && (
                                 <button
                                   disabled={actionLoading === t.id}
                                   onClick={() => handleApprove(t)}
-                                  className="px-3 py-1 text-xs bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50"
+                                  onMouseEnter={() => setHoveredApprove(t.id)}
+                                  onMouseLeave={() => setHoveredApprove(null)}
+                                  style={{
+                                    padding: '4px 12px',
+                                    fontSize: '12px',
+                                    fontWeight: 500,
+                                    background: hoveredApprove === t.id ? C.greenHover : C.green,
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: actionLoading === t.id ? 'not-allowed' : 'pointer',
+                                    opacity: actionLoading === t.id ? 0.5 : 1,
+                                    transition: 'background 0.15s, opacity 0.15s',
+                                  }}
                                 >
                                   {actionLoading === t.id ? '...' : approveLabel}
                                 </button>
@@ -322,7 +517,20 @@ export function InventoryPage() {
                                 <button
                                   disabled={actionLoading === t.id}
                                   onClick={() => handleReject(t.id)}
-                                  className="px-3 py-1 text-xs border border-red-200 text-red-500 rounded-lg hover:bg-red-50 disabled:opacity-50"
+                                  onMouseEnter={() => setHoveredCancel(t.id)}
+                                  onMouseLeave={() => setHoveredCancel(null)}
+                                  style={{
+                                    padding: '4px 12px',
+                                    fontSize: '12px',
+                                    fontWeight: 500,
+                                    background: hoveredCancel === t.id ? 'rgba(239,68,68,0.12)' : 'transparent',
+                                    color: '#F87171',
+                                    border: '1px solid rgba(239,68,68,0.35)',
+                                    borderRadius: '8px',
+                                    cursor: actionLoading === t.id ? 'not-allowed' : 'pointer',
+                                    opacity: actionLoading === t.id ? 0.5 : 1,
+                                    transition: 'background 0.15s, opacity 0.15s',
+                                  }}
                                 >
                                   Cancel
                                 </button>

@@ -108,7 +108,7 @@ export const useInvoicesStore = create<InvoicesState>((set, get) => ({
     // Build line items from job_parts
     const partItems = (partsRes.data ?? []).map((p: { item?: { name?: string; sku?: string }; quantity: number; selling_price: number }) => ({
       description: p.item?.name ?? 'Part',
-      type: 'part' as const,
+      item_type: 'part' as const,
       quantity: p.quantity,
       unit_price: p.selling_price,
       total: p.quantity * p.selling_price,
@@ -129,7 +129,7 @@ export const useInvoicesStore = create<InvoicesState>((set, get) => ({
         subtotal,
         discount: 0,
         tax: 0,
-        total_amount: subtotal,
+        total: subtotal,
         notes: null,
         created_by: authData.user.id,
       }])
@@ -141,7 +141,7 @@ export const useInvoicesStore = create<InvoicesState>((set, get) => ({
     // Insert line items
     if (partItems.length > 0) {
       await supabase.from('invoice_items').insert(
-        partItems.map((item: { description: string; type: 'part' | 'service'; quantity: number; unit_price: number; total: number }) => ({
+        partItems.map((item: { description: string; item_type: 'part' | 'service'; quantity: number; unit_price: number; total: number }) => ({
           invoice_id: invData.id,
           ...item,
         }))
@@ -210,21 +210,21 @@ export const useInvoicesStore = create<InvoicesState>((set, get) => ({
 
     await supabase
       .from('invoices')
-      .update({ subtotal, total_amount: totalAmount, updated_at: new Date().toISOString() })
+      .update({ subtotal, total: totalAmount, updated_at: new Date().toISOString() })
       .eq('id', invoiceId)
 
     const newItem = data as InvoiceItem
     set((state) => ({
       invoices: state.invoices.map((inv) =>
         inv.id === invoiceId
-          ? { ...inv, subtotal, total_amount: totalAmount, items: [...(inv.items ?? []), newItem] }
+          ? { ...inv, subtotal, total: totalAmount, items: [...(inv.items ?? []), newItem] }
           : inv
       ),
       selectedInvoice: state.selectedInvoice?.id === invoiceId
         ? {
             ...state.selectedInvoice,
             subtotal,
-            total_amount: totalAmount,
+            total: totalAmount,
             items: [...(state.selectedInvoice.items ?? []), newItem],
           }
         : state.selectedInvoice,
@@ -252,17 +252,17 @@ export const useInvoicesStore = create<InvoicesState>((set, get) => ({
 
     await supabase
       .from('invoices')
-      .update({ subtotal, total_amount: totalAmount, updated_at: new Date().toISOString() })
+      .update({ subtotal, total: totalAmount, updated_at: new Date().toISOString() })
       .eq('id', invoiceId)
 
     set((state) => ({
       invoices: state.invoices.map((inv) =>
         inv.id === invoiceId
-          ? { ...inv, subtotal, total_amount: totalAmount, items: items }
+          ? { ...inv, subtotal, total: totalAmount, items: items }
           : inv
       ),
       selectedInvoice: state.selectedInvoice?.id === invoiceId
-        ? { ...state.selectedInvoice, subtotal, total_amount: totalAmount, items }
+        ? { ...state.selectedInvoice, subtotal, total: totalAmount, items }
         : state.selectedInvoice,
     }))
 

@@ -14,6 +14,36 @@ interface TransferRequestModalProps {
   onSuccess: () => void
 }
 
+const theme = {
+  bg: '#0E0E0E',
+  surface: '#161616',
+  border: '#2A2A2A',
+  text: '#F0F0F0',
+  muted: '#A0A0A0',
+  orange: '#F15A22',
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  border: `1px solid ${theme.border}`,
+  borderRadius: '8px',
+  padding: '8px 12px',
+  fontSize: '14px',
+  backgroundColor: theme.bg,
+  color: theme.text,
+  outline: 'none',
+  boxSizing: 'border-box',
+  resize: 'none',
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: '12px',
+  fontWeight: 500,
+  color: theme.muted,
+  marginBottom: '4px',
+}
+
 export function TransferRequestModal({ onClose, onSuccess }: TransferRequestModalProps) {
   const user = useAuthStore((s) => s.user)
   const { items, createTransferRequest } = useInventoryStore()
@@ -27,6 +57,9 @@ export function TransferRequestModal({ onClose, onSuccess }: TransferRequestModa
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [cancelHover, setCancelHover] = useState(false)
+  const [submitHover, setSubmitHover] = useState(false)
+  const [closeHover, setCloseHover] = useState(false)
 
   useEffect(() => {
     supabase
@@ -70,25 +103,79 @@ export function TransferRequestModal({ onClose, onSuccess }: TransferRequestModa
     onClose()
   }
 
-  const inputClass =
-    'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400'
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-800">Request Stock Transfer</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: theme.surface,
+          borderRadius: '16px',
+          width: '100%',
+          maxWidth: '448px',
+          margin: '0 16px',
+          overflow: 'hidden',
+          border: `1px solid ${theme.border}`,
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '16px 24px',
+            borderBottom: `1px solid ${theme.border}`,
+          }}
+        >
+          <h2 style={{ fontSize: '15px', fontWeight: 600, color: theme.text, margin: 0 }}>
+            Request Stock Transfer
+          </h2>
+          <button
+            onClick={onClose}
+            onMouseEnter={() => setCloseHover(true)}
+            onMouseLeave={() => setCloseHover(false)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '18px',
+              lineHeight: 1,
+              color: closeHover ? theme.text : theme.muted,
+              padding: '2px 4px',
+              transition: 'color 0.15s',
+            }}
+          >
+            ✕
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        {/* Form */}
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+          }}
+        >
+          {/* Item */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Item *</label>
+            <label style={labelStyle}>Item *</label>
             <select
               required
               value={form.inventory_item_id}
               onChange={(e) => setField('inventory_item_id', e.target.value)}
-              className={inputClass}
+              style={inputStyle}
             >
               <option value="">Select item</option>
               {items.map((item) => (
@@ -99,19 +186,33 @@ export function TransferRequestModal({ onClose, onSuccess }: TransferRequestModa
             </select>
           </div>
 
+          {/* Stock info banner */}
           {selectedItem && (
-            <div className="bg-gray-50 rounded-lg px-4 py-2 text-xs text-gray-600">
-              Current stock: <span className="font-semibold text-gray-800">{selectedItem.quantity} {selectedItem.unit}</span>
+            <div
+              style={{
+                backgroundColor: '#1A1A1A',
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                padding: '8px 16px',
+                fontSize: '12px',
+                color: theme.muted,
+              }}
+            >
+              Current stock:{' '}
+              <span style={{ fontWeight: 600, color: theme.text }}>
+                {selectedItem.quantity} {selectedItem.unit}
+              </span>
             </div>
           )}
 
+          {/* Destination Branch */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Destination Branch *</label>
+            <label style={labelStyle}>Destination Branch *</label>
             <select
               required
               value={form.to_branch_id}
               onChange={(e) => setField('to_branch_id', e.target.value)}
-              className={inputClass}
+              style={inputStyle}
             >
               <option value="">Select branch</option>
               {branches.map((b) => (
@@ -120,8 +221,9 @@ export function TransferRequestModal({ onClose, onSuccess }: TransferRequestModa
             </select>
           </div>
 
+          {/* Quantity */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Quantity *</label>
+            <label style={labelStyle}>Quantity *</label>
             <input
               required
               type="number"
@@ -130,35 +232,66 @@ export function TransferRequestModal({ onClose, onSuccess }: TransferRequestModa
               placeholder="0"
               value={form.quantity}
               onChange={(e) => setField('quantity', e.target.value)}
-              className={inputClass}
+              style={inputStyle}
             />
           </div>
 
+          {/* Notes */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+            <label style={labelStyle}>Notes (optional)</label>
             <textarea
               rows={2}
               placeholder="Reason for transfer..."
               value={form.notes}
               onChange={(e) => setField('notes', e.target.value)}
-              className={`${inputClass} resize-none`}
+              style={inputStyle}
             />
           </div>
 
-          {error && <p className="text-xs text-red-500">{error}</p>}
+          {/* Error */}
+          {error && (
+            <p style={{ fontSize: '12px', color: '#F87171', margin: 0 }}>{error}</p>
+          )}
 
-          <div className="flex gap-3 pt-2">
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: '12px', paddingTop: '8px' }}>
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50"
+              onMouseEnter={() => setCancelHover(true)}
+              onMouseLeave={() => setCancelHover(false)}
+              style={{
+                flex: 1,
+                border: `1px solid ${theme.border}`,
+                backgroundColor: cancelHover ? '#1F1F1F' : 'transparent',
+                color: theme.muted,
+                borderRadius: '8px',
+                padding: '9px 0',
+                fontSize: '14px',
+                cursor: 'pointer',
+                transition: 'background-color 0.15s',
+              }}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="flex-1 bg-orange-500 text-white rounded-lg py-2 text-sm font-medium hover:bg-orange-600 disabled:opacity-50"
+              onMouseEnter={() => setSubmitHover(true)}
+              onMouseLeave={() => setSubmitHover(false)}
+              style={{
+                flex: 1,
+                backgroundColor: submitting ? '#A0400F' : submitHover ? '#D94E1A' : theme.orange,
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '9px 0',
+                fontSize: '14px',
+                fontWeight: 500,
+                cursor: submitting ? 'not-allowed' : 'pointer',
+                opacity: submitting ? 0.6 : 1,
+                transition: 'background-color 0.15s',
+              }}
             >
               {submitting ? 'Submitting...' : 'Submit Request'}
             </button>

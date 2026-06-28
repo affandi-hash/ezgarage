@@ -1,25 +1,32 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Header } from '@/components/layout/Header'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  BarChart2,
+  Wrench,
+  DollarSign,
+  Users,
+  Truck,
+  Download,
+  RefreshCw,
+  TrendingUp,
+  Clock,
+  Star,
+  AlertCircle,
+  CheckCircle2,
+  X,
+  ShoppingCart,
+  Percent,
+  UserCheck,
+  Receipt,
+} from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
-import type { JobStatus } from '@/types/job'
 
-interface MonthlyRevRow {
-  month: string  // 'YYYY-MM'
-  branch_id: string
-  branch_name: string
-  revenue: number
-}
-
-interface StatusCount {
-  status: JobStatus
-  count: number
-}
-
-interface TopService {
-  service_type: string
-  count: number
-}
+const BG = '#0E0E0E'
+const SURFACE = '#161616'
+const BORDER = '#2A2A2A'
+const ORANGE = '#F15A22'
+const TEXT_PRIMARY = '#F0F0F0'
+const TEXT_SECONDARY = '#A0A0A0'
 
 const STATUS_LABELS: Record<string, string> = {
   received: 'Received',
@@ -29,6 +36,7 @@ const STATUS_LABELS: Record<string, string> = {
   waiting_for_parts: 'Waiting Parts',
   done: 'Done',
   collected: 'Collected',
+  cancelled: 'Cancelled',
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -39,13 +47,44 @@ const STATUS_COLORS: Record<string, string> = {
   waiting_for_parts: '#a78bfa',
   done: '#4ade80',
   collected: '#34d399',
+  cancelled: '#f87171',
+}
+
+type DateRange = 'this_month' | 'last_month' | 'last_3_months' | 'custom'
+
+function getDateBounds(range: DateRange, customStart?: string, customEnd?: string): { start: string; end: string } {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+  if (range === 'this_month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1)
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    return { start: fmt(start), end: fmt(end) }
+  }
+  if (range === 'last_month') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const end = new Date(now.getFullYear(), now.getMonth(), 0)
+    return { start: fmt(start), end: fmt(end) }
+  }
+  if (range === 'last_3_months') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    return { start: fmt(start), end: fmt(end) }
+  }
+  return { start: customStart ?? fmt(new Date(now.getFullYear(), now.getMonth(), 1)), end: customEnd ?? fmt(now) }
 }
 
 function formatRM(amount: number) {
   return `RM ${amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function last6Months(): string[] {
+function monthLabel(ym: string) {
+  const [y, m] = ym.split('-')
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-MY', { month: 'short', year: '2-digit' })
+}
+
+function last6MonthsKeys(): string[] {
   const months: string[] = []
   const now = new Date()
   for (let i = 5; i >= 0; i--) {
@@ -55,383 +94,771 @@ function last6Months(): string[] {
   return months
 }
 
-function monthLabel(ym: string) {
-  const [y, m] = ym.split('-')
-  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-MY', { month: 'short', year: '2-digit' })
+interface StatCardProps {
+  label: string
+  value: string | number
+  icon: React.ElementType
+  sub?: string
 }
 
-function exportCSV(rows: Record<string, string | number>[], filename: string) {
-  if (rows.length === 0) return
-  const headers = Object.keys(rows[0])
-  const csvContent = [
-    headers.join(','),
-    ...rows.map((r) =>
-      headers.map((h) => {
-        const val = String(r[h] ?? '')
-        return val.includes(',') ? `"${val}"` : val
-      }).join(',')
-    ),
-  ].join('\n')
-  const uri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent)
-  const a = document.createElement('a')
-  a.href = uri
-  a.download = filename
-  a.click()
+function StatCard({ label, value, icon: Icon, sub }: StatCardProps) {
+  return (
+    <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: '20px 20px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>{label}</span>
+        <div style={{ background: `${ORANGE}18`, borderRadius: 8, padding: 7, display: 'flex' }}>
+          <Icon size={16} color={ORANGE} />
+        </div>
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 700, color: TEXT_PRIMARY, lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 6 }}>{sub}</div>}
+    </div>
+  )
 }
+
+interface DivBarProps {
+  label: string
+  value: number
+  max: number
+  color?: string
+  suffix?: string
+}
+
+function DivBar({ label, value, max, color = ORANGE, suffix = '' }: DivBarProps) {
+  const pct = max > 0 ? Math.max((value / max) * 100, value > 0 ? 2 : 0) : 0
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+        <span style={{ fontSize: 13, color: TEXT_PRIMARY }}>{label}</span>
+        <span style={{ fontSize: 13, color: TEXT_SECONDARY, fontWeight: 600 }}>
+          {suffix ? `${value}${suffix}` : value}
+        </span>
+      </div>
+      <div style={{ height: 8, background: BORDER, borderRadius: 4, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 4, transition: 'width 0.4s' }} />
+      </div>
+    </div>
+  )
+}
+
+type TabKey = 'overview' | 'workshop' | 'revenue' | 'staff' | 'fleet'
+
+const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
+  { key: 'overview', label: 'Overview', icon: BarChart2 },
+  { key: 'workshop', label: 'Workshop', icon: Wrench },
+  { key: 'revenue', label: 'Revenue', icon: DollarSign },
+  { key: 'staff', label: 'Staff', icon: Users },
+  { key: 'fleet', label: 'Fleet', icon: Truck },
+]
 
 export function ReportsPage() {
   const user = useAuthStore((s) => s.user)
-  const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevRow[]>([])
-  const [statusCounts, setStatusCounts] = useState<StatusCount[]>([])
-  const [topServices, setTopServices] = useState<TopService[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const isSuperAdmin = user?.role === 'super_admin'
+  const branchFilter = isSuperAdmin ? null : user?.branch_id ?? null
 
-  const months = last6Months()
-  const monthStart = months[0] + '-01'
-  const thisMonthStart = months[5] + '-01'
-  const thisMonthEnd = new Date(
-    new Date(thisMonthStart).getFullYear(),
-    new Date(thisMonthStart).getMonth() + 1,
-    0,
-  ).toISOString().split('T')[0]
+  const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [dateRange, setDateRange] = useState<DateRange>('this_month')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+  const [toast, setToast] = useState(false)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const fetchReports = useCallback(async () => {
+  const bounds = getDateBounds(dateRange, customStart, customEnd)
+
+  const [loading, setLoading] = useState(false)
+  const [overviewData, setOverviewData] = useState<{
+    totalJobs: number
+    revenue: number
+    avgDays: number
+    topMechanic: string
+    topJobType: string
+    statusCounts: { status: string; count: number }[]
+    cogs: number
+    grossProfit: number
+    grossProfitPct: number
+    uniqueCustomers: number
+    avgSpendPerTx: number
+  } | null>(null)
+
+  const [workshopJobs, setWorkshopJobs] = useState<{
+    id: string
+    job_number: string
+    status: string
+    mechanic: string
+    days: number
+    service_type: string
+    created_at: string
+  }[]>([])
+  const [workshopStatusFilter, setWorkshopStatusFilter] = useState('all')
+
+  const [revenueData, setRevenueData] = useState<{
+    monthly: { month: string; total: number }[]
+    partsTotal: number
+    labourTotal: number
+    outstanding: number
+  } | null>(null)
+
+  const [staffData, setStaffData] = useState<{
+    id: string
+    full_name: string
+    role: string
+    jobs_completed: number
+    avg_days: number
+    attendance_rate: number
+  }[]>([])
+
+  const [fleetData, setFleetData] = useState<{
+    vehicleCount: number
+    tripsThisMonth: number
+    kmDriven: number
+    issuesOpen: number
+  } | null>(null)
+
+  const fetchOverview = useCallback(async () => {
     setLoading(true)
-    setError(null)
     try {
-      // Monthly revenue by branch — paid invoices grouped by month+branch
-      const { data: invData, error: invErr } = await supabase
-        .from('invoices')
-        .select('total_amount, created_at, branch_id, branch:branches(name)')
-        .eq('payment_status', 'paid')
-        .gte('created_at', monthStart)
+      let jobQ = supabase
+        .from('jobs')
+        .select('id, status, service_type, created_at, closed_at, assigned_mechanic_id, final_amount, payment_status, customer_id, branch_id')
+        .gte('created_at', bounds.start)
+        .lte('created_at', bounds.end + 'T23:59:59')
+      if (branchFilter) jobQ = jobQ.eq('branch_id', branchFilter)
+      const { data: jobs } = await jobQ
 
-      if (invErr) throw new Error(invErr.message)
-
-      // Build monthly revenue map
-      const revMap: Record<string, Record<string, { revenue: number; branch_name: string }>> = {}
-      months.forEach((m) => { revMap[m] = {} })
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(invData ?? []).forEach((inv: any) => {
-        const month = inv.created_at.substring(0, 7)
-        if (!revMap[month]) return
-        const bid = inv.branch_id
-        if (!revMap[month][bid]) {
-          const branchName = Array.isArray(inv.branch) ? (inv.branch[0]?.name ?? bid) : (inv.branch?.name ?? bid)
-          revMap[month][bid] = { revenue: 0, branch_name: branchName }
-        }
-        revMap[month][bid].revenue += inv.total_amount ?? 0
-      })
-
-      const revRows: MonthlyRevRow[] = []
-      Object.entries(revMap).forEach(([month, branches]) => {
-        Object.entries(branches).forEach(([branch_id, data]) => {
-          revRows.push({ month, branch_id, branch_name: data.branch_name, revenue: data.revenue })
-        })
-      })
-      setMonthlyRevenue(revRows)
-
-      // Job count by status (all time)
-      const { data: jobData, error: jobErr } = await supabase
-        .from('job_orders')
-        .select('status')
-      if (jobErr) throw new Error(jobErr.message)
+      const totalJobs = jobs?.length ?? 0
 
       const statusMap: Record<string, number> = {}
-      ;(jobData ?? []).forEach((j: { status: string }) => {
-        statusMap[j.status] = (statusMap[j.status] ?? 0) + 1
-      })
-      setStatusCounts(
-        Object.entries(statusMap)
-          .map(([status, count]) => ({ status: status as JobStatus, count }))
-          .sort((a, b) => b.count - a.count)
-      )
-
-      // Top 5 services this month
-      const { data: thisMonthJobs, error: svcErr } = await supabase
-        .from('job_orders')
-        .select('service_type')
-        .gte('created_at', thisMonthStart)
-        .lte('created_at', thisMonthEnd + 'T23:59:59')
-      if (svcErr) throw new Error(svcErr.message)
-
       const svcMap: Record<string, number> = {}
-      ;(thisMonthJobs ?? []).forEach((j: { service_type: string }) => {
-        svcMap[j.service_type] = (svcMap[j.service_type] ?? 0) + 1
+      const mechMap: Record<string, number> = {}
+      const customerSet = new Set<string>()
+      let daysSum = 0
+      let daysCount = 0
+      let revenue = 0
+      let paidJobCount = 0
+
+      jobs?.forEach((j: { status: string; service_type: string; assigned_mechanic_id: string; created_at: string; closed_at: string | null; final_amount: number | null; payment_status: string | null; customer_id: string | null }) => {
+        statusMap[j.status] = (statusMap[j.status] ?? 0) + 1
+        if (j.service_type) svcMap[j.service_type] = (svcMap[j.service_type] ?? 0) + 1
+        if (j.assigned_mechanic_id) mechMap[j.assigned_mechanic_id] = (mechMap[j.assigned_mechanic_id] ?? 0) + 1
+        if (j.customer_id) customerSet.add(j.customer_id)
+        if (j.closed_at && j.created_at) {
+          const d = (new Date(j.closed_at).getTime() - new Date(j.created_at).getTime()) / 86400000
+          if (d >= 0) { daysSum += d; daysCount++ }
+        }
+        if (j.payment_status === 'paid' && j.final_amount) {
+          revenue += j.final_amount
+          paidJobCount++
+        }
       })
-      setTopServices(
-        Object.entries(svcMap)
-          .map(([service_type, count]) => ({ service_type, count }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 5)
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+
+      // COGS estimated as 40% of revenue (parts cost); Gross Profit = remaining 60%
+      const cogs = revenue * 0.4
+      const grossProfit = revenue - cogs
+      const grossProfitPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0
+      const avgSpendPerTx = paidJobCount > 0 ? revenue / paidJobCount : 0
+
+      const topJobType = Object.entries(svcMap).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—'
+      const topMechId = Object.entries(mechMap).sort((a, b) => b[1] - a[1])[0]?.[0]
+      let topMechanic = '—'
+      if (topMechId) {
+        const { data: mp } = await supabase.from('users').select('full_name').eq('id', topMechId).single()
+        if (mp) topMechanic = mp.full_name
+      }
+
+      setOverviewData({
+        totalJobs,
+        revenue,
+        avgDays: daysCount > 0 ? Math.round((daysSum / daysCount) * 10) / 10 : 0,
+        topMechanic,
+        topJobType,
+        statusCounts: Object.entries(statusMap).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count),
+        cogs,
+        grossProfit,
+        grossProfitPct,
+        uniqueCustomers: customerSet.size,
+        avgSpendPerTx,
+      })
     } finally {
       setLoading(false)
     }
-  }, [monthStart, thisMonthStart, thisMonthEnd])
+  }, [bounds.start, bounds.end, branchFilter])
 
-  useEffect(() => { fetchReports() }, [fetchReports])
+  const fetchWorkshop = useCallback(async () => {
+    setLoading(true)
+    try {
+      let q = supabase
+        .from('jobs')
+        .select('id, job_number, status, service_type, created_at, closed_at, assigned_mechanic_id, branch_id')
+        .gte('created_at', bounds.start)
+        .lte('created_at', bounds.end + 'T23:59:59')
+        .order('created_at', { ascending: false })
+        .limit(100)
+      if (branchFilter) q = q.eq('branch_id', branchFilter)
+      const { data: jobs } = await q
 
-  if (user?.role !== 'ceo') {
-    return (
-      <>
-        <Header title="Reports" />
-        <div className="p-6">
-          <p className="text-gray-500 text-sm">Access restricted to CEO only.</p>
-        </div>
-      </>
-    )
+      const mechIds = [...new Set((jobs ?? []).map((j: { assigned_mechanic_id: string }) => j.assigned_mechanic_id).filter(Boolean))]
+      const mechNames: Record<string, string> = {}
+      if (mechIds.length > 0) {
+        const { data: mechs } = await supabase.from('users').select('id, full_name').in('id', mechIds)
+        mechs?.forEach((m: { id: string; full_name: string }) => { mechNames[m.id] = m.full_name })
+      }
+
+      setWorkshopJobs(
+        (jobs ?? []).map((j: { id: string; job_number: string; status: string; service_type: string; created_at: string; closed_at: string | null; assigned_mechanic_id: string }) => ({
+          id: j.id,
+          job_number: j.job_number,
+          status: j.status,
+          mechanic: mechNames[j.assigned_mechanic_id] ?? '—',
+          days: j.closed_at
+            ? Math.round((new Date(j.closed_at).getTime() - new Date(j.created_at).getTime()) / 86400000)
+            : Math.round((Date.now() - new Date(j.created_at).getTime()) / 86400000),
+          service_type: j.service_type ?? '—',
+          created_at: j.created_at,
+        }))
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [bounds.start, bounds.end, branchFilter])
+
+  const fetchRevenue = useCallback(async () => {
+    setLoading(true)
+    try {
+      const months = last6MonthsKeys()
+      const sixMonthsAgo = months[0] + '-01'
+
+      let revQ = supabase
+        .from('jobs')
+        .select('final_amount, estimated_cost, payment_status, closed_at, created_at, branch_id')
+        .gte('created_at', sixMonthsAgo)
+      if (branchFilter) revQ = revQ.eq('branch_id', branchFilter)
+      const { data: revJobs } = await revQ
+
+      const monthMap: Record<string, number> = {}
+      months.forEach((m) => { monthMap[m] = 0 })
+      let partsTotal = 0
+      let labourTotal = 0
+      let outstanding = 0
+
+      revJobs?.forEach((j: { final_amount: number | null; estimated_cost: number | null; payment_status: string | null; created_at: string }) => {
+        const m = j.created_at.substring(0, 7)
+        const amt = j.final_amount ?? j.estimated_cost ?? 0
+        if (j.payment_status === 'paid') {
+          if (monthMap[m] !== undefined) monthMap[m] += amt
+          partsTotal += amt * 0.4
+          labourTotal += amt * 0.6
+        }
+        if (!j.payment_status || j.payment_status === 'unpaid' || j.payment_status === 'pending') outstanding++
+      })
+
+      setRevenueData({
+        monthly: months.map((m) => ({ month: m, total: monthMap[m] })),
+        partsTotal,
+        labourTotal,
+        outstanding,
+      })
+    } finally {
+      setLoading(false)
+    }
+  }, [branchFilter])
+
+  const fetchStaff = useCallback(async () => {
+    setLoading(true)
+    try {
+      let staffQ = supabase
+        .from('staff_profiles')
+        .select('id, user_id, position, department')
+      if (branchFilter) staffQ = staffQ.eq('branch_id', branchFilter)
+      const { data: staff } = await staffQ
+
+      const userIds = (staff ?? []).map((s: { user_id: string }) => s.user_id).filter(Boolean)
+      const nameMap: Record<string, string> = {}
+      if (userIds.length > 0) {
+        const { data: staffUsers } = await supabase.from('users').select('id, full_name').in('id', userIds)
+        staffUsers?.forEach((u: { id: string; full_name: string }) => { nameMap[u.id] = u.full_name })
+      }
+
+      const jobsQ = supabase
+        .from('jobs')
+        .select('assigned_mechanic_id, created_at, closed_at')
+        .eq('status', 'closed')
+        .gte('created_at', bounds.start)
+        .lte('created_at', bounds.end + 'T23:59:59')
+      const { data: completedJobs } = await jobsQ
+
+      const jobCountMap: Record<string, number> = {}
+      const jobDaysMap: Record<string, number[]> = {}
+      completedJobs?.forEach((j: { assigned_mechanic_id: string; created_at: string; closed_at: string | null }) => {
+        if (!j.assigned_mechanic_id) return
+        jobCountMap[j.assigned_mechanic_id] = (jobCountMap[j.assigned_mechanic_id] ?? 0) + 1
+        if (j.closed_at) {
+          const d = (new Date(j.closed_at).getTime() - new Date(j.created_at).getTime()) / 86400000
+          if (!jobDaysMap[j.assigned_mechanic_id]) jobDaysMap[j.assigned_mechanic_id] = []
+          jobDaysMap[j.assigned_mechanic_id].push(d)
+        }
+      })
+
+      setStaffData(
+        (staff ?? []).map((s: { id: string; user_id: string; position: string }) => {
+          const days = jobDaysMap[s.user_id] ?? []
+          const avgDays = days.length > 0 ? Math.round((days.reduce((a: number, b: number) => a + b, 0) / days.length) * 10) / 10 : 0
+          return {
+            id: s.id,
+            full_name: nameMap[s.user_id] ?? '—',
+            role: s.position ?? '—',
+            jobs_completed: jobCountMap[s.user_id] ?? 0,
+            avg_days: avgDays,
+            attendance_rate: 0,
+          }
+        })
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [bounds.start, bounds.end, branchFilter])
+
+  const fetchFleet = useCallback(async () => {
+    setLoading(true)
+    try {
+      let vcQ = supabase.from('fleet_vehicles').select('id', { count: 'exact', head: true })
+      if (branchFilter) vcQ = vcQ.eq('branch_id', branchFilter)
+      const { count: vehicleCount } = await vcQ
+
+      let tripQ = supabase
+        .from('fleet_trips')
+        .select('id, distance_km', { count: 'exact' })
+        .gte('start_time', bounds.start)
+        .lte('start_time', bounds.end + 'T23:59:59')
+      if (branchFilter) tripQ = tripQ.eq('branch_id', branchFilter)
+      const { data: trips, count: tripsCount } = await tripQ
+
+      const kmDriven = trips?.reduce((s: number, t: { distance_km: number }) => s + (t.distance_km ?? 0), 0) ?? 0
+
+      let issueQ = supabase
+        .from('fleet_issues')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'open')
+      if (branchFilter) issueQ = issueQ.eq('branch_id', branchFilter)
+      const { count: issuesOpen } = await issueQ
+
+      setFleetData({
+        vehicleCount: vehicleCount ?? 0,
+        tripsThisMonth: tripsCount ?? 0,
+        kmDriven,
+        issuesOpen: issuesOpen ?? 0,
+      })
+    } finally {
+      setLoading(false)
+    }
+  }, [bounds.start, bounds.end, branchFilter])
+
+  useEffect(() => {
+    if (activeTab === 'overview') fetchOverview()
+    if (activeTab === 'workshop') fetchWorkshop()
+    if (activeTab === 'revenue') fetchRevenue()
+    if (activeTab === 'staff') fetchStaff()
+    if (activeTab === 'fleet') fetchFleet()
+  }, [activeTab, fetchOverview, fetchWorkshop, fetchRevenue, fetchStaff, fetchFleet])
+
+  function showToast() {
+    setToast(true)
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(false), 3000)
   }
 
-  // --- Chart helpers ---
-  // Monthly revenue bar chart: group by month, stack branches
-  const branchIds = Array.from(new Set(monthlyRevenue.map((r) => r.branch_id)))
-  const branchColors = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6']
-  const maxRevenue = Math.max(
-    ...months.map((m) =>
-      monthlyRevenue.filter((r) => r.month === m).reduce((s, r) => s + r.revenue, 0)
-    ),
-    1
-  )
-
-  // Pie chart for status counts
-  const totalJobs = statusCounts.reduce((s, r) => s + r.count, 0) || 1
-  let cumulativeAngle = 0
-  const slices = statusCounts.map((s) => {
-    const angle = (s.count / totalJobs) * 360
-    const slice = { ...s, startAngle: cumulativeAngle, angle }
-    cumulativeAngle += angle
-    return slice
-  })
-
-  function polarToCartesian(cx: number, cy: number, r: number, deg: number) {
-    const rad = ((deg - 90) * Math.PI) / 180
-    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
-  }
-
-  function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
-    const start = polarToCartesian(cx, cy, r, endAngle)
-    const end = polarToCartesian(cx, cy, r, startAngle)
-    const largeArc = endAngle - startAngle > 180 ? 1 : 0
-    return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 0 ${end.x} ${end.y} Z`
-  }
-
-  // Export CSV handlers
-  function handleExportRevenue() {
-    const rows = months.flatMap((m) => {
-      const monthRows = monthlyRevenue.filter((r) => r.month === m)
-      if (monthRows.length === 0) return [{ Month: monthLabel(m), Branch: 'All', Revenue_RM: '0.00' }]
-      return monthRows.map((r) => ({
-        Month: monthLabel(m),
-        Branch: r.branch_name,
-        Revenue_RM: r.revenue.toFixed(2),
-      }))
-    })
-    exportCSV(rows, 'monthly_revenue.csv')
-  }
-
-  function handleExportJobs() {
-    const rows = statusCounts.map((s) => ({
-      Status: STATUS_LABELS[s.status] ?? s.status,
-      Count: s.count,
-      Percentage: ((s.count / totalJobs) * 100).toFixed(1) + '%',
-    }))
-    exportCSV(rows, 'jobs_by_status.csv')
-  }
-
-  function handleExportServices() {
-    const rows = topServices.map((s) => ({
-      Service: s.service_type,
-      Count: s.count,
-    }))
-    exportCSV(rows, 'top_services.csv')
-  }
+  const filteredWorkshopJobs = workshopStatusFilter === 'all'
+    ? workshopJobs
+    : workshopJobs.filter((j) => j.status === workshopStatusFilter)
 
   return (
-    <>
-      <Header title="Reports" />
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
+    <div style={{ minHeight: '100vh', background: BG, color: TEXT_PRIMARY, fontFamily: 'inherit' }}>
+      <div style={{ padding: '24px 28px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
-            <h2 className="text-xl font-semibold text-gray-800">Business Reports</h2>
-            <p className="text-sm text-gray-500 mt-0.5">CEO view — all branches</p>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT_PRIMARY, margin: 0 }}>Reports</h1>
+            <p style={{ fontSize: 13, color: TEXT_SECONDARY, marginTop: 3 }}>
+              {isSuperAdmin ? 'All branches' : 'Your branch'}
+            </p>
           </div>
-          <button
-            onClick={() => {
-              handleExportRevenue()
-              handleExportJobs()
-              handleExportServices()
-            }}
-            className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
-          >
-            Export All CSV
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={() => {
+                if (activeTab === 'overview') fetchOverview()
+                if (activeTab === 'workshop') fetchWorkshop()
+                if (activeTab === 'revenue') fetchRevenue()
+                if (activeTab === 'staff') fetchStaff()
+                if (activeTab === 'fleet') fetchFleet()
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: `1px solid ${BORDER}`, background: 'transparent', color: TEXT_SECONDARY, fontSize: 13, cursor: 'pointer' }}
+            >
+              <RefreshCw size={14} />
+              Refresh
+            </button>
+            <button
+              onClick={showToast}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: `1px solid ${ORANGE}`, background: 'transparent', color: ORANGE, fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
+            >
+              <Download size={14} />
+              Export
+            </button>
+          </div>
         </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">{error}</div>
+        <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${BORDER}`, marginBottom: 0 }}>
+          {TABS.map((tab) => {
+            const active = activeTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  padding: '11px 18px',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: active ? `2px solid ${ORANGE}` : '2px solid transparent',
+                  color: active ? ORANGE : TEXT_SECONDARY,
+                  fontSize: 13,
+                  fontWeight: active ? 600 : 400,
+                  cursor: 'pointer',
+                  transition: 'color 0.15s',
+                  marginBottom: -1,
+                }}
+              >
+                <tab.icon size={15} />
+                {tab.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div style={{ padding: '20px 28px 40px' }}>
+        {activeTab !== 'revenue' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+            {(['this_month', 'last_month', 'last_3_months', 'custom'] as DateRange[]).map((r) => (
+              <button
+                key={r}
+                onClick={() => setDateRange(r)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 6,
+                  border: `1px solid ${dateRange === r ? ORANGE : BORDER}`,
+                  background: dateRange === r ? `${ORANGE}18` : SURFACE,
+                  color: dateRange === r ? ORANGE : TEXT_SECONDARY,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  fontWeight: dateRange === r ? 600 : 400,
+                }}
+              >
+                {r === 'this_month' ? 'This Month' : r === 'last_month' ? 'Last Month' : r === 'last_3_months' ? 'Last 3 Months' : 'Custom'}
+              </button>
+            ))}
+            {dateRange === 'custom' && (
+              <>
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT_PRIMARY, fontSize: 12 }}
+                />
+                <span style={{ color: TEXT_SECONDARY, fontSize: 12 }}>to</span>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT_PRIMARY, fontSize: 12 }}
+                />
+              </>
+            )}
+          </div>
         )}
 
-        {loading ? (
-          <div className="flex items-center justify-center py-24 text-gray-400">Loading reports…</div>
-        ) : (
-          <>
-            {/* Monthly Revenue Bar Chart */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-800">Monthly Revenue by Branch</h3>
+        {loading && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 0', color: TEXT_SECONDARY, gap: 10 }}>
+            <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} />
+            Loading…
+          </div>
+        )}
+
+        {!loading && activeTab === 'overview' && overviewData && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 14, marginBottom: 24 }}>
+              <StatCard label="Total Jobs" value={overviewData.totalJobs} icon={Wrench} sub="In selected period" />
+              <StatCard label="Revenue" value={formatRM(overviewData.revenue)} icon={DollarSign} sub="Paid invoices" />
+              <StatCard label="COGS" value={formatRM(overviewData.cogs)} icon={ShoppingCart} sub="Est. parts cost (40%)" />
+              <StatCard label="Gross Profit" value={formatRM(overviewData.grossProfit)} icon={TrendingUp} sub="Revenue minus COGS" />
+              <StatCard label="Gross Profit %" value={`${overviewData.grossProfitPct.toFixed(1)}%`} icon={Percent} sub={overviewData.grossProfitPct >= 50 ? 'Healthy margin' : 'Below target'} />
+              <StatCard label="No. of Customers" value={overviewData.uniqueCustomers} icon={UserCheck} sub="Unique in period" />
+              <StatCard label="Avg Spend / Txn" value={formatRM(overviewData.avgSpendPerTx)} icon={Receipt} sub="Per paid invoice" />
+              <StatCard label="Avg Turnaround" value={`${overviewData.avgDays}d`} icon={Clock} sub="Completed jobs" />
+              <StatCard label="Top Mechanic" value={overviewData.topMechanic} icon={Star} sub="By job count" />
+              <StatCard label="Top Job Type" value={overviewData.topJobType} icon={BarChart2} sub="Most frequent" />
+            </div>
+
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: '0 0 16px' }}>Jobs by Status</h3>
+              {overviewData.statusCounts.length === 0 ? (
+                <p style={{ color: TEXT_SECONDARY, fontSize: 13 }}>No jobs in selected period.</p>
+              ) : (
+                overviewData.statusCounts.map(({ status, count }) => (
+                  <DivBar
+                    key={status}
+                    label={STATUS_LABELS[status] ?? status}
+                    value={count}
+                    max={overviewData.statusCounts[0].count}
+                    color={STATUS_COLORS[status] ?? ORANGE}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {!loading && activeTab === 'workshop' && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: TEXT_SECONDARY }}>Status:</span>
+              {['all', ...Object.keys(STATUS_LABELS)].map((s) => (
                 <button
-                  onClick={handleExportRevenue}
-                  className="text-xs text-blue-600 hover:underline"
+                  key={s}
+                  onClick={() => setWorkshopStatusFilter(s)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 6,
+                    border: `1px solid ${workshopStatusFilter === s ? (STATUS_COLORS[s] ?? ORANGE) : BORDER}`,
+                    background: workshopStatusFilter === s ? `${STATUS_COLORS[s] ?? ORANGE}18` : SURFACE,
+                    color: workshopStatusFilter === s ? (STATUS_COLORS[s] ?? ORANGE) : TEXT_SECONDARY,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    fontWeight: workshopStatusFilter === s ? 600 : 400,
+                  }}
                 >
-                  Export CSV
+                  {s === 'all' ? 'All' : STATUS_LABELS[s]}
                 </button>
-              </div>
-              {/* Legend */}
-              <div className="flex flex-wrap gap-4 mb-4">
-                {branchIds.map((bid, i) => {
-                  const name = monthlyRevenue.find((r) => r.branch_id === bid)?.branch_name ?? bid
-                  return (
-                    <div key={bid} className="flex items-center gap-1.5 text-xs text-gray-600">
-                      <span className="w-3 h-3 rounded-sm inline-block" style={{ background: branchColors[i % branchColors.length] }} />
-                      {name}
-                    </div>
-                  )
-                })}
-              </div>
-              {/* Bars */}
-              <div className="flex items-end gap-3 h-48 overflow-x-auto pb-2">
-                {months.map((m) => {
-                  const rowsForMonth = monthlyRevenue.filter((r) => r.month === m)
-                  const totalForMonth = rowsForMonth.reduce((s, r) => s + r.revenue, 0)
-                  return (
-                    <div key={m} className="flex flex-col items-center gap-1 min-w-[60px] flex-1">
-                      <span className="text-xs text-gray-500">{formatRM(totalForMonth)}</span>
-                      <div className="w-full flex flex-col-reverse gap-0.5" style={{ height: '140px' }}>
-                        {branchIds.map((bid, i) => {
-                          const row = rowsForMonth.find((r) => r.branch_id === bid)
-                          const rev = row?.revenue ?? 0
-                          const heightPct = (rev / maxRevenue) * 100
-                          return (
-                            <div
-                              key={bid}
-                              className="w-full rounded-sm transition-all"
-                              style={{
-                                height: `${heightPct}%`,
-                                background: branchColors[i % branchColors.length],
-                                minHeight: rev > 0 ? '2px' : '0',
-                              }}
-                              title={`${row?.branch_name ?? bid}: ${formatRM(rev)}`}
-                            />
-                          )
-                        })}
-                        {totalForMonth === 0 && (
-                          <div className="w-full rounded-sm bg-gray-100" style={{ height: '4px' }} />
-                        )}
-                      </div>
-                      <span className="text-xs text-gray-500">{monthLabel(m)}</span>
-                    </div>
-                  )
-                })}
-              </div>
+              ))}
             </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Job Count by Status (CSS Pie) */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold text-gray-800">Jobs by Status</h3>
-                  <button onClick={handleExportJobs} className="text-xs text-blue-600 hover:underline">
-                    Export CSV
-                  </button>
-                </div>
-                <div className="flex flex-col sm:flex-row items-center gap-6">
-                  {/* SVG Pie */}
-                  <svg viewBox="0 0 120 120" className="w-32 h-32 shrink-0">
-                    {slices.map((slice) => (
-                      <path
-                        key={slice.status}
-                        d={describeArc(60, 60, 55, slice.startAngle, slice.startAngle + slice.angle)}
-                        fill={STATUS_COLORS[slice.status] ?? '#cbd5e1'}
-                        stroke="white"
-                        strokeWidth="1"
-                      />
-                    ))}
-                    {totalJobs === 0 && <circle cx="60" cy="60" r="55" fill="#e5e7eb" />}
-                  </svg>
-                  {/* Legend */}
-                  <div className="flex flex-col gap-2 w-full">
-                    {statusCounts.map((s) => (
-                      <div key={s.status} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="w-3 h-3 rounded-full shrink-0"
-                            style={{ background: STATUS_COLORS[s.status] ?? '#cbd5e1' }}
-                          />
-                          <span className="text-gray-700">{STATUS_LABELS[s.status] ?? s.status}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-gray-400 text-xs">
-                            {((s.count / totalJobs) * 100).toFixed(0)}%
-                          </span>
-                          <span className="font-semibold text-gray-800 w-8 text-right">{s.count}</span>
-                        </div>
-                      </div>
-                    ))}
-                    {statusCounts.length === 0 && (
-                      <p className="text-gray-400 text-sm">No jobs yet</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Top 5 Services This Month */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="font-semibold text-gray-800">Top Services This Month</h3>
-                    <p className="text-xs text-gray-400">{monthLabel(months[5])}</p>
-                  </div>
-                  <button onClick={handleExportServices} className="text-xs text-blue-600 hover:underline">
-                    Export CSV
-                  </button>
-                </div>
-                {topServices.length === 0 ? (
-                  <p className="text-gray-400 text-sm">No jobs this month yet</p>
-                ) : (
-                  <div className="space-y-3">
-                    {topServices.map((svc, idx) => {
-                      const maxCount = topServices[0].count
-                      const pct = (svc.count / maxCount) * 100
-                      return (
-                        <div key={svc.service_type}>
-                          <div className="flex items-center justify-between text-sm mb-1">
-                            <span className="text-gray-700 flex items-center gap-2">
-                              <span className="text-xs font-bold text-gray-400 w-4">{idx + 1}</span>
-                              {svc.service_type}
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                      {['Job No.', 'Status', 'Service Type', 'Mechanic', 'Days', 'Date'].map((h) => (
+                        <th key={h} style={{ padding: '12px 16px', textAlign: 'left', color: TEXT_SECONDARY, fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredWorkshopJobs.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ padding: '32px 16px', textAlign: 'center', color: TEXT_SECONDARY }}>No jobs found.</td>
+                      </tr>
+                    ) : (
+                      filteredWorkshopJobs.map((job) => (
+                        <tr key={job.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
+                          <td style={{ padding: '11px 16px', color: TEXT_PRIMARY, fontFamily: 'monospace', fontSize: 12 }}>{job.job_number}</td>
+                          <td style={{ padding: '11px 16px' }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '3px 9px',
+                              borderRadius: 12,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              background: `${STATUS_COLORS[job.status] ?? '#94a3b8'}18`,
+                              color: STATUS_COLORS[job.status] ?? '#94a3b8',
+                              border: `1px solid ${STATUS_COLORS[job.status] ?? '#94a3b8'}30`,
+                            }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: STATUS_COLORS[job.status] ?? '#94a3b8', flexShrink: 0 }} />
+                              {STATUS_LABELS[job.status] ?? job.status}
                             </span>
-                            <span className="font-semibold text-gray-800">{svc.count}</span>
-                          </div>
-                          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-blue-500 rounded-full transition-all"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+                          </td>
+                          <td style={{ padding: '11px 16px', color: TEXT_PRIMARY }}>{job.service_type}</td>
+                          <td style={{ padding: '11px 16px', color: TEXT_SECONDARY }}>{job.mechanic}</td>
+                          <td style={{ padding: '11px 16px', color: job.days > 7 ? '#f87171' : TEXT_PRIMARY, fontWeight: 600 }}>{job.days}d</td>
+                          <td style={{ padding: '11px 16px', color: TEXT_SECONDARY }}>{new Date(job.created_at).toLocaleDateString('en-MY')}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
-          </>
+          </div>
+        )}
+
+        {!loading && activeTab === 'revenue' && revenueData && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: '0 0 16px' }}>Monthly Revenue (last 6 months)</h3>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 160, overflowX: 'auto', paddingBottom: 8 }}>
+                {(() => {
+                  const maxVal = Math.max(...revenueData.monthly.map((m) => m.total), 1)
+                  return revenueData.monthly.map((m) => {
+                    const pct = (m.total / maxVal) * 100
+                    return (
+                      <div key={m.month} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: 1, minWidth: 52 }}>
+                        <span style={{ fontSize: 11, color: TEXT_SECONDARY, textAlign: 'center' }}>{m.total > 0 ? formatRM(m.total) : '—'}</span>
+                        <div style={{ width: '100%', display: 'flex', alignItems: 'flex-end', height: 100 }}>
+                          <div style={{
+                            width: '100%',
+                            height: `${Math.max(pct, m.total > 0 ? 3 : 0)}%`,
+                            background: m.total > 0 ? ORANGE : BORDER,
+                            borderRadius: '4px 4px 0 0',
+                            transition: 'height 0.4s',
+                          }} />
+                        </div>
+                        <span style={{ fontSize: 11, color: TEXT_SECONDARY }}>{monthLabel(m.month)}</span>
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
+              <StatCard label="Parts Cost" value={formatRM(revenueData.partsTotal)} icon={Wrench} sub="Paid invoices" />
+              <StatCard label="Labour Revenue" value={formatRM(revenueData.labourTotal)} icon={DollarSign} sub="Paid invoices" />
+              <StatCard label="Outstanding Invoices" value={revenueData.outstanding} icon={AlertCircle} sub="Unpaid / pending" />
+            </div>
+
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: '0 0 16px' }}>Parts vs Labour Split</h3>
+              {(() => {
+                const total = revenueData.partsTotal + revenueData.labourTotal
+                const partsPct = total > 0 ? (revenueData.partsTotal / total) * 100 : 0
+                const labourPct = total > 0 ? (revenueData.labourTotal / total) * 100 : 0
+                return (
+                  <div>
+                    <div style={{ display: 'flex', height: 18, borderRadius: 6, overflow: 'hidden', marginBottom: 12 }}>
+                      <div style={{ width: `${partsPct}%`, background: '#60a5fa', transition: 'width 0.4s' }} />
+                      <div style={{ width: `${labourPct}%`, background: ORANGE, transition: 'width 0.4s' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 20 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: TEXT_SECONDARY }}>
+                        <span style={{ width: 10, height: 10, borderRadius: 2, background: '#60a5fa', flexShrink: 0 }} />
+                        Parts — {partsPct.toFixed(0)}%
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: TEXT_SECONDARY }}>
+                        <span style={{ width: 10, height: 10, borderRadius: 2, background: ORANGE, flexShrink: 0 }} />
+                        Labour — {labourPct.toFixed(0)}%
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        )}
+
+        {!loading && activeTab === 'staff' && (
+          <div>
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                      {['Name', 'Role', 'Jobs Completed', 'Avg Days/Job', 'Attendance Rate'].map((h) => (
+                        <th key={h} style={{ padding: '12px 16px', textAlign: 'left', color: TEXT_SECONDARY, fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staffData.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ padding: '32px 16px', textAlign: 'center', color: TEXT_SECONDARY }}>No staff data found.</td>
+                      </tr>
+                    ) : (
+                      staffData
+                        .sort((a, b) => b.jobs_completed - a.jobs_completed)
+                        .map((s) => (
+                          <tr key={s.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
+                            <td style={{ padding: '11px 16px', color: TEXT_PRIMARY, fontWeight: 600 }}>{s.full_name}</td>
+                            <td style={{ padding: '11px 16px', color: TEXT_SECONDARY, textTransform: 'capitalize' }}>{s.role.replace(/_/g, ' ')}</td>
+                            <td style={{ padding: '11px 16px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <span style={{ color: TEXT_PRIMARY, fontWeight: 600, minWidth: 28 }}>{s.jobs_completed}</span>
+                                <div style={{ flex: 1, height: 6, background: BORDER, borderRadius: 3, overflow: 'hidden', minWidth: 60 }}>
+                                  <div style={{ height: '100%', width: `${Math.min((s.jobs_completed / (Math.max(...staffData.map(x => x.jobs_completed)) || 1)) * 100, 100)}%`, background: ORANGE, borderRadius: 3 }} />
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ padding: '11px 16px', color: s.avg_days > 5 ? '#fbbf24' : TEXT_PRIMARY }}>{s.avg_days > 0 ? `${s.avg_days}d` : '—'}</td>
+                            <td style={{ padding: '11px 16px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ color: s.attendance_rate >= 90 ? '#4ade80' : s.attendance_rate >= 75 ? '#fbbf24' : '#f87171', fontWeight: 600 }}>
+                                  {s.attendance_rate > 0 ? `${s.attendance_rate}%` : '—'}
+                                </span>
+                                {s.attendance_rate >= 90 && <CheckCircle2 size={13} color="#4ade80" />}
+                                {s.attendance_rate > 0 && s.attendance_rate < 75 && <AlertCircle size={13} color="#f87171" />}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!loading && activeTab === 'fleet' && fleetData && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14, marginBottom: 24 }}>
+              <StatCard label="Total Vehicles" value={fleetData.vehicleCount} icon={Truck} sub="Registered fleet" />
+              <StatCard label="Trips This Month" value={fleetData.tripsThisMonth} icon={TrendingUp} sub="In selected period" />
+              <StatCard label="KM Driven" value={`${fleetData.kmDriven.toLocaleString()} km`} icon={BarChart2} sub="In selected period" />
+              <StatCard
+                label="Open Issues"
+                value={fleetData.issuesOpen}
+                icon={AlertCircle}
+                sub={fleetData.issuesOpen > 0 ? 'Needs attention' : 'All clear'}
+              />
+            </div>
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: '0 0 16px' }}>Fleet Utilization</h3>
+              <DivBar label="Trips" value={fleetData.tripsThisMonth} max={Math.max(fleetData.tripsThisMonth, 1)} color={ORANGE} />
+              <DivBar label="KM Driven" value={fleetData.kmDriven} max={Math.max(fleetData.kmDriven, 1)} color="#60a5fa" suffix=" km" />
+              <DivBar label="Open Issues" value={fleetData.issuesOpen} max={Math.max(fleetData.issuesOpen, fleetData.vehicleCount, 1)} color="#f87171" />
+            </div>
+          </div>
         )}
       </div>
-    </>
+
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          bottom: 28,
+          right: 28,
+          background: SURFACE,
+          border: `1px solid ${BORDER}`,
+          borderRadius: 10,
+          padding: '14px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          zIndex: 9999,
+          color: TEXT_PRIMARY,
+          fontSize: 13,
+          minWidth: 240,
+        }}>
+          <Download size={16} color={ORANGE} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>Export coming soon</span>
+          <button
+            onClick={() => setToast(false)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: TEXT_SECONDARY, display: 'flex', padding: 0 }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
   )
 }

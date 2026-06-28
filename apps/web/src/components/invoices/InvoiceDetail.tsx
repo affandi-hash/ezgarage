@@ -8,10 +8,21 @@ interface InvoiceDetailProps {
   onBack: () => void
 }
 
-const PAYMENT_STATUS_STYLES: Record<PaymentStatus, string> = {
-  unpaid: 'bg-red-100 text-red-700',
-  partial: 'bg-yellow-100 text-yellow-700',
-  paid: 'bg-green-100 text-green-700',
+const C = {
+  bg: '#0E0E0E',
+  surface: '#161616',
+  border: '#2A2A2A',
+  text: '#F0F0F0',
+  muted: '#A0A0A0',
+  orange: '#F15A22',
+  orangeHover: '#d94e1a',
+  inputBg: '#1E1E1E',
+}
+
+const PAYMENT_STATUS_STYLES: Record<PaymentStatus, React.CSSProperties> = {
+  unpaid: { background: 'rgba(239,68,68,0.15)', color: '#f87171' },
+  partial: { background: 'rgba(234,179,8,0.15)', color: '#facc15' },
+  paid: { background: 'rgba(34,197,94,0.15)', color: '#4ade80' },
 }
 
 const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
@@ -20,6 +31,18 @@ const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: 'online_transfer', label: 'Online Transfer' },
   { value: 'qr', label: 'QR Pay' },
 ]
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  background: C.inputBg,
+  border: `1px solid ${C.border}`,
+  borderRadius: 8,
+  padding: '8px 12px',
+  fontSize: 13,
+  color: C.text,
+  outline: 'none',
+  boxSizing: 'border-box',
+}
 
 function formatMYR(amount: number) {
   return `RM ${amount.toFixed(2)}`
@@ -43,16 +66,24 @@ export function InvoiceDetail({ invoiceId, onBack }: InvoiceDetailProps) {
   const [showAddItem, setShowAddItem] = useState(false)
   const [newItem, setNewItem] = useState<{
     description: string
-    type: LineItemType
+    item_type: LineItemType
     quantity: number
     unit_price: number
   }>({
     description: '',
-    type: 'service',
+    item_type: 'service',
     quantity: 1,
     unit_price: 0,
   })
   const [addingItem, setAddingItem] = useState(false)
+
+  const [backHover, setBackHover] = useState(false)
+  const [markPaidHover, setMarkPaidHover] = useState(false)
+  const [addItemHover, setAddItemHover] = useState(false)
+  const [addItemCancelHover, setAddItemCancelHover] = useState(false)
+  const [addItemConfirmHover, setAddItemConfirmHover] = useState(false)
+  const [payCancelHover, setPayCancelHover] = useState(false)
+  const [payConfirmHover, setPayConfirmHover] = useState(false)
 
   const canManage = user?.role && ['ceo', 'branch_manager', 'operation_manager'].includes(user.role)
 
@@ -76,7 +107,7 @@ export function InvoiceDetail({ invoiceId, onBack }: InvoiceDetailProps) {
     await addLineItem(selectedInvoice.id, newItem)
     setAddingItem(false)
     setShowAddItem(false)
-    setNewItem({ description: '', type: 'service', quantity: 1, unit_price: 0 })
+    setNewItem({ description: '', item_type: 'service', quantity: 1, unit_price: 0 })
     fetchInvoiceById(invoiceId)
   }
 
@@ -88,8 +119,17 @@ export function InvoiceDetail({ invoiceId, onBack }: InvoiceDetailProps) {
 
   if (loading || !selectedInvoice) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
+        <div
+          style={{
+            width: 24,
+            height: 24,
+            border: `2px solid ${C.orange}`,
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 0.7s linear infinite',
+          }}
+        />
       </div>
     )
   }
@@ -97,28 +137,91 @@ export function InvoiceDetail({ invoiceId, onBack }: InvoiceDetailProps) {
   const inv = selectedInvoice
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div style={{ padding: 24, maxWidth: 896, margin: '0 auto' }}>
       {/* Back */}
-      <button onClick={onBack} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-6">
+      <button
+        onClick={onBack}
+        onMouseEnter={() => setBackHover(true)}
+        onMouseLeave={() => setBackHover(false)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 13,
+          color: backHover ? C.text : C.muted,
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          padding: 0,
+          marginBottom: 24,
+        }}
+      >
         &larr; Back to Invoices
       </button>
 
       {/* Invoice Header */}
-      <div className="bg-white border border-gray-100 rounded-xl p-6 mb-5">
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+      <div
+        style={{
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: 24,
+          marginBottom: 20,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 16,
+            marginBottom: 20,
+          }}
+        >
           <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-xl font-bold text-gray-800 font-mono">{inv.invoice_number}</h1>
-              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${PAYMENT_STATUS_STYLES[inv.payment_status]}`}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 20,
+                  fontWeight: 700,
+                  color: C.text,
+                  fontFamily: 'monospace',
+                }}
+              >
+                {inv.invoice_number}
+              </h1>
+              <span
+                style={{
+                  ...PAYMENT_STATUS_STYLES[inv.payment_status],
+                  padding: '3px 10px',
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: 'capitalize',
+                }}
+              >
                 {inv.payment_status}
               </span>
             </div>
-            <p className="text-sm text-gray-500">Issued {formatDate(inv.created_at)}</p>
+            <p style={{ margin: 0, fontSize: 13, color: C.muted }}>Issued {formatDate(inv.created_at)}</p>
           </div>
           {canManage && inv.payment_status !== 'paid' && (
             <button
               onClick={() => setShowPayModal(true)}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+              onMouseEnter={() => setMarkPaidHover(true)}
+              onMouseLeave={() => setMarkPaidHover(false)}
+              style={{
+                padding: '8px 16px',
+                background: markPaidHover ? '#16a34a' : '#22c55e',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
             >
               Mark as Paid
             </button>
@@ -126,50 +229,86 @@ export function InvoiceDetail({ invoiceId, onBack }: InvoiceDetailProps) {
         </div>
 
         {/* Customer + Vehicle info */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+            gap: 16,
+            fontSize: 13,
+          }}
+        >
           <div>
-            <p className="text-xs text-gray-400 mb-0.5">Customer</p>
-            <p className="font-medium text-gray-800">{inv.customer?.full_name ?? '—'}</p>
+            <p style={{ margin: '0 0 2px', fontSize: 11, color: C.muted }}>Customer</p>
+            <p style={{ margin: 0, fontWeight: 500, color: C.text }}>{inv.customer?.full_name ?? '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-400 mb-0.5">Phone</p>
-            <p className="font-medium text-gray-800">{inv.customer?.phone ?? '—'}</p>
+            <p style={{ margin: '0 0 2px', fontSize: 11, color: C.muted }}>Phone</p>
+            <p style={{ margin: 0, fontWeight: 500, color: C.text }}>{inv.customer?.phone ?? '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-400 mb-0.5">Vehicle</p>
-            <p className="font-medium text-gray-800 font-mono">{inv.job_order?.vehicle?.plate_number ?? '—'}</p>
+            <p style={{ margin: '0 0 2px', fontSize: 11, color: C.muted }}>Vehicle</p>
+            <p style={{ margin: 0, fontWeight: 500, color: C.text, fontFamily: 'monospace' }}>{inv.job_order?.vehicle?.plate_number ?? '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-400 mb-0.5">Make / Model</p>
-            <p className="font-medium text-gray-800">
+            <p style={{ margin: '0 0 2px', fontSize: 11, color: C.muted }}>Make / Model</p>
+            <p style={{ margin: 0, fontWeight: 500, color: C.text }}>
               {inv.job_order?.vehicle ? `${inv.job_order.vehicle.make} ${inv.job_order.vehicle.model}` : '—'}
             </p>
           </div>
           <div>
-            <p className="text-xs text-gray-400 mb-0.5">Job Order</p>
-            <p className="font-medium text-orange-600 font-mono">{inv.job_order?.job_number ?? '—'}</p>
+            <p style={{ margin: '0 0 2px', fontSize: 11, color: C.muted }}>Job Order</p>
+            <p style={{ margin: 0, fontWeight: 500, color: C.orange, fontFamily: 'monospace' }}>{inv.job_order?.job_number ?? '—'}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-400 mb-0.5">Service</p>
-            <p className="font-medium text-gray-800">{inv.job_order?.service_type ?? '—'}</p>
+            <p style={{ margin: '0 0 2px', fontSize: 11, color: C.muted }}>Service</p>
+            <p style={{ margin: 0, fontWeight: 500, color: C.text }}>{inv.job_order?.service_type ?? '—'}</p>
           </div>
           {inv.payment_method && (
             <div>
-              <p className="text-xs text-gray-400 mb-0.5">Payment Method</p>
-              <p className="font-medium text-gray-800 capitalize">{inv.payment_method.replace('_', ' ')}</p>
+              <p style={{ margin: '0 0 2px', fontSize: 11, color: C.muted }}>Payment Method</p>
+              <p style={{ margin: 0, fontWeight: 500, color: C.text, textTransform: 'capitalize' }}>
+                {inv.payment_method.replace('_', ' ')}
+              </p>
             </div>
           )}
         </div>
       </div>
 
       {/* Line Items */}
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden mb-5">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-700">Line Items</h2>
+      <div
+        style={{
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          overflow: 'hidden',
+          marginBottom: 20,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '16px 20px',
+            borderBottom: `1px solid ${C.border}`,
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: C.text }}>Line Items</h2>
           {canManage && (
             <button
               onClick={() => setShowAddItem(!showAddItem)}
-              className="text-xs px-3 py-1.5 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
+              onMouseEnter={() => setAddItemHover(true)}
+              onMouseLeave={() => setAddItemHover(false)}
+              style={{
+                fontSize: 12,
+                padding: '6px 12px',
+                background: addItemHover ? C.orangeHover : C.orange,
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
             >
               + Add Item
             </button>
@@ -178,62 +317,97 @@ export function InvoiceDetail({ invoiceId, onBack }: InvoiceDetailProps) {
 
         {/* Add item form */}
         {showAddItem && (
-          <div className="px-5 py-4 bg-orange-50 border-b border-orange-100">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-              <div className="md:col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Description</label>
+          <div
+            style={{
+              padding: '16px 20px',
+              background: 'rgba(241,90,34,0.06)',
+              borderBottom: `1px solid rgba(241,90,34,0.15)`,
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '2fr 1fr 1fr 1fr',
+                gap: 12,
+                marginBottom: 12,
+              }}
+            >
+              <div>
+                <label style={{ display: 'block', fontSize: 11, color: C.muted, marginBottom: 4 }}>Description</label>
                 <input
                   type="text"
                   value={newItem.description}
                   onChange={(e) => setNewItem((p) => ({ ...p, description: e.target.value }))}
                   placeholder="e.g. Labour — brake pad replacement"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  style={inputStyle}
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Type</label>
+                <label style={{ display: 'block', fontSize: 11, color: C.muted, marginBottom: 4 }}>Type</label>
                 <select
-                  value={newItem.type}
-                  onChange={(e) => setNewItem((p) => ({ ...p, type: e.target.value as 'service' | 'part' }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
+                  value={newItem.item_type}
+                  onChange={(e) => setNewItem((p) => ({ ...p, item_type: e.target.value as 'service' | 'part' }))}
+                  style={inputStyle}
                 >
                   <option value="service">Service</option>
                   <option value="part">Part</option>
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Qty</label>
+                <label style={{ display: 'block', fontSize: 11, color: C.muted, marginBottom: 4 }}>Qty</label>
                 <input
                   type="number"
                   min={1}
                   value={newItem.quantity}
                   onChange={(e) => setNewItem((p) => ({ ...p, quantity: Number(e.target.value) }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  style={inputStyle}
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Unit Price (RM)</label>
+                <label style={{ display: 'block', fontSize: 11, color: C.muted, marginBottom: 4 }}>Unit Price (RM)</label>
                 <input
                   type="number"
                   min={0}
                   step={0.01}
                   value={newItem.unit_price}
                   onChange={(e) => setNewItem((p) => ({ ...p, unit_price: Number(e.target.value) }))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  style={inputStyle}
                 />
               </div>
             </div>
-            <div className="flex gap-2">
+            <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={() => setShowAddItem(false)}
-                className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+                onMouseEnter={() => setAddItemCancelHover(true)}
+                onMouseLeave={() => setAddItemCancelHover(false)}
+                style={{
+                  padding: '8px 16px',
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 8,
+                  fontSize: 13,
+                  color: addItemCancelHover ? C.text : C.muted,
+                  background: addItemCancelHover ? C.bg : 'transparent',
+                  cursor: 'pointer',
+                }}
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddItem}
                 disabled={addingItem || !newItem.description}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50"
+                onMouseEnter={() => setAddItemConfirmHover(true)}
+                onMouseLeave={() => setAddItemConfirmHover(false)}
+                style={{
+                  padding: '8px 16px',
+                  background: addingItem || !newItem.description ? C.orange : addItemConfirmHover ? C.orangeHover : C.orange,
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: addingItem || !newItem.description ? 'not-allowed' : 'pointer',
+                  opacity: addingItem || !newItem.description ? 0.5 : 1,
+                }}
               >
                 {addingItem ? 'Adding...' : 'Add Item'}
               </button>
@@ -241,50 +415,46 @@ export function InvoiceDetail({ invoiceId, onBack }: InvoiceDetailProps) {
           </div>
         )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Description</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Type</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Qty</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Unit Price</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Total</th>
-                {canManage && <th className="px-4 py-3 w-10" />}
+              <tr style={{ background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 11, fontWeight: 500, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Description
+                </th>
+                <th style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 500, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Type
+                </th>
+                <th style={{ textAlign: 'right', padding: '12px 16px', fontSize: 11, fontWeight: 500, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Qty
+                </th>
+                <th style={{ textAlign: 'right', padding: '12px 16px', fontSize: 11, fontWeight: 500, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Unit Price
+                </th>
+                <th style={{ textAlign: 'right', padding: '12px 16px', fontSize: 11, fontWeight: 500, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Total
+                </th>
+                {canManage && <th style={{ padding: '12px 16px', width: 40 }} />}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {(inv.items ?? []).length === 0 ? (
                 <tr>
-                  <td colSpan={canManage ? 6 : 5} className="px-5 py-8 text-center text-gray-400 text-xs">
+                  <td
+                    colSpan={canManage ? 6 : 5}
+                    style={{ padding: '32px 20px', textAlign: 'center', color: C.muted, fontSize: 12 }}
+                  >
                     No line items yet. Add items above.
                   </td>
                 </tr>
               ) : (
                 (inv.items ?? []).map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3 text-gray-800">{item.description}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        item.type === 'service' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-                      }`}>
-                        {item.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-600">{item.quantity}</td>
-                    <td className="px-4 py-3 text-right text-gray-600">{formatMYR(item.unit_price)}</td>
-                    <td className="px-4 py-3 text-right font-medium text-gray-800">{formatMYR(item.quantity * item.unit_price)}</td>
-                    {canManage && (
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => handleRemoveItem(item.id)}
-                          className="text-red-400 hover:text-red-600 text-xs transition-colors"
-                        >
-                          &times;
-                        </button>
-                      </td>
-                    )}
-                  </tr>
+                  <LineItemRow
+                    key={item.id}
+                    item={item}
+                    canManage={!!canManage}
+                    onRemove={() => handleRemoveItem(item.id)}
+                  />
                 ))
               )}
             </tbody>
@@ -292,94 +462,155 @@ export function InvoiceDetail({ invoiceId, onBack }: InvoiceDetailProps) {
         </div>
 
         {/* Totals */}
-        <div className="border-t border-gray-100 px-5 py-4">
-          <div className="ml-auto max-w-xs space-y-2 text-sm">
-            <div className="flex justify-between text-gray-600">
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: '16px 20px' }}>
+          <div
+            style={{
+              marginLeft: 'auto',
+              maxWidth: 280,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              fontSize: 13,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: C.muted }}>
               <span>Subtotal</span>
               <span>{formatMYR(inv.subtotal)}</span>
             </div>
             {inv.discount > 0 && (
-              <div className="flex justify-between text-green-600">
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#4ade80' }}>
                 <span>Discount</span>
                 <span>- {formatMYR(inv.discount)}</span>
               </div>
             )}
             {inv.tax > 0 && (
-              <div className="flex justify-between text-gray-600">
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: C.muted }}>
                 <span>Tax</span>
                 <span>{formatMYR(inv.tax)}</span>
               </div>
             )}
-            <div className="flex justify-between font-bold text-gray-900 text-base border-t border-gray-200 pt-2 mt-2">
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontWeight: 700,
+                color: C.text,
+                fontSize: 15,
+                borderTop: `1px solid ${C.border}`,
+                paddingTop: 8,
+                marginTop: 4,
+              }}
+            >
               <span>TOTAL</span>
-              <span>{formatMYR(inv.total_amount)}</span>
+              <span>{formatMYR(inv.total)}</span>
             </div>
           </div>
         </div>
 
         {inv.notes && (
-          <div className="border-t border-gray-100 px-5 py-4">
-            <p className="text-xs text-gray-400 mb-1">Notes</p>
-            <p className="text-sm text-gray-700">{inv.notes}</p>
+          <div style={{ borderTop: `1px solid ${C.border}`, padding: '16px 20px' }}>
+            <p style={{ margin: '0 0 4px', fontSize: 11, color: C.muted }}>Notes</p>
+            <p style={{ margin: 0, fontSize: 13, color: C.text }}>{inv.notes}</p>
           </div>
         )}
       </div>
 
       {/* Mark as Paid modal */}
       {showPayModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-            <h2 className="text-base font-semibold text-gray-800 mb-4">Update Payment</h2>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.6)',
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              background: C.surface,
+              borderRadius: 16,
+              boxShadow: '0 8px 40px rgba(0,0,0,0.6)',
+              width: '100%',
+              maxWidth: 384,
+              padding: 24,
+              border: `1px solid ${C.border}`,
+            }}
+          >
+            <h2 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 600, color: C.text }}>
+              Update Payment
+            </h2>
 
-            <div className="mb-4">
-              <label className="block text-xs text-gray-500 mb-2">Payment Status</label>
-              <div className="flex gap-2">
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 11, color: C.muted, marginBottom: 8 }}>
+                Payment Status
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
                 {(['partial', 'paid'] as PaymentStatus[]).map((s) => (
-                  <button
+                  <PayStatusButton
                     key={s}
+                    label={s}
+                    active={payStatus === s}
                     onClick={() => setPayStatus(s)}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors capitalize ${
-                      payStatus === s
-                        ? 'bg-orange-500 text-white border-orange-500'
-                        : 'border-gray-200 text-gray-600 hover:border-orange-300'
-                    }`}
-                  >
-                    {s}
-                  </button>
+                  />
                 ))}
               </div>
             </div>
 
-            <div className="mb-5">
-              <label className="block text-xs text-gray-500 mb-2">Payment Method</label>
-              <div className="grid grid-cols-2 gap-2">
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 11, color: C.muted, marginBottom: 8 }}>
+                Payment Method
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {PAYMENT_METHODS.map((m) => (
-                  <button
+                  <PayMethodButton
                     key={m.value}
+                    label={m.label}
+                    active={payMethod === m.value}
                     onClick={() => setPayMethod(m.value)}
-                    className={`py-2 px-3 rounded-lg text-sm font-medium border transition-colors text-left ${
-                      payMethod === m.value
-                        ? 'bg-orange-500 text-white border-orange-500'
-                        : 'border-gray-200 text-gray-600 hover:border-orange-300'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
+                  />
                 ))}
               </div>
             </div>
 
-            <div className="flex gap-3">
+            <div style={{ display: 'flex', gap: 12 }}>
               <button
                 onClick={() => setShowPayModal(false)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
+                onMouseEnter={() => setPayCancelHover(true)}
+                onMouseLeave={() => setPayCancelHover(false)}
+                style={{
+                  flex: 1,
+                  padding: '10px 0',
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 12,
+                  fontSize: 13,
+                  color: payCancelHover ? C.text : C.muted,
+                  background: payCancelHover ? C.bg : 'transparent',
+                  cursor: 'pointer',
+                }}
               >
                 Cancel
               </button>
               <button
                 onClick={handleMarkPaid}
                 disabled={savingPay}
-                className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+                onMouseEnter={() => setPayConfirmHover(true)}
+                onMouseLeave={() => setPayConfirmHover(false)}
+                style={{
+                  flex: 1,
+                  padding: '10px 0',
+                  background: savingPay ? '#22c55e' : payConfirmHover ? '#16a34a' : '#22c55e',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 12,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: savingPay ? 'not-allowed' : 'pointer',
+                  opacity: savingPay ? 0.5 : 1,
+                }}
               >
                 {savingPay ? 'Saving...' : 'Confirm'}
               </button>
@@ -388,5 +619,134 @@ export function InvoiceDetail({ invoiceId, onBack }: InvoiceDetailProps) {
         </div>
       )}
     </div>
+  )
+}
+
+// --- Sub-components for hover state isolation ---
+
+function LineItemRow({
+  item,
+  canManage,
+  onRemove,
+}: {
+  item: { id: string; description: string; item_type: string; quantity: number; unit_price: number }
+  canManage: boolean
+  onRemove: () => void
+}) {
+  const [hover, setHover] = useState(false)
+  const [removeHover, setRemoveHover] = useState(false)
+
+  return (
+    <tr
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ background: hover ? '#1E1E1E' : 'transparent', borderBottom: `1px solid ${C.border}` }}
+    >
+      <td style={{ padding: '12px 20px', color: C.text }}>{item.description}</td>
+      <td style={{ padding: '12px 16px' }}>
+        <span
+          style={{
+            padding: '2px 8px',
+            borderRadius: 999,
+            fontSize: 11,
+            fontWeight: 500,
+            ...(item.item_type === 'service'
+              ? { background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }
+              : { background: 'rgba(168,85,247,0.15)', color: '#c084fc' }),
+          }}
+        >
+          {item.item_type}
+        </span>
+      </td>
+      <td style={{ padding: '12px 16px', textAlign: 'right', color: C.muted }}>{item.quantity}</td>
+      <td style={{ padding: '12px 16px', textAlign: 'right', color: C.muted }}>{formatMYR(item.unit_price)}</td>
+      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: C.text }}>
+        {formatMYR(item.quantity * item.unit_price)}
+      </td>
+      {canManage && (
+        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+          <button
+            onClick={onRemove}
+            onMouseEnter={() => setRemoveHover(true)}
+            onMouseLeave={() => setRemoveHover(false)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 12,
+              color: removeHover ? '#f87171' : '#f87171aa',
+              padding: 0,
+            }}
+          >
+            &times;
+          </button>
+        </td>
+      )}
+    </tr>
+  )
+}
+
+function PayStatusButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        flex: 1,
+        padding: '8px 0',
+        borderRadius: 8,
+        fontSize: 13,
+        fontWeight: 500,
+        textTransform: 'capitalize',
+        cursor: 'pointer',
+        border: active ? `1px solid ${C.orange}` : `1px solid ${hover ? C.orange + '66' : C.border}`,
+        background: active ? C.orange : 'transparent',
+        color: active ? '#fff' : C.muted,
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+function PayMethodButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: '8px 12px',
+        borderRadius: 8,
+        fontSize: 13,
+        fontWeight: 500,
+        textAlign: 'left',
+        cursor: 'pointer',
+        border: active ? `1px solid ${C.orange}` : `1px solid ${hover ? C.orange + '66' : C.border}`,
+        background: active ? C.orange : 'transparent',
+        color: active ? '#fff' : C.muted,
+      }}
+    >
+      {label}
+    </button>
   )
 }

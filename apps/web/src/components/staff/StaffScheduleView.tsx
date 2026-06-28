@@ -40,8 +40,10 @@ export function StaffScheduleView({ mechanicId, mechanicName }: Props) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [saveHover, setSaveHover] = useState(false)
+  const [hoveredRow, setHoveredRow] = useState<DayOfWeek | null>(null)
 
-  const canEdit = user?.role === 'hr_manager' || user?.role === 'ceo'
+  const canEdit = (user?.role as string) === 'hr_manager' || (user?.role as string) === 'ceo' || user?.role === 'super_admin' || user?.role === 'ops_manager'
 
   useEffect(() => {
     fetchSchedules(mechanicId)
@@ -106,20 +108,53 @@ export function StaffScheduleView({ mechanicId, mechanicName }: Props) {
     }
   }
 
-  const inputCls =
-    'border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-orange-400 w-24'
+  const timeInputStyle: React.CSSProperties = {
+    border: '1px solid #2A2A2A',
+    borderRadius: '6px',
+    padding: '4px 8px',
+    fontSize: '12px',
+    backgroundColor: '#161616',
+    color: '#F0F0F0',
+    outline: 'none',
+    width: '96px',
+  }
+
+  const thStyle: React.CSSProperties = {
+    textAlign: 'left',
+    padding: '10px 16px',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: '#A0A0A0',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    backgroundColor: '#0E0E0E',
+    borderBottom: '1px solid #2A2A2A',
+  }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-700">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#F0F0F0', margin: 0 }}>
           Weekly Schedule — {mechanicName}
         </h3>
         {canEdit && (
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-3 py-1.5 bg-orange-500 text-white text-xs rounded-lg font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors"
+            onMouseEnter={() => setSaveHover(true)}
+            onMouseLeave={() => setSaveHover(false)}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: saving ? '#F15A22' : saveHover ? '#d94e1a' : '#F15A22',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.5 : 1,
+              transition: 'background-color 0.15s',
+            }}
           >
             {saving ? 'Saving…' : 'Save Schedule'}
           </button>
@@ -127,73 +162,118 @@ export function StaffScheduleView({ mechanicId, mechanicName }: Props) {
       </div>
 
       {scheduleLoading && (
-        <p className="text-xs text-gray-400">Loading schedule…</p>
+        <p style={{ fontSize: '12px', color: '#A0A0A0', margin: 0 }}>Loading schedule…</p>
       )}
 
       {!scheduleLoading && (
-        <div className="border border-gray-200 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div
+          style={{
+            border: '1px solid #2A2A2A',
+            borderRadius: '12px',
+            overflow: 'hidden',
+          }}
+        >
+          <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">Day</th>
-                <th className="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-24">Working</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Shift Start</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Shift End</th>
+              <tr>
+                <th style={{ ...thStyle, width: '128px' }}>Day</th>
+                <th style={{ ...thStyle, textAlign: 'center', width: '96px' }}>Working</th>
+                <th style={thStyle}>Shift Start</th>
+                <th style={thStyle}>Shift End</th>
               </tr>
             </thead>
             <tbody>
               {DAYS.map((d, idx) => {
                 const state = dayStates[d.key]
                 const isWeekend = d.key === 'saturday' || d.key === 'sunday'
+                const isLastRow = idx === DAYS.length - 1
+                const isHovered = hoveredRow === d.key
+
+                let rowBg = '#161616'
+                if (isWeekend) rowBg = '#0E0E0E'
+                else if (isHovered) rowBg = '#1e1e1e'
+
                 return (
                   <tr
                     key={d.key}
-                    className={`border-b border-gray-50 last:border-0 ${
-                      isWeekend ? 'bg-gray-50/50' : 'hover:bg-gray-50'
-                    } ${idx % 2 === 0 ? '' : ''}`}
+                    onMouseEnter={() => !isWeekend && setHoveredRow(d.key)}
+                    onMouseLeave={() => setHoveredRow(null)}
+                    style={{
+                      borderBottom: isLastRow ? 'none' : '1px solid #2A2A2A',
+                      backgroundColor: rowBg,
+                      transition: 'background-color 0.1s',
+                    }}
                   >
-                    <td className="px-4 py-3 font-medium text-gray-700 text-sm">{d.label}</td>
-                    <td className="px-4 py-3 text-center">
+                    <td
+                      style={{
+                        padding: '12px 16px',
+                        fontWeight: 500,
+                        color: '#F0F0F0',
+                        fontSize: '14px',
+                      }}
+                    >
+                      {d.label}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                       <button
                         type="button"
                         onClick={() => toggleDay(d.key)}
                         disabled={!canEdit}
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                          state.is_working ? 'bg-orange-500' : 'bg-gray-200'
-                        } ${!canEdit ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
                         aria-pressed={state.is_working}
+                        style={{
+                          position: 'relative',
+                          display: 'inline-flex',
+                          height: '20px',
+                          width: '36px',
+                          alignItems: 'center',
+                          borderRadius: '9999px',
+                          border: 'none',
+                          backgroundColor: state.is_working ? '#F15A22' : '#2A2A2A',
+                          cursor: !canEdit ? 'not-allowed' : 'pointer',
+                          opacity: !canEdit ? 0.7 : 1,
+                          transition: 'background-color 0.2s',
+                          padding: 0,
+                          flexShrink: 0,
+                        }}
                       >
                         <span
-                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                            state.is_working ? 'translate-x-4' : 'translate-x-0.5'
-                          }`}
+                          style={{
+                            display: 'inline-block',
+                            height: '14px',
+                            width: '14px',
+                            borderRadius: '9999px',
+                            backgroundColor: '#fff',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                            transform: state.is_working ? 'translateX(18px)' : 'translateX(2px)',
+                            transition: 'transform 0.2s',
+                          }}
                         />
                       </button>
                     </td>
-                    <td className="px-4 py-3">
+                    <td style={{ padding: '12px 16px' }}>
                       {state.is_working ? (
                         <input
                           type="time"
                           value={state.shift_start}
                           onChange={(e) => setTime(d.key, 'shift_start', e.target.value)}
                           disabled={!canEdit}
-                          className={inputCls}
+                          style={timeInputStyle}
                         />
                       ) : (
-                        <span className="text-xs text-gray-300">—</span>
+                        <span style={{ fontSize: '12px', color: '#2A2A2A' }}>—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td style={{ padding: '12px 16px' }}>
                       {state.is_working ? (
                         <input
                           type="time"
                           value={state.shift_end}
                           onChange={(e) => setTime(d.key, 'shift_end', e.target.value)}
                           disabled={!canEdit}
-                          className={inputCls}
+                          style={timeInputStyle}
                         />
                       ) : (
-                        <span className="text-xs text-gray-300">—</span>
+                        <span style={{ fontSize: '12px', color: '#2A2A2A' }}>—</span>
                       )}
                     </td>
                   </tr>
@@ -204,11 +284,17 @@ export function StaffScheduleView({ mechanicId, mechanicName }: Props) {
         </div>
       )}
 
-      {saveError && <p className="text-red-500 text-xs">{saveError}</p>}
-      {saved && <p className="text-green-600 text-xs">Schedule saved successfully.</p>}
+      {saveError && (
+        <p style={{ color: '#ef4444', fontSize: '12px', margin: 0 }}>{saveError}</p>
+      )}
+      {saved && (
+        <p style={{ color: '#22c55e', fontSize: '12px', margin: 0 }}>Schedule saved successfully.</p>
+      )}
 
       {!canEdit && (
-        <p className="text-xs text-gray-400 italic">Only HR Manager or CEO can edit schedules.</p>
+        <p style={{ fontSize: '12px', color: '#A0A0A0', fontStyle: 'italic', margin: 0 }}>
+          Only HR Manager or CEO can edit schedules.
+        </p>
       )}
     </div>
   )

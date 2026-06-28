@@ -41,6 +41,28 @@ const SERVICE_TYPES = [
   'Other',
 ]
 
+// Shared field styles
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  border: '1px solid #2A2A2A',
+  borderRadius: '8px',
+  padding: '10px 12px',
+  fontSize: '0.875rem',
+  backgroundColor: '#0E0E0E',
+  color: '#F0F0F0',
+  outline: 'none',
+  boxSizing: 'border-box',
+  transition: 'border-color 0.15s',
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: '0.75rem',
+  fontWeight: 500,
+  color: '#A0A0A0',
+  marginBottom: '6px',
+}
+
 export function NewJobModal({ onClose, onSuccess }: NewJobModalProps) {
   const user = useAuthStore((s) => s.user)
   const createJob = useJobsStore((s) => s.createJob)
@@ -124,58 +146,149 @@ export function NewJobModal({ onClose, onSuccess }: NewJobModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-800">New Job Order</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: '#161616',
+          borderRadius: '16px',
+          border: '1px solid #2A2A2A',
+          width: '100%',
+          maxWidth: '520px',
+          margin: '0 16px',
+          overflow: 'hidden',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '20px 24px',
+            borderBottom: '1px solid #2A2A2A',
+          }}
+        >
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, color: '#F0F0F0', margin: 0 }}>
+            New Job Order
+          </h2>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#A0A0A0',
+              fontSize: '1.125rem',
+              cursor: 'pointer',
+              lineHeight: 1,
+              padding: '4px',
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#F0F0F0')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#A0A0A0')}
+          >
+            ✕
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[80vh]">
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+            overflowY: 'auto',
+            maxHeight: '80vh',
+          }}
+        >
           {/* Phone lookup */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Customer Phone</label>
-            <div className="flex gap-2">
+            <label style={labelStyle}>Customer Phone</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 type="text"
                 placeholder="e.g. 0123456789"
                 value={phoneQuery}
                 onChange={(e) => setPhoneQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), lookupCustomer())}
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                style={{ ...inputStyle, flex: 1 }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
               />
               <button
                 type="button"
                 onClick={lookupCustomer}
                 disabled={lookingUp}
-                className="px-4 py-2 bg-gray-800 text-white text-sm rounded-lg hover:bg-gray-700 disabled:opacity-50"
+                style={{
+                  padding: '10px 18px',
+                  backgroundColor: '#F0F0F0',
+                  color: '#0E0E0E',
+                  fontSize: '0.875rem',
+                  fontWeight: 500,
+                  borderRadius: '8px',
+                  border: 'none',
+                  cursor: lookingUp ? 'not-allowed' : 'pointer',
+                  opacity: lookingUp ? 0.5 : 1,
+                  whiteSpace: 'nowrap',
+                  transition: 'opacity 0.15s',
+                }}
               >
                 {lookingUp ? '...' : 'Lookup'}
               </button>
             </div>
-            {notFound && <p className="mt-1 text-xs text-red-500">No customer found with that phone number.</p>}
+            {notFound && (
+              <p style={{ marginTop: '6px', fontSize: '0.75rem', color: '#f87171' }}>
+                No customer found with that phone number.
+              </p>
+            )}
           </div>
 
           {/* Customer info */}
           {customer && (
-            <div className="bg-gray-50 rounded-lg px-4 py-3">
-              <p className="text-sm font-medium text-gray-800">{customer.full_name}</p>
-              <p className="text-xs text-gray-500">{customer.phone}</p>
+            <div
+              style={{
+                backgroundColor: '#1a1a1a',
+                borderRadius: '8px',
+                padding: '14px 16px',
+                border: '1px solid #2A2A2A',
+              }}
+            >
+              <p style={{ fontSize: '0.875rem', fontWeight: 500, color: '#F0F0F0', margin: 0 }}>
+                {customer.full_name}
+              </p>
+              <p style={{ fontSize: '0.75rem', color: '#A0A0A0', margin: '2px 0 0' }}>
+                {customer.phone}
+              </p>
             </div>
           )}
 
           {/* Vehicle */}
           {customer && (
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Vehicle</label>
+              <label style={labelStyle}>Vehicle</label>
               {vehicles.length === 0 ? (
-                <p className="text-xs text-gray-400">No vehicles registered for this customer.</p>
+                <p style={{ fontSize: '0.75rem', color: '#A0A0A0' }}>
+                  No vehicles registered for this customer.
+                </p>
               ) : (
                 <select
                   required
                   value={form.vehicle_id}
                   onChange={(e) => setForm({ ...form, vehicle_id: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  style={inputStyle}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
                 >
                   <option value="">Select vehicle</option>
                   {vehicles.map((v) => (
@@ -190,12 +303,14 @@ export function NewJobModal({ onClose, onSuccess }: NewJobModalProps) {
 
           {/* Service type */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Service Type</label>
+            <label style={labelStyle}>Service Type</label>
             <select
               required
               value={form.service_type}
               onChange={(e) => setForm({ ...form, service_type: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              style={inputStyle}
+              onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+              onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
             >
               <option value="">Select service</option>
               {SERVICE_TYPES.map((s) => (
@@ -206,23 +321,27 @@ export function NewJobModal({ onClose, onSuccess }: NewJobModalProps) {
 
           {/* Description */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Description / Notes</label>
+            <label style={labelStyle}>Description / Notes</label>
             <textarea
               rows={3}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="Describe the issue or requested service..."
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none"
+              style={{ ...inputStyle, resize: 'none' }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+              onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
             />
           </div>
 
           {/* Mechanic */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Assign Mechanic (optional)</label>
+            <label style={labelStyle}>Assign Mechanic (optional)</label>
             <select
               value={form.assigned_to}
               onChange={(e) => setForm({ ...form, assigned_to: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              style={inputStyle}
+              onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+              onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
             >
               <option value="">Unassigned</option>
               {mechanics.map((m) => (
@@ -231,20 +350,47 @@ export function NewJobModal({ onClose, onSuccess }: NewJobModalProps) {
             </select>
           </div>
 
-          {error && <p className="text-xs text-red-500">{error}</p>}
+          {error && (
+            <p style={{ fontSize: '0.75rem', color: '#f87171', margin: 0 }}>{error}</p>
+          )}
 
-          <div className="flex gap-3 pt-2">
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: '12px', paddingTop: '4px' }}>
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50"
+              style={{
+                flex: 1,
+                border: '1px solid #2A2A2A',
+                color: '#A0A0A0',
+                borderRadius: '8px',
+                padding: '11px 0',
+                fontSize: '0.875rem',
+                backgroundColor: 'transparent',
+                cursor: 'pointer',
+                transition: 'background-color 0.15s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1a1a1a')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting || !customer || !form.vehicle_id}
-              className="flex-1 bg-orange-500 text-white rounded-lg py-2 text-sm font-medium hover:bg-orange-600 disabled:opacity-50"
+              style={{
+                flex: 1,
+                backgroundColor: '#F15A22',
+                color: '#fff',
+                borderRadius: '8px',
+                padding: '11px 0',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                border: 'none',
+                cursor: submitting || !customer || !form.vehicle_id ? 'not-allowed' : 'pointer',
+                opacity: submitting || !customer || !form.vehicle_id ? 0.5 : 1,
+                transition: 'opacity 0.15s',
+              }}
             >
               {submitting ? 'Creating...' : 'Create Job'}
             </button>

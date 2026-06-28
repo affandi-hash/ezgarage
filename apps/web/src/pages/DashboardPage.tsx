@@ -1,227 +1,422 @@
-import { useState } from 'react'
-import { Header } from '@/components/layout/Header'
+import { useOutletContext } from 'react-router-dom'
+import {
+  CalendarCheck,
+  Car,
+  Bike,
+  CheckCircle,
+  AlertTriangle,
+  Clock,
+  Package,
+  DollarSign,
+  TrendingUp,
+  Timer,
+  RefreshCw,
+} from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { useDashboard } from '@/hooks/useDashboard'
+import { JOB_STATUS_COLORS, JOB_STATUS_LABELS, ROLE_LABELS } from '@/types'
+import type { Job, Booking, JobStatus } from '@/types'
 
-const STATUS_LABELS: Record<string, string> = {
-  received: 'Received',
-  inspecting: 'Inspecting',
-  waiting_approval: 'Waiting Approval',
-  in_progress: 'In Progress',
-  waiting_for_parts: 'Waiting Parts',
-  done: 'Done',
-  collected: 'Collected',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  received: 'bg-gray-100 text-gray-700',
-  inspecting: 'bg-blue-100 text-blue-700',
-  waiting_approval: 'bg-yellow-100 text-yellow-700',
-  in_progress: 'bg-orange-100 text-orange-700',
-  waiting_for_parts: 'bg-purple-100 text-purple-700',
-  done: 'bg-green-100 text-green-700',
-  collected: 'bg-emerald-100 text-emerald-700',
-}
-
-interface Branch {
-  id: string
-  name: string
-}
-
-const BRANCHES: Branch[] = [
-  { id: 'all', name: 'All Branches' },
-  { id: 'branch-car', name: 'Car Division' },
-  { id: 'branch-bike', name: 'Bike Division' },
-]
+type OutletContext = { selectedBranchId: string | null }
 
 function formatRM(amount: number) {
   return `RM ${amount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
+// Inject keyframes for spin animation once
+const spinKeyframes = `@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`
+if (typeof document !== 'undefined' && !document.getElementById('dashboard-spin-keyframes')) {
+  const style = document.createElement('style')
+  style.id = 'dashboard-spin-keyframes'
+  style.textContent = spinKeyframes
+  document.head.appendChild(style)
+}
+
+function StatusBadge({ status }: { status: JobStatus }) {
+  const color = JOB_STATUS_COLORS[status] ?? '#6B7280'
+  const label = JOB_STATUS_LABELS[status] ?? status
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        fontSize: 12,
+        padding: '2px 8px',
+        borderRadius: 9999,
+        fontWeight: 500,
+        backgroundColor: `${color}20`,
+        color,
+        border: `1px solid ${color}40`,
+      } as React.CSSProperties}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, backgroundColor: color } as React.CSSProperties} />
+      {label}
+    </span>
+  )
+}
+
+interface KpiCardProps {
+  label: string
+  value: string | number
+  icon: React.ElementType
+  iconColor: string
+  subtext?: string
+  alert?: boolean
+}
+
+function KpiCard({ label, value, icon: Icon, iconColor, subtext, alert }: KpiCardProps) {
+  return (
+    <div
+      style={{
+        borderRadius: 12,
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        backgroundColor: '#161616',
+        border: `1px solid ${alert ? `${iconColor}40` : '#2A2A2A'}`,
+      } as React.CSSProperties}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            backgroundColor: `${iconColor}18`,
+          } as React.CSSProperties}
+        >
+          <Icon size={18} color={iconColor} />
+        </div>
+        {alert && (
+          <span
+            style={{
+              fontSize: 12,
+              padding: '2px 6px',
+              borderRadius: 4,
+              fontWeight: 500,
+              backgroundColor: `${iconColor}20`,
+              color: iconColor,
+            } as React.CSSProperties}
+          >
+            Alert
+          </span>
+        )}
+      </div>
+      <div>
+        <p style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#F0F0F0' }}>{value}</p>
+        <p style={{ fontSize: 12, marginTop: 2, marginBottom: 0, color: '#A0A0A0' }}>{label}</p>
+        {subtext && (
+          <p style={{ fontSize: 12, marginTop: 4, marginBottom: 0, fontWeight: 500, color: iconColor }}>{subtext}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function WorkshopSnapshot({ snapshot }: { snapshot: Array<{ status: JobStatus; count: number }> }) {
+  const total = snapshot.reduce((s, i) => s + i.count, 0)
+
+  return (
+    <div style={{ backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 16, padding: '24px 28px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <h3 style={{ color: '#F0F0F0', fontSize: 14, fontWeight: 700, margin: 0 }}>Workshop Snapshot</h3>
+        <span style={{ color: '#A0A0A0', fontSize: 12 }}>{total} active job{total !== 1 ? 's' : ''}</span>
+      </div>
+
+      <div style={{ display: 'flex', borderRadius: 99, overflow: 'hidden', height: 10, backgroundColor: '#2A2A2A', marginBottom: 24 }}>
+        {snapshot.filter((s) => s.count > 0).map((s) => (
+          <div key={s.status} title={`${JOB_STATUS_LABELS[s.status]}: ${s.count}`}
+            style={{ width: `${total > 0 ? (s.count / total) * 100 : 0}%`, backgroundColor: JOB_STATUS_COLORS[s.status], minWidth: 4 }} />
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px 24px' }}>
+        {snapshot.map((s) => (
+          <div key={s.status} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: JOB_STATUS_COLORS[s.status], flexShrink: 0 }} />
+            <span style={{ color: '#A0A0A0', fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+              {JOB_STATUS_LABELS[s.status]}
+            </span>
+            <span style={{ color: '#F0F0F0', fontSize: 13, fontWeight: 600, marginLeft: 4 }}>{s.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RecentJobsTable({ jobs }: { jobs: Job[] }) {
+  const thStyle: React.CSSProperties = { color: '#6B7280', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, padding: '12px 16px', textAlign: 'left', whiteSpace: 'nowrap', borderBottom: '1px solid #2A2A2A' }
+  const tdStyle: React.CSSProperties = { padding: '14px 16px', borderBottom: '1px solid #1E1E1E', fontSize: 13, verticalAlign: 'middle' }
+
+  return (
+    <div style={{ backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 16, overflow: 'hidden' }}>
+      <div style={{ padding: '20px 24px', borderBottom: '1px solid #2A2A2A' }}>
+        <h3 style={{ color: '#F0F0F0', fontSize: 14, fontWeight: 700, margin: 0 }}>Recent Jobs</h3>
+      </div>
+      {jobs.length === 0 ? (
+        <div style={{ padding: 48, textAlign: 'center', color: '#A0A0A0', fontSize: 13 }}>No active jobs found.</div>
+      ) : (
+        <div style={{ overflowX: 'auto' as const }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                {['Job #', 'Customer', 'Plate', 'Service', 'Status', 'Days', 'Staff'].map((h) => (
+                  <th key={h} style={thStyle}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => {
+                const customerName = typeof job.customer === 'object' && job.customer ? (job.customer as any).full_name : '—'
+                const plate = typeof job.vehicle === 'object' && job.vehicle ? (job.vehicle as any).plate_number : '—'
+                const staffName = typeof job.foreman === 'object' && job.foreman ? (job.foreman as any).full_name?.split(' ')[0] : '—'
+
+                return (
+                  <tr key={job.id} style={{ cursor: 'default' }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#1A1A1A')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>
+                    <td style={{ ...tdStyle, color: '#F15A22', fontFamily: 'monospace', fontWeight: 700 }}>{job.job_number}</td>
+                    <td style={{ ...tdStyle, color: '#F0F0F0', fontWeight: 500 }}>{customerName}</td>
+                    <td style={{ ...tdStyle, color: '#A0A0A0', fontFamily: 'monospace' }}>{plate}</td>
+                    <td style={{ ...tdStyle, color: '#A0A0A0', textTransform: 'capitalize' as const }}>{job.service_type?.replace(/_/g, ' ')}</td>
+                    <td style={tdStyle}><StatusBadge status={job.status} /></td>
+                    <td style={{ ...tdStyle, color: job.days_in_garage && job.days_in_garage > 7 ? '#EF4444' : '#A0A0A0' }}>{job.days_in_garage ?? 0}d</td>
+                    <td style={{ ...tdStyle, color: '#A0A0A0' }}>{staffName}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TodayBookingsList({ bookings }: { bookings: Booking[] }) {
+  return (
+    <div style={{ backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 12 }}>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid #2A2A2A' }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0, color: '#F0F0F0' }}>
+          Today's Bookings
+        </h3>
+      </div>
+      {bookings.length === 0 ? (
+        <div style={{ padding: 32, textAlign: 'center', fontSize: 14, color: '#A0A0A0' }}>
+          No bookings today.
+        </div>
+      ) : (
+        <div>
+          {bookings.map((b, idx) => (
+            <div
+              key={b.id}
+              style={{
+                padding: '12px 20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                borderBottom: idx < bookings.length - 1 ? '1px solid #2A2A2A' : 'none',
+                cursor: 'default',
+              } as React.CSSProperties}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#1E1E1E')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 14, fontWeight: 500, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#F0F0F0' } as React.CSSProperties}>
+                  {b.customer_name}
+                </p>
+                <p style={{ fontSize: 12, marginTop: 2, marginBottom: 0, color: '#A0A0A0' }}>
+                  {b.customer_phone} · {b.vehicle_plate}
+                </p>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 9999, backgroundColor: '#1E1E1E', color: '#F15A22', border: '1px solid #2A2A2A' }}>
+                  {b.service_type?.replace(/_/g, ' ')}
+                </span>
+                <p style={{ fontSize: 12, marginTop: 4, marginBottom: 0, color: '#A0A0A0' }}>
+                  {b.arrival_mode?.replace(/_/g, ' ')}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function DashboardPage() {
   const user = useAuthStore((s) => s.user)
-  const isCeo = user?.role === 'ceo'
+  const { selectedBranchId } = useOutletContext<OutletContext>()
+  const { stats, recentJobs, todayBookings, workshopSnapshot, loading, error, refetch } =
+    useDashboard(selectedBranchId)
 
-  const [selectedBranch, setSelectedBranch] = useState<string | null>(
-    isCeo ? null : (user?.branch_id ?? null)
-  )
+  const now = new Date()
+  const hour = now.getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const firstName = user?.full_name?.split(' ')[0] ?? 'there'
 
-  const branchId = selectedBranch === 'all' ? null : selectedBranch
-  const { stats, recentJobs, lowStockItems, loading, error } = useDashboard(branchId)
-
-  const statCards = [
+  const kpiCards: KpiCardProps[] = [
     {
-      label: 'Active Jobs',
-      value: loading ? '…' : String(stats.active_jobs),
-      color: 'text-blue-600',
-      bg: 'bg-blue-50',
+      label: "Today's Bookings",
+      value: loading ? '—' : stats?.bookings_today ?? 0,
+      icon: CalendarCheck,
+      iconColor: '#3B82F6',
     },
     {
-      label: "Today's Appointments",
-      value: loading ? '…' : String(stats.today_appointments),
-      color: 'text-green-600',
-      bg: 'bg-green-50',
+      label: 'Active Cars',
+      value: loading ? '—' : stats?.active_cars ?? 0,
+      icon: Car,
+      iconColor: '#8B5CF6',
     },
     {
-      label: 'Low Stock Items',
-      value: loading ? '…' : String(stats.low_stock_items),
-      color: stats.low_stock_items > 0 ? 'text-red-600' : 'text-gray-600',
-      bg: stats.low_stock_items > 0 ? 'bg-red-50' : 'bg-gray-50',
+      label: 'Active Bikes',
+      value: loading ? '—' : stats?.active_bikes ?? 0,
+      icon: Bike,
+      iconColor: '#06B6D4',
     },
     {
-      label: 'Unpaid Invoices',
-      value: loading ? '…' : `${stats.unpaid_invoices}`,
-      sublabel: loading ? '' : formatRM(stats.unpaid_invoices_total),
-      color: 'text-yellow-600',
-      bg: 'bg-yellow-50',
+      label: 'Ready for Pickup',
+      value: loading ? '—' : stats?.ready ?? 0,
+      icon: CheckCircle,
+      iconColor: '#22C55E',
     },
     {
-      label: 'Monthly Revenue',
-      value: loading ? '…' : formatRM(stats.monthly_revenue),
-      color: 'text-emerald-600',
-      bg: 'bg-emerald-50',
+      label: 'Long Due',
+      value: loading ? '—' : stats?.long_due ?? 0,
+      icon: AlertTriangle,
+      iconColor: '#DC2626',
+      alert: (stats?.long_due ?? 0) > 0,
+    },
+    {
+      label: 'Waiting Approval',
+      value: loading ? '—' : stats?.waiting_approval ?? 0,
+      icon: Clock,
+      iconColor: '#EF4444',
+      alert: (stats?.waiting_approval ?? 0) > 0,
+    },
+    {
+      label: 'Waiting Parts',
+      value: loading ? '—' : stats?.waiting_parts ?? 0,
+      icon: Package,
+      iconColor: '#F97316',
+    },
+    {
+      label: 'Est. Revenue (Month)',
+      value: loading ? '—' : formatRM(stats?.est_revenue ?? 0),
+      icon: DollarSign,
+      iconColor: '#10B981',
+    },
+    {
+      label: 'Completed This Month',
+      value: loading ? '—' : stats?.completed_month ?? 0,
+      icon: TrendingUp,
+      iconColor: '#F15A22',
+    },
+    {
+      label: 'Avg Days in Garage',
+      value: loading ? '—' : `${stats?.avg_days ?? 0}d`,
+      icon: Timer,
+      iconColor: '#A0A0A0',
     },
   ]
 
   return (
-    <>
-      <Header title="Dashboard" />
-      <div className="p-6 space-y-6">
-        {/* Welcome + Branch Selector */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800">
-              Welcome back, {user?.full_name?.split(' ')[0]}
-            </h2>
-            <p className="text-sm text-gray-500 mt-0.5 capitalize">
-              {user?.role.replace(/_/g, ' ')}
-            </p>
-          </div>
-
-          {isCeo && (
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-gray-600 font-medium">Branch:</label>
-              <select
-                value={selectedBranch ?? 'all'}
-                onChange={(e) => setSelectedBranch(e.target.value === 'all' ? null : e.target.value)}
-                className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {BRANCHES.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 32, maxWidth: 1400 }}>
+      {/* Welcome header */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: '#F0F0F0' }}>
+            {greeting}, {firstName} 👋
+          </h2>
+          <p style={{ fontSize: 14, marginTop: 2, marginBottom: 0, color: '#A0A0A0' }}>
+            {user ? ROLE_LABELS[user.role] : ''} ·{' '}
+            {now.toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
         </div>
+        <button
+          onClick={refetch}
+          disabled={loading}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            borderRadius: 8,
+            fontSize: 14,
+            border: '1px solid #2A2A2A',
+            color: '#A0A0A0',
+            padding: '0 20px',
+            minHeight: 44,
+            backgroundColor: 'transparent',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            opacity: loading ? 0.5 : 1,
+          } as React.CSSProperties}
+          onMouseEnter={e => { if (!loading) (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#1E1E1E' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent' }}
+        >
+          <RefreshCw
+            size={13}
+            style={loading ? { animation: 'spin 0.8s linear infinite' } : undefined}
+          />
+          Refresh
+        </button>
+      </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
-            {error}
-          </div>
-        )}
-
-        {/* Stat Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {statCards.map((stat) => (
-            <div key={stat.label} className={`${stat.bg} rounded-xl border border-gray-100 p-4`}>
-              <p className="text-xs text-gray-500 font-medium">{stat.label}</p>
-              <p className={`text-2xl font-bold mt-1 ${stat.color}`}>{stat.value}</p>
-              {stat.sublabel && (
-                <p className="text-xs text-gray-500 mt-0.5">{stat.sublabel}</p>
-              )}
-            </div>
-          ))}
+      {/* Error */}
+      {error && (
+        <div
+          style={{
+            borderRadius: 8,
+            padding: '12px 16px',
+            fontSize: 14,
+            backgroundColor: 'rgba(239,68,68,0.1)',
+            border: '1px solid rgba(239,68,68,0.3)',
+            color: '#EF4444',
+          }}
+        >
+          {error}
         </div>
+      )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Recent Jobs Table */}
-          <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h3 className="font-semibold text-gray-800 text-sm">Recent Jobs</h3>
-            </div>
-            <div className="overflow-x-auto">
-              {loading ? (
-                <div className="p-6 text-center text-gray-400 text-sm">Loading…</div>
-              ) : recentJobs.length === 0 ? (
-                <div className="p-6 text-center text-gray-400 text-sm">No jobs found</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-gray-500 border-b border-gray-100">
-                      <th className="text-left px-5 py-3 font-medium">Job #</th>
-                      <th className="text-left px-3 py-3 font-medium">Customer</th>
-                      <th className="text-left px-3 py-3 font-medium">Plate</th>
-                      <th className="text-left px-3 py-3 font-medium">Service</th>
-                      {isCeo && <th className="text-left px-3 py-3 font-medium">Branch</th>}
-                      <th className="text-left px-3 py-3 font-medium">Status</th>
-                      <th className="text-left px-3 py-3 font-medium">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentJobs.map((job) => (
-                      <tr key={job.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                        <td className="px-5 py-3 font-mono text-xs text-gray-700">{job.job_number}</td>
-                        <td className="px-3 py-3 text-gray-700">{job.customer_name}</td>
-                        <td className="px-3 py-3 font-mono text-xs text-gray-600">{job.plate_number}</td>
-                        <td className="px-3 py-3 text-gray-600 max-w-[120px] truncate">{job.service_type}</td>
-                        {isCeo && <td className="px-3 py-3 text-gray-500 text-xs">{job.branch_name}</td>}
-                        <td className="px-3 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[job.status] ?? 'bg-gray-100 text-gray-700'}`}>
-                            {STATUS_LABELS[job.status] ?? job.status}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 text-gray-400 text-xs whitespace-nowrap">{formatDate(job.created_at)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
+      {/* KPI cards — responsive grid */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+          gap: 20,
+        }}
+      >
+        {kpiCards.map((card) => (
+          <KpiCard key={card.label} {...card} />
+        ))}
+      </div>
 
-          {/* Low Stock Alerts */}
-          <div className="bg-white rounded-xl border border-gray-200">
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-800 text-sm">Low Stock Alerts</h3>
-              {stats.low_stock_items > 0 && (
-                <span className="bg-red-100 text-red-600 text-xs font-medium px-2 py-0.5 rounded-full">
-                  {stats.low_stock_items}
-                </span>
-              )}
-            </div>
-            <div className="divide-y divide-gray-50">
-              {loading ? (
-                <div className="p-6 text-center text-gray-400 text-sm">Loading…</div>
-              ) : lowStockItems.length === 0 ? (
-                <div className="p-6 text-center text-gray-400 text-sm">
-                  <p className="text-2xl mb-2">✓</p>
-                  All stock levels are healthy
-                </div>
-              ) : (
-                lowStockItems.slice(0, 8).map((item) => (
-                  <div key={item.id} className="px-5 py-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{item.name}</p>
-                        <p className="text-xs text-gray-400">{item.sku}</p>
-                        {isCeo && <p className="text-xs text-gray-400">{item.branch_name}</p>}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-bold text-red-600">{item.quantity}</p>
-                        <p className="text-xs text-gray-400">min {item.low_stock_threshold}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+      {/* Workshop snapshot */}
+      <WorkshopSnapshot snapshot={workshopSnapshot} />
+
+      {/* Bottom grid: recent jobs + today's bookings */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)',
+          gap: 24,
+        }}
+      >
+        <div>
+          <RecentJobsTable jobs={recentJobs} />
+        </div>
+        <div>
+          <TodayBookingsList bookings={todayBookings} />
         </div>
       </div>
-    </>
+    </div>
   )
 }
