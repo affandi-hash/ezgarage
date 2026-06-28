@@ -289,7 +289,7 @@ function KpiCard({ label, value, icon: Icon, color }: {
 // â”€â”€â”€ Daily Board Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function DailyBoardTab({ branchId }: { branchId: string | null }) {
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(() => new Date().toLocaleDateString('en-CA'))
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [editRecord, setEditRecord] = useState<AttendanceRecord | null>(null)
@@ -315,7 +315,7 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
   }
   const nextDay = () => {
     const d = new Date(date); d.setDate(d.getDate() + 1)
-    const today = new Date().toISOString().split('T')[0]
+    const today = new Date().toLocaleDateString('en-CA')
     if (d.toISOString().split('T')[0] <= today) setDate(d.toISOString().split('T')[0])
   }
 
@@ -831,7 +831,7 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
 function MyAttendanceTab({ staffId }: { staffId: string }) {
   const [records, setRecords]   = useState<AttendanceRecord[]>([])
   const [loading, setLoading]   = useState(true)
-  const [month, setMonth]       = useState(() => new Date().toISOString().slice(0, 7)) // YYYY-MM
+  const [month, setMonth]       = useState(() => new Date().toLocaleDateString('en-CA').slice(0, 7)) // YYYY-MM
 
   useEffect(() => {
     setLoading(true)
@@ -1234,7 +1234,7 @@ function ClockInOutModal({ mode, staffId, branchId, todayRecord, onClose, onDone
       const photoUrl = urlData.publicUrl
 
       const now = new Date()
-      const today = now.toISOString().slice(0, 10)
+      const today = now.toLocaleDateString('en-CA')
 
       if (mode === 'clock_in') {
         const h = now.getHours(), m = now.getMinutes()
@@ -1360,7 +1360,7 @@ export function AttendancePage() {
   const [showClock,    setShowClock]    = useState<'clock_in' | 'clock_out' | null>(null)
 
   const refreshTodayRecord = useCallback(async (staffId: string) => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = new Date().toLocaleDateString('en-CA')
     const { data } = await supabase.from('attendance_records')
       .select('id, clock_in_time, clock_out_time, status')
       .eq('staff_id', staffId).eq('date', today).maybeSingle()
@@ -1381,7 +1381,7 @@ export function AttendancePage() {
   }, [user?.id, refreshTodayRecord])
 
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0]
+    const today = new Date().toLocaleDateString('en-CA')
     setKpiLoading(true)
 
     Promise.all([
