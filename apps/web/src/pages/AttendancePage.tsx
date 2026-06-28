@@ -80,7 +80,11 @@ interface MonthlySummary {
 // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function fmtTime(t: string | null) {
-  if (!t) return 'â€”'
+  if (!t) return '—'
+  // Handle both “HH:MM” time strings and full ISO timestamps
+  if (t.includes('T') || t.includes('-')) {
+    return new Date(t).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' })
+  }
   return t.slice(0, 5)
 }
 
