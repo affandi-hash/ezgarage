@@ -1260,9 +1260,10 @@ export function PartsPage() {
   // ── Filtering ─────────────────────────────────────────────────────────────────
 
   const filtered = parts.filter((p) => {
-    // Sub-tab filter: parts requests have job_id, stock purchases don't
-    if (requestsSubTab === 'parts_requests' && !p.job_id) return false
-    if (requestsSubTab === 'stock_purchases' && p.job_id) return false
+    // Sub-tab filter: stock purchases have ordered_qty set at creation and no job_id
+    const isStockPurchase = !p.job_id && p.ordered_qty != null
+    if (requestsSubTab === 'parts_requests' && isStockPurchase) return false
+    if (requestsSubTab === 'stock_purchases' && !isStockPurchase) return false
 
     if (statusFilter !== 'all' && p.status !== statusFilter) return false
 
@@ -1558,11 +1559,44 @@ export function PartsPage() {
       }
       if (form.part_number.trim()) payload.part_number = form.part_number.trim()
       if (form.supplier.trim()) payload.supplier = form.supplier.trim()
-      if (form.unit_price) payload.cost_price = Number(form.unit_price)
+      if (form.unit_price) {
+        payload.unit_price = Number(form.unit_price)
+        payload.selling_price = Number(form.unit_price)
+      }
       if (form.notes.trim()) payload.notes = form.notes.trim()
       if (form.job_id) payload.job_id = form.job_id
       if (user?.id) payload.requested_by = user.id
       if (user?.tenant_id) payload.tenant_id = user.tenant_id
+
+      // Auto-link or create a catalogue entry so the part appears in Catalogue tab
+      const { data: existing } = await supabase
+        .from('parts_catalogue')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .ilike('name', form.part_name.trim())
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+      if (existing) {
+        payload.catalogue_part_id = existing.id
+      } else {
+        const { data: newCat } = await supabase
+          .from('parts_catalogue')
+          .insert({
+            name: form.part_name.trim(),
+            part_number: form.part_number.trim() || null,
+            stock_qty: 0,
+            reorder_level: 5,
+            unit: 'unit',
+            division: 'both',
+            tenant_id: tenantId,
+            branch_id: branchId || null,
+            is_active: true,
+          })
+          .select('id')
+          .single()
+        if (newCat) payload.catalogue_part_id = newCat.id
+      }
 
       const { error: dbErr } = await supabase.from('parts_requests').insert(payload)
       if (dbErr) throw dbErr
