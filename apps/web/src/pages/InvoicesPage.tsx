@@ -852,9 +852,9 @@ export function InvoicesPage() {
                       <CreditCard size={15} /> Record Payment
                     </button>
                   )}
-                  <a href={`/print/invoice/${editInvoice.id}`} target="_blank" rel="noopener noreferrer" style={{ ...btnOutline, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print Invoice</a>
+                  <a href={`/print/invoice/${editInvoice.id}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ ...btnOutline, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print Invoice</a>
                   {editInvoice.status === 'paid' && (
-                    <a href={`/print/receipt/${editInvoice.id}`} target="_blank" rel="noopener noreferrer" style={{ ...btnOutline, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print Receipt</a>
+                    <a href={`/print/receipt/${editInvoice.id}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ ...btnOutline, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print Receipt</a>
                   )}
                   {editInvoice.status !== 'void' && editInvoice.status !== 'paid' && (
                     <button onClick={voidInvoice} disabled={saving} style={{ background: '#1A0E0E', border: '1px solid #3D1515', color: '#F87171', borderRadius: 6, padding: '8px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
