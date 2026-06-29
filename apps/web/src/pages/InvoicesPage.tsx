@@ -225,6 +225,7 @@ function buildInvoiceHtml(inv: Invoice, branch: BranchPrintInfo | null): string 
   <div style="display:grid;grid-template-columns:1fr 1fr;margin-bottom:12px;border:1px solid #ccc">
     <div style="padding:8px 12px;border-right:1px solid #ccc">
       <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Customer</div>
+      ${inv.is_internal_fleet ? `<div style="display:inline-block;font-size:10px;font-weight:700;color:#F15A22;border:1px solid #F15A22;border-radius:3px;padding:1px 6px;letter-spacing:0.5px;margin-bottom:5px">INTRACOMPANY · INTERNAL FLEET</div>` : ''}
       <div style="font-weight:700;font-size:13px;margin-bottom:2px">${inv.customer_name||'—'}</div>
       <div style="font-size:12px;color:#444">${inv.customer_phone}</div>
       <div style="font-size:12px;color:#444">${inv.customer_email}</div>
