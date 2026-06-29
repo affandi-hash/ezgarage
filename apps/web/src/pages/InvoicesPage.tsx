@@ -1346,7 +1346,7 @@ export function InvoicesPage() {
                 }
                 return true
               }).length === 0 ? (
-                <div style={{ textAlign: 'center', color: C.text2, padding: 24, fontSize: 13 }}>{labourPickerSearch ? `No results for "${labourPickerSearch}"` : 'No active labour charges. Add some in the Labour Charges tab.'}</div>
+                <div style={{ textAlign: 'center', color: C.text2, padding: 24, fontSize: 13 }}>{labourPickerSearch ? `No results for "${labourPickerSearch}"` : 'No active labour charges. Add some in the Labour Charges page.'}</div>
               ) : labourCharges.filter(lc => {
                 if (!lc.is_active) return false
                 if (pickerVehicleType && lc.division !== pickerVehicleType && lc.division !== 'both') return false
