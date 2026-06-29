@@ -1569,33 +1569,37 @@ export function PartsPage() {
       if (user?.tenant_id) payload.tenant_id = user.tenant_id
 
       // Auto-link or create a catalogue entry so the part appears in Catalogue tab
-      const { data: existing } = await supabase
-        .from('parts_catalogue')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .ilike('name', form.part_name.trim())
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle()
-      if (existing) {
-        payload.catalogue_part_id = existing.id
-      } else {
-        const { data: newCat } = await supabase
+      try {
+        const { data: existing } = await supabase
           .from('parts_catalogue')
-          .insert({
-            name: form.part_name.trim(),
-            part_number: form.part_number.trim() || null,
-            stock_qty: 0,
-            reorder_level: 5,
-            unit: 'unit',
-            division: 'both',
-            tenant_id: tenantId,
-            branch_id: branchId || null,
-            is_active: true,
-          })
           .select('id')
-          .single()
-        if (newCat) payload.catalogue_part_id = newCat.id
+          .eq('tenant_id', tenantId)
+          .ilike('name', form.part_name.trim())
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle()
+        if (existing) {
+          payload.catalogue_part_id = existing.id
+        } else {
+          const { data: newCat } = await supabase
+            .from('parts_catalogue')
+            .insert({
+              name: form.part_name.trim(),
+              part_number: form.part_number.trim() || null,
+              stock_qty: 0,
+              reorder_level: 5,
+              unit: 'unit',
+              division: 'both',
+              tenant_id: tenantId,
+              branch_id: branchId || null,
+              is_active: true,
+            })
+            .select('id')
+            .single()
+          if (newCat) payload.catalogue_part_id = newCat.id
+        }
+      } catch {
+        // catalogue link is best-effort — don't block the request
       }
 
       const { error: dbErr } = await supabase.from('parts_requests').insert(payload)
