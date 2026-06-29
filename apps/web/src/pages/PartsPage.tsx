@@ -1250,11 +1250,16 @@ export function PartsPage() {
 
   // ── Counts ────────────────────────────────────────────────────────────────────
 
+  const tabParts = parts.filter(p => {
+    const isStockPurchase = !p.job_id && p.ordered_qty != null
+    return requestsSubTab === 'stock_purchases' ? isStockPurchase : !isStockPurchase
+  })
+
   const counts = {
-    pending: parts.filter((p) => p.status === 'pending').length,
-    ordered: parts.filter((p) => p.status === 'ordered').length,
-    received: parts.filter((p) => p.status === 'received').length,
-    installed: parts.filter((p) => p.status === 'installed').length,
+    pending: tabParts.filter((p) => p.status === 'pending').length,
+    ordered: tabParts.filter((p) => p.status === 'ordered').length,
+    received: tabParts.filter((p) => p.status === 'received').length,
+    installed: tabParts.filter((p) => p.status === 'installed').length,
   }
 
   // ── Filtering ─────────────────────────────────────────────────────────────────
@@ -1566,40 +1571,6 @@ export function PartsPage() {
       if (form.job_id) payload.job_id = form.job_id
       if (user?.id) payload.requested_by = user.id
       if (user?.tenant_id) payload.tenant_id = user.tenant_id
-
-      // Auto-link or create a catalogue entry so the part appears in Catalogue tab
-      try {
-        const { data: existing } = await supabase
-          .from('parts_catalogue')
-          .select('id')
-          .eq('tenant_id', tenantId)
-          .ilike('name', form.part_name.trim())
-          .eq('is_active', true)
-          .limit(1)
-          .maybeSingle()
-        if (existing) {
-          payload.catalogue_part_id = existing.id
-        } else {
-          const { data: newCat } = await supabase
-            .from('parts_catalogue')
-            .insert({
-              name: form.part_name.trim(),
-              part_number: form.part_number.trim() || null,
-              stock_qty: 0,
-              reorder_level: 5,
-              unit: 'unit',
-              division: 'both',
-              tenant_id: tenantId,
-              branch_id: branchId || null,
-              is_active: true,
-            })
-            .select('id')
-            .single()
-          if (newCat) payload.catalogue_part_id = newCat.id
-        }
-      } catch {
-        // catalogue link is best-effort — don't block the request
-      }
 
       const { error: dbErr } = await supabase.from('parts_requests').insert(payload)
       if (dbErr) throw dbErr
