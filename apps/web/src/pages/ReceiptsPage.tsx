@@ -22,6 +22,7 @@ interface ReceiptRecord {
   payment_reference: string | null
   issue_date: string
   is_internal_fleet?: boolean
+  branches?: { logo_url?: string | null } | null
 }
 
 // ─── Theme ─────────────────────────────────────────────────────────────────────
@@ -93,7 +94,9 @@ function buildReceiptHtml(r: ReceiptRecord): string {
 <body>
 <div class="page">
   <div class="header">
-    <div class="logo-text">Motoverse</div>
+    ${r.branches?.logo_url
+      ? `<img src="${r.branches.logo_url}" alt="Logo" style="max-height:64px;max-width:180px;object-fit:contain;margin-bottom:8px;">`
+      : `<div class="logo-text">Motoverse</div>`}
     <div class="tagline">Official Payment Receipt</div>
   </div>
 
@@ -180,7 +183,7 @@ export function ReceiptsPage() {
     setLoading(true)
     let q = supabase
       .from('invoices')
-      .select('id,branch_id,invoice_number,receipt_number,customer_name,customer_phone,vehicle_plate,vehicle_info,total_amount,amount_paid,balance_due,payment_method,payment_date,payment_reference,issue_date,is_internal_fleet')
+      .select('id,branch_id,invoice_number,receipt_number,customer_name,customer_phone,vehicle_plate,vehicle_info,total_amount,amount_paid,balance_due,payment_method,payment_date,payment_reference,issue_date,is_internal_fleet,branches(logo_url)')
       .gt('amount_paid', 0)
       .order('payment_date', { ascending: false })
       .order('created_at', { ascending: false })
