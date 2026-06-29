@@ -12,6 +12,7 @@ import { VehiclesPage } from '@/pages/VehiclesPage'
 import { BookingsPage } from '@/pages/BookingsPage'
 import { WorkshopBoardPage } from '@/pages/WorkshopBoardPage'
 import { PartsPage } from '@/pages/PartsPage'
+import { InventoryPage } from '@/pages/InventoryPage'
 import { StaffPage } from '@/pages/StaffPage'
 import { AttendancePage } from '@/pages/AttendancePage'
 import { SettingsPage } from '@/pages/SettingsPage'
@@ -141,6 +142,16 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager','foreman','mechanic','parts_admin']}>
                 <PartsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Inventory */}
+          <Route
+            path="/inventory"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','parts_admin']}>
+                <InventoryPage />
               </ProtectedRoute>
             }
           />
