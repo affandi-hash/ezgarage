@@ -235,8 +235,6 @@ export function ReportsPage() {
       const customerSet = new Set<string>()
       let daysSum = 0
       let daysCount = 0
-      let revenue = 0
-      let paidJobCount = 0
 
       jobs?.forEach((j: { status: string; service_type: string; assigned_mechanic_id: string; created_at: string; closed_at: string | null; final_amount: number | null; payment_status: string | null; customer_id: string | null }) => {
         statusMap[j.status] = (statusMap[j.status] ?? 0) + 1
@@ -247,25 +245,28 @@ export function ReportsPage() {
           const d = (new Date(j.closed_at).getTime() - new Date(j.created_at).getTime()) / 86400000
           if (d >= 0) { daysSum += d; daysCount++ }
         }
-        if (j.payment_status === 'paid' && j.final_amount) {
-          revenue += j.final_amount
-          paidJobCount++
-        }
       })
 
-      // Fetch actual parts + labour from invoices.line_items (JSONB) for jobs in this period
+      // Fetch revenue + parts/labour from invoices — single source of truth
       const jobIds = (jobs ?? []).map((j: { id: string }) => j.id)
+      let revenue = 0
+      let paidJobCount = 0
       let totalParts = 0
       let totalLabour = 0
       if (jobIds.length > 0) {
         const { data: invRows } = await supabase
           .from('invoices')
-          .select('job_id, line_items, status')
+          .select('job_id, line_items, status, total_amount, subtotal')
           .in('job_id', jobIds)
           .in('status', ['paid', 'sent'])
         type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number }
-        invRows?.forEach((inv: { line_items: LineItem[] | null }) => {
-          (inv.line_items ?? []).forEach((li) => {
+        invRows?.forEach((inv: { job_id: string; line_items: LineItem[] | null; status: string; total_amount: number | null; subtotal: number | null }) => {
+          const invTotal = inv.total_amount ?? inv.subtotal ?? 0
+          if (inv.status === 'paid') {
+            revenue += invTotal
+            paidJobCount++
+          }
+          ;(inv.line_items ?? []).forEach((li) => {
             const amt = li.amount ?? (li.qty ?? 1) * (li.unit_price ?? 0)
             if (li.item_type === 'part') totalParts += amt
             else if (li.item_type === 'labour') totalLabour += amt
