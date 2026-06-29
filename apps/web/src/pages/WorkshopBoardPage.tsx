@@ -21,6 +21,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; d
   ready:            { label: 'Ready',            bg: 'rgba(34,197,94,0.2)',  text: '#86EFAC', dot: '#22C55E' },
   closed:           { label: 'Closed',           bg: 'rgba(75,85,99,0.2)',   text: '#6B7280', dot: '#4B5563' },
   long_due:         { label: 'Long Due',         bg: 'rgba(220,38,38,0.2)',  text: '#FCA5A5', dot: '#DC2626' },
+  cancelled:        { label: 'Cancelled',        bg: 'rgba(107,114,128,0.2)', text: '#9CA3AF', dot: '#6B7280' },
 }
 
 const BOARD_COLUMNS: JobStatus[] = [
@@ -555,6 +556,9 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelling, setCancelling] = useState(false)
   const [editData, setEditData] = useState({
     service_type: job.service_type as string,
     assigned_foreman_id: job.assigned_foreman_id ?? '',
@@ -621,6 +625,22 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
     setSaving(false)
     if (error) { setSaveError(error.message); return }
     setEditMode(false)
+    onRefresh()
+  }
+
+  async function handleCancelJob() {
+    if (!cancelReason.trim()) return
+    setCancelling(true)
+    const existingNotes = job.internal_notes ? job.internal_notes + '\n' : ''
+    const cancelNote = `[CANCELLED by ${user?.full_name ?? user?.role ?? 'staff'}] ${cancelReason.trim()}`
+    const { error } = await supabase.from('jobs').update({
+      status: 'cancelled',
+      internal_notes: existingNotes + cancelNote,
+    }).eq('id', job.id)
+    setCancelling(false)
+    if (error) { toast('Failed to cancel job: ' + error.message); return }
+    toast('Job cancelled')
+    onClose()
     onRefresh()
   }
 
@@ -845,6 +865,27 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
         {/* Sticky footer */}
         <div style={{ padding: '14px 24px', borderTop: '1px solid #2A2A2A', flexShrink: 0, backgroundColor: '#161616', position: 'sticky', bottom: 0 }}>
           {saveError && <p style={{ color: '#FCA5A5', fontSize: 12, margin: '0 0 10px', textAlign: 'center' }}>{saveError}</p>}
+
+          {/* Cancel confirm panel */}
+          {showCancelConfirm && (
+            <div style={{ marginBottom: 12, padding: '12px 14px', background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.3)', borderRadius: 8 }}>
+              <p style={{ color: '#FCA5A5', fontSize: 13, fontWeight: 600, margin: '0 0 8px' }}>Cancel this job?</p>
+              <textarea
+                rows={2}
+                placeholder="Reason for cancellation (required)"
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                style={{ width: '100%', background: '#1E1E1E', border: '1px solid #3A3A3A', borderRadius: 6, color: '#F0F0F0', fontSize: 13, padding: '7px 10px', resize: 'none', boxSizing: 'border-box', outline: 'none' }}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={() => { setShowCancelConfirm(false); setCancelReason('') }} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid #2A2A2A', background: 'transparent', color: '#A0A0A0', fontSize: 13, cursor: 'pointer' }}>Back</button>
+                <button onClick={handleCancelJob} disabled={!cancelReason.trim() || cancelling} style={{ flex: 2, padding: '8px 0', borderRadius: 6, border: 'none', background: '#DC2626', color: '#fff', fontSize: 13, fontWeight: 700, cursor: (!cancelReason.trim() || cancelling) ? 'not-allowed' : 'pointer', opacity: (!cancelReason.trim() || cancelling) ? 0.6 : 1 }}>
+                  {cancelling ? 'Cancelling…' : 'Confirm Cancel'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {editMode ? (
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => { setEditMode(false); setSaveError(null) }} disabled={saving} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
@@ -860,6 +901,12 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
               {canApprove(user?.role ?? '') && (
                 <button onClick={startEdit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1px solid #F15A22', backgroundColor: 'rgba(241,90,34,0.1)', color: '#F15A22', fontSize: 13, cursor: 'pointer' }}>
                   <Wrench size={14} /> Edit
+                </button>
+              )}
+              {['ops_manager', 'foreman', 'super_admin'].includes(user?.role ?? '') &&
+               ['new', 'booked', 'checked_in'].includes(job.status) && (
+                <button onClick={() => { setShowCancelConfirm(v => !v); setCancelReason('') }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1px solid #DC2626', backgroundColor: showCancelConfirm ? 'rgba(220,38,38,0.15)' : 'transparent', color: '#FCA5A5', fontSize: 13, cursor: 'pointer' }}>
+                  <X size={14} /> Cancel Job
                 </button>
               )}
               <button onClick={onClose} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 13, cursor: 'pointer' }}>Close</button>

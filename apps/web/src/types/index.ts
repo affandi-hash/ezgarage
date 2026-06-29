@@ -22,6 +22,7 @@ export type JobStatus =
   | 'ready'
   | 'closed'
   | 'long_due'
+  | 'cancelled'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 export type CustomerType = 'individual' | 'corporate' | 'fleet'
@@ -165,6 +166,7 @@ export const JOB_STATUS_COLORS: Record<JobStatus, string> = {
   ready: '#22C55E',
   closed: '#4B5563',
   long_due: '#DC2626',
+  cancelled: '#6B7280',
 }
 
 export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
@@ -178,6 +180,7 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   ready: 'Ready',
   closed: 'Closed',
   long_due: 'Long Due',
+  cancelled: 'Cancelled',
 }
 
 export const ROLE_LABELS: Record<Role, string> = {
