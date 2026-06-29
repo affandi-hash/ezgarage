@@ -273,10 +273,10 @@ export function ReportsPage() {
         })
       }
 
-      // If actual data exists, use it for COGS; otherwise fall back to 40% estimate
-      const cogs = totalParts > 0 ? totalParts : revenue * 0.4
+      // COGS = Total Parts + Total Labour
+      const cogs = totalParts + totalLabour
       const grossProfit = revenue - cogs
-      const grossProfitPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0
+      const grossProfitPct = revenue > 0 ? ((revenue - cogs) / revenue) * 100 : 0
       const avgSpendPerTx = paidJobCount > 0 ? revenue / paidJobCount : 0
 
       const topJobType = Object.entries(svcMap).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—'
@@ -614,7 +614,7 @@ export function ReportsPage() {
               <StatCard label="Revenue" value={formatRM(overviewData.revenue)} icon={DollarSign} sub="Paid invoices" />
               <StatCard label="Total Parts" value={formatRM(overviewData.totalParts)} icon={ShoppingCart} sub={overviewData.totalParts > 0 ? 'From invoice lines' : 'No parts invoiced'} />
               <StatCard label="Total Labour" value={formatRM(overviewData.totalLabour)} icon={Wrench} sub={overviewData.totalLabour > 0 ? 'From labour charges' : 'No labour invoiced'} />
-              <StatCard label="COGS" value={formatRM(overviewData.cogs)} icon={ShoppingCart} sub={overviewData.totalParts > 0 ? 'Actual parts cost' : 'Est. parts cost (40%)'} />
+              <StatCard label="COGS" value={formatRM(overviewData.cogs)} icon={ShoppingCart} sub="Parts + Labour" />
               <StatCard label="Gross Profit" value={formatRM(overviewData.grossProfit)} icon={TrendingUp} sub="Revenue minus COGS" />
               <StatCard label="Gross Profit %" value={`${overviewData.grossProfitPct.toFixed(1)}%`} icon={Percent} sub={overviewData.grossProfitPct >= 50 ? 'Healthy margin' : 'Below target'} />
               <StatCard label="No. of Customers" value={overviewData.uniqueCustomers} icon={UserCheck} sub="Unique in period" />
