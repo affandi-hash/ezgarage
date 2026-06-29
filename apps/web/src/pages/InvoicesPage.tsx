@@ -437,7 +437,6 @@ export function InvoicesPage() {
 
   // Labour Charges (kept for the labour picker used when editing invoices)
   const [labourCharges, setLabourCharges] = useState<LabourCharge[]>([])
-  const [labourLoading, setLabourLoading] = useState(false)
 
   // ─── Load data ────────────────────────────────────────────────────────────────
 
@@ -481,13 +480,11 @@ export function InvoicesPage() {
   }, [user])
 
   const loadLabourCharges = useCallback(async () => {
-    setLabourLoading(true)
     let q = supabase.from('labour_charges').select('*').order('category').order('name')
     if (user?.role !== 'super_admin' && user?.branch_id)
       q = q.or(`branch_id.is.null,branch_id.eq.${user.branch_id}`)
     const { data } = await q
     setLabourCharges((data as LabourCharge[]) ?? [])
-    setLabourLoading(false)
   }, [user])
 
   const loadCatalogueParts = useCallback(async () => {
