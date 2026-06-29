@@ -336,14 +336,15 @@ function buildReceiptHtml(inv: Invoice, branch: BranchPrintInfo | null): string 
 }
 
 function openPrintTab(html: string) {
-  const blob = new Blob([html], { type: 'text/html' })
-  const url = URL.createObjectURL(blob)
-  const tab = window.open(url, '_blank')
-  if (!tab) {
-    // fallback: same tab (popup was blocked)
-    window.location.href = url
+  const w = window.open('about:blank', '_blank')
+  if (!w) {
+    alert('Please allow popups for this site to print invoices.\n\nClick the popup-blocked icon in your browser address bar and choose "Always allow".')
+    return
   }
-  setTimeout(() => URL.revokeObjectURL(url), 60000)
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
+  w.focus()
 }
 
 function recalcTotals(inv: Partial<Invoice>, sstRate = 0): Partial<Invoice> {
