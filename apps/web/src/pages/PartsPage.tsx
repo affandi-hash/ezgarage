@@ -529,7 +529,7 @@ export function PartsPage() {
   async function savePriceInline(partId: string, value: string) {
     const price = parseFloat(value)
     if (!isNaN(price) && price >= 0) {
-      await supabase.from('parts_requests').update({ unit_price: price }).eq('id', partId)
+      await supabase.from('parts_requests').update({ selling_price: price }).eq('id', partId)
       await loadParts()
     }
     setEditingPrice(null)
@@ -809,7 +809,7 @@ export function PartsPage() {
       if (form.part_number.trim()) payload.part_number = form.part_number.trim()
       if (form.supplier.trim()) payload.supplier = form.supplier.trim()
       if (form.unit_price) {
-        payload.unit_price = Number(form.unit_price)
+        payload.selling_price = Number(form.unit_price)
       }
       if (form.notes.trim()) payload.notes = form.notes.trim()
       if (form.job_id) payload.job_id = form.job_id

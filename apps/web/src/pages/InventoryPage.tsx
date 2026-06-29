@@ -851,7 +851,6 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
       if (form.supplier.trim()) payload.supplier = form.supplier.trim()
       if (form.unit_price) {
         const cost = Number(form.unit_price)
-        payload.unit_price = cost
         const markup = Number(form.markup)
         if (markup >= 1) payload.selling_price = parseFloat((cost * markup).toFixed(2))
       }
