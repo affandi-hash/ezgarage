@@ -178,6 +178,8 @@ export function ReportsPage() {
     grossProfitPct: number
     uniqueCustomers: number
     avgSpendPerTx: number
+    totalParts: number
+    totalLabour: number
   } | null>(null)
 
   const [workshopJobs, setWorkshopJobs] = useState<{
@@ -251,8 +253,28 @@ export function ReportsPage() {
         }
       })
 
-      // COGS estimated as 40% of revenue (parts cost); Gross Profit = remaining 60%
-      const cogs = revenue * 0.4
+      // Fetch actual parts + labour from invoices.line_items (JSONB) for jobs in this period
+      const jobIds = (jobs ?? []).map((j: { id: string }) => j.id)
+      let totalParts = 0
+      let totalLabour = 0
+      if (jobIds.length > 0) {
+        const { data: invRows } = await supabase
+          .from('invoices')
+          .select('job_id, line_items, status')
+          .in('job_id', jobIds)
+          .in('status', ['paid', 'sent'])
+        type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number }
+        invRows?.forEach((inv: { line_items: LineItem[] | null }) => {
+          (inv.line_items ?? []).forEach((li) => {
+            const amt = li.amount ?? (li.qty ?? 1) * (li.unit_price ?? 0)
+            if (li.item_type === 'part') totalParts += amt
+            else if (li.item_type === 'labour') totalLabour += amt
+          })
+        })
+      }
+
+      // If actual data exists, use it for COGS; otherwise fall back to 40% estimate
+      const cogs = totalParts > 0 ? totalParts : revenue * 0.4
       const grossProfit = revenue - cogs
       const grossProfitPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0
       const avgSpendPerTx = paidJobCount > 0 ? revenue / paidJobCount : 0
@@ -277,6 +299,8 @@ export function ReportsPage() {
         grossProfitPct,
         uniqueCustomers: customerSet.size,
         avgSpendPerTx,
+        totalParts,
+        totalLabour,
       })
     } finally {
       setLoading(false)
@@ -588,7 +612,9 @@ export function ReportsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 14, marginBottom: 24 }}>
               <StatCard label="Total Jobs" value={overviewData.totalJobs} icon={Wrench} sub="In selected period" />
               <StatCard label="Revenue" value={formatRM(overviewData.revenue)} icon={DollarSign} sub="Paid invoices" />
-              <StatCard label="COGS" value={formatRM(overviewData.cogs)} icon={ShoppingCart} sub="Est. parts cost (40%)" />
+              <StatCard label="Total Parts" value={formatRM(overviewData.totalParts)} icon={ShoppingCart} sub={overviewData.totalParts > 0 ? 'From invoice lines' : 'No parts invoiced'} />
+              <StatCard label="Total Labour" value={formatRM(overviewData.totalLabour)} icon={Wrench} sub={overviewData.totalLabour > 0 ? 'From labour charges' : 'No labour invoiced'} />
+              <StatCard label="COGS" value={formatRM(overviewData.cogs)} icon={ShoppingCart} sub={overviewData.totalParts > 0 ? 'Actual parts cost' : 'Est. parts cost (40%)'} />
               <StatCard label="Gross Profit" value={formatRM(overviewData.grossProfit)} icon={TrendingUp} sub="Revenue minus COGS" />
               <StatCard label="Gross Profit %" value={`${overviewData.grossProfitPct.toFixed(1)}%`} icon={Percent} sub={overviewData.grossProfitPct >= 50 ? 'Healthy margin' : 'Below target'} />
               <StatCard label="No. of Customers" value={overviewData.uniqueCustomers} icon={UserCheck} sub="Unique in period" />
