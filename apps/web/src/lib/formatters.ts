@@ -35,7 +35,7 @@ export function formatPlate(value: string): string {
   const raw = value.trim().toUpperCase().replace(/\s+/g, '')
   // Malaysian plate: letters + digits e.g. WXB1234, B1234C, WA1234B
   const match = raw.match(/^([A-Z]+)(\d+)([A-Z]*)$/)
-  if (match) return `${match[1]} ${match[2]}${match[3]}`.trim()
+  if (match) return `${match[1]}${match[2]}${match[3]}`
   return raw
 }
 
