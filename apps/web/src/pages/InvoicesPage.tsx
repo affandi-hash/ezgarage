@@ -178,6 +178,174 @@ function amountInWords(amount: number): string {
   return words + ' ONLY'
 }
 
+// ─── Print helpers (open in new tab via blob URL, no routing needed) ──────────
+
+type BranchPrintInfo = { name: string; address: string | null; phone: string | null; email: string | null; logo_url: string | null; bank_name: string | null; bank_account_number: string | null; bank_account_name: string | null }
+
+function buildInvoiceHtml(inv: Invoice, branch: BranchPrintInfo | null): string {
+  const fd = (s: string) => { if (!s) return ''; const d = new Date(s); return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
+  const rows = inv.line_items.map((item, i) => `
+    <tr style="border-bottom:1px solid #e8e8e8;background:${i%2===0?'#fff':'#fafafa'}">
+      <td style="padding:7px 10px;text-align:center;font-size:12px;color:#666">${i+1}</td>
+      <td style="padding:7px 10px;font-size:12px">${item.description}</td>
+      <td style="padding:7px 10px;text-align:center;font-size:12px">${item.qty}</td>
+      <td style="padding:7px 10px;text-align:center;font-size:12px;color:#666">${item.uom||'unit'}</td>
+      <td style="padding:7px 10px;text-align:right;font-size:12px">${item.unit_price.toFixed(2)}</td>
+      <td style="padding:7px 10px;text-align:right;font-size:12px;font-weight:600">${item.amount.toFixed(2)}</td>
+    </tr>`).join('')
+  const blanks = Array.from({length:Math.max(0,5-inv.line_items.length)}).map((_,i)=>`<tr key="b${i}" style="border-bottom:1px solid #e8e8e8"><td style="padding:7px 10px">&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')
+  const logoHtml = branch?.logo_url ? `<img src="${branch.logo_url}" alt="Logo" style="width:144px;height:144px;object-fit:contain;flex-shrink:0"/>` : ''
+  const bankHtml = (branch?.bank_name || branch?.bank_account_number || branch?.bank_account_name)
+    ? `${branch.bank_name?`<div style="font-size:12px"><strong>${branch.bank_name}</strong></div>`:''}${branch.bank_account_number?`<div style="font-size:12px;font-family:monospace;font-weight:700">${branch.bank_account_number}</div>`:''}${branch.bank_account_name?`<div style="font-size:12px;color:#666;margin-top:2px">${branch.bank_account_name}</div>`:''}`
+    : `<div style="font-size:12px;color:#aaa;font-style:italic">No bank details set</div>`
+  const paidStamp = inv.status==='paid' ? `<div style="position:absolute;top:12px;right:12px;border:3px solid #1a7b4b;border-radius:6px;padding:4px 12px;color:#1a7b4b;font-weight:900;font-size:18px;letter-spacing:2px;transform:rotate(-8deg);opacity:0.8">PAID</div>` : ''
+  const branchContact = [branch?.phone&&`Tel: ${branch.phone}`, branch?.email].filter(Boolean).join(' · ')
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${inv.invoice_number}</title>
+<style>*{box-sizing:border-box}body{margin:0;font-family:'Tw Cen MT','Century Gothic',sans-serif;color:#111;font-size:12px}@media print{.no-print{display:none!important}body{margin:0}}@page{size:A4;margin:15mm}</style>
+</head><body>
+<div class="no-print" style="display:flex;justify-content:flex-end;gap:10px;padding:12px 24px;background:#f5f5f5;border-bottom:1px solid #ddd">
+  <button onclick="window.close()" style="background:#fff;border:1px solid #ccc;border-radius:6px;padding:7px 16px;font-size:13px;cursor:pointer">Close</button>
+  <button onclick="window.print()" style="background:#F15A22;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer">Print / Save PDF</button>
+</div>
+<div style="max-width:794px;margin:24px auto;padding:32px 40px;background:#fff">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;border-bottom:2px solid #F15A22;padding-bottom:12px">
+    <div style="display:flex;align-items:center;gap:16px">${logoHtml}<div>
+      <div style="font-size:22px;font-weight:700;color:#F15A22;letter-spacing:1px;text-transform:uppercase">${branch?.name??'MOTOVERSE GARAGE'}</div>
+      ${branch?.address?`<div style="font-size:12px;color:#555;margin-top:2px">${branch.address}</div>`:''}
+      ${branchContact?`<div style="font-size:12px;color:#555">${branchContact}</div>`:''}
+    </div></div>
+    <div style="text-align:right">
+      <div style="font-size:22px;font-weight:800;letter-spacing:3px;margin-bottom:4px">INVOICE</div>
+      <div style="font-size:12px;color:#555">No: <span style="font-weight:700;color:#111;font-family:monospace">${inv.invoice_number}</span></div>
+      <div style="font-size:12px;color:#555">Date: ${fd(inv.issue_date)}</div>
+      ${inv.opened_by?`<div style="font-size:12px;color:#555">Opened By: ${inv.opened_by}</div>`:''}
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;margin-bottom:12px;border:1px solid #ccc">
+    <div style="padding:8px 12px;border-right:1px solid #ccc">
+      <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Customer</div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:2px">${inv.customer_name||'—'}</div>
+      <div style="font-size:12px;color:#444">${inv.customer_phone}</div>
+      <div style="font-size:12px;color:#444">${inv.customer_email}</div>
+    </div>
+    <div style="padding:8px 12px">
+      <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Vehicle</div>
+      <table style="border-collapse:collapse;font-size:12px;width:100%"><tbody>
+        <tr><td style="color:#666;padding-right:8px;padding-bottom:2px;white-space:nowrap">Plate No.</td><td style="font-weight:700;font-family:monospace">${inv.vehicle_plate}</td></tr>
+        <tr><td style="color:#666;padding-right:8px;padding-bottom:2px;white-space:nowrap">Manufacturer / Model</td><td style="font-weight:600">${inv.vehicle_info}</td></tr>
+        ${inv.vehicle_mileage?`<tr><td style="color:#666;padding-right:8px;white-space:nowrap">Mileage</td><td>${inv.vehicle_mileage} km</td></tr>`:''}
+      </tbody></table>
+    </div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+    <thead><tr style="background:#F15A22;color:#fff">
+      <th style="padding:7px 10px;text-align:center;font-size:12px;width:36px">NO</th>
+      <th style="padding:7px 10px;text-align:left;font-size:12px">ITEM</th>
+      <th style="padding:7px 10px;text-align:center;font-size:12px;width:50px">QTY</th>
+      <th style="padding:7px 10px;text-align:center;font-size:12px;width:50px">UOM</th>
+      <th style="padding:7px 10px;text-align:right;font-size:12px;width:90px">UNIT PRICE</th>
+      <th style="padding:7px 10px;text-align:right;font-size:12px;width:90px">AMOUNT</th>
+    </tr></thead>
+    <tbody>${rows}${blanks}</tbody>
+  </table>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+    <table style="border-collapse:collapse;width:280px;border:1px solid #ccc"><tbody>
+      <tr style="border-bottom:1px solid #e0e0e0"><td style="padding:5px 12px;font-size:12px;color:#555">TOTAL ITEM (${inv.line_items.length})</td><td style="padding:5px 12px;text-align:right;font-size:12px;font-weight:600">${inv.subtotal?.toFixed(2)}</td></tr>
+      <tr style="border-bottom:1px solid #e0e0e0"><td style="padding:5px 12px;font-size:12px;color:#555">EXTRA DISCOUNT</td><td style="padding:5px 12px;text-align:right;font-size:12px">${(inv.discount_amount??0).toFixed(2)}</td></tr>
+      <tr style="border-bottom:1px solid #e0e0e0"><td style="padding:5px 12px;font-size:12px;color:#555">BEF. ROUNDING</td><td style="padding:5px 12px;text-align:right;font-size:12px">${((inv.subtotal??0)-(inv.discount_amount??0)).toFixed(2)}</td></tr>
+      <tr style="border-bottom:1px solid #e0e0e0"><td style="padding:5px 12px;font-size:12px;color:#555">ROUNDING</td><td style="padding:5px 12px;text-align:right;font-size:12px">0.00</td></tr>
+      <tr style="background:#F15A22;color:#fff"><td style="padding:7px 12px;font-size:13px;font-weight:800">TOTAL</td><td style="padding:7px 12px;text-align:right;font-size:14px;font-weight:800">RM ${inv.total_amount?.toFixed(2)}</td></tr>
+      <tr style="border-bottom:1px solid #e0e0e0"><td style="padding:5px 12px;font-size:12px;color:#555">PAID (${inv.payment_method?inv.payment_method.replace('_',' ').toUpperCase():'—'})</td><td style="padding:5px 12px;text-align:right;font-size:12px">${(inv.amount_paid??0).toFixed(2)}</td></tr>
+      <tr><td style="padding:5px 12px;font-size:12px;font-weight:700">DUE</td><td style="padding:5px 12px;text-align:right;font-size:13px;font-weight:700;color:${(inv.balance_due??0)>0?'#c0392b':'#1a7b4b'}">RM ${(inv.balance_due??0).toFixed(2)}</td></tr>
+    </tbody></table>
+  </div>
+  <div style="border:1px solid #ccc;border-radius:4px;padding:8px 12px;margin-bottom:12px;background:#fafafa">
+    <span style="font-size:12px;color:#888;margin-right:6px">Amount in words:</span>
+    <span style="font-size:12px;font-weight:700;text-transform:uppercase">RINGGIT MALAYSIA ${amountInWords(inv.total_amount??0)}</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div style="border:1px solid #ccc;border-radius:4px;padding:10px 12px;background:#fafafa">
+      <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Bank Details</div>${bankHtml}
+    </div>
+    <div style="border:1px solid #ccc;border-radius:4px;padding:10px 12px;min-height:70px;background:#fafafa;position:relative">
+      <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Authorised Signature</div>
+      ${paidStamp}
+      <div style="margin-top:28px;border-top:1px solid #999;font-size:12px;color:#888;padding-top:4px">${branch?.name??'Authorised Signatory'}</div>
+    </div>
+  </div>
+  <div style="text-align:center;font-size:12px;color:#aaa;border-top:1px solid #eee;padding-top:8px;margin-bottom:12px">Thank you for your business! · This is a computer-generated invoice.</div>
+  <div style="display:flex;align-items:center;justify-content:center;gap:6px;padding-top:8px;border-top:1px solid #f0f0f0">
+    <span style="font-size:12px;color:#bbb">Powered by:</span><span style="font-size:12px;color:#aaa;font-weight:600">EZ Garage</span><span style="font-size:12px;color:#ccc">·</span><span style="font-size:12px;color:#aaa">http://ezgarage.app</span>
+  </div>
+</div></body></html>`
+}
+
+function buildReceiptHtml(inv: Invoice, branch: BranchPrintInfo | null): string {
+  const fd = (s: string) => { if (!s) return ''; const d = new Date(s); return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
+  const logoHtml = branch?.logo_url ? `<img src="${branch.logo_url}" alt="Logo" style="height:56px;object-fit:contain;margin-bottom:6px"/>` : ''
+  const branchContact = [branch?.phone&&`Tel: ${branch.phone}`, branch?.email].filter(Boolean).join(' · ')
+  const discountRows = (inv.discount_amount??0)>0 ? `
+    <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:8px 14px;font-size:12px;color:#555">Subtotal</td><td style="padding:8px 14px;text-align:right;font-size:12px">RM ${(inv.subtotal??0).toFixed(2)}</td></tr>
+    <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:8px 14px;font-size:12px;color:#555">Discount</td><td style="padding:8px 14px;text-align:right;font-size:12px;color:#e05">- RM ${(inv.discount_amount??0).toFixed(2)}</td></tr>` : ''
+  const payDate = inv.payment_date ? new Date(inv.payment_date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : fd(inv.issue_date)
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt ${inv.invoice_number}</title>
+<style>*{box-sizing:border-box}body{margin:0;font-family:'Tw Cen MT','Century Gothic',sans-serif;color:#111;font-size:12px}@media print{.no-print{display:none!important}body{margin:0}}@page{size:A5;margin:12mm}</style>
+</head><body>
+<div class="no-print" style="display:flex;align-items:center;justify-content:space-between;padding:10px 24px;background:#f5f5f5;border-bottom:1px solid #ddd">
+  <span style="font-size:13px;color:#555;font-weight:600">Receipt — ${inv.invoice_number}</span>
+  <div style="display:flex;gap:10px">
+    <button onclick="window.close()" style="background:#fff;border:1px solid #ccc;border-radius:6px;padding:7px 16px;font-size:13px;cursor:pointer">Close</button>
+    <button onclick="window.print()" style="background:#F15A22;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer">Print / Save PDF</button>
+  </div>
+</div>
+<div style="max-width:560px;margin:24px auto;padding:28px 32px;background:#fff">
+  <div style="text-align:center;border-bottom:2px solid #F15A22;padding-bottom:12px;margin-bottom:14px">
+    ${logoHtml}
+    <div style="font-size:20px;font-weight:700;color:#F15A22;letter-spacing:1px;text-transform:uppercase">${branch?.name??'MOTOVERSE GARAGE'}</div>
+    ${branch?.address?`<div style="font-size:11px;color:#666;margin-top:2px">${branch.address}</div>`:''}
+    ${branchContact?`<div style="font-size:11px;color:#666">${branchContact}</div>`:''}
+    <div style="margin-top:10px;font-size:18px;font-weight:900;letter-spacing:4px;color:#111">RECEIPT</div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:14px;font-size:12px">
+    <div><span style="color:#888">Receipt No:</span> <strong style="font-family:monospace">${inv.invoice_number}</strong></div>
+    <div style="text-align:right"><span style="color:#888">Date:</span> <strong>${payDate}</strong></div>
+    <div><span style="color:#888">Customer:</span> <strong>${inv.customer_name}</strong></div>
+    <div style="text-align:right"><span style="color:#888">Vehicle:</span> <strong style="font-family:monospace">${inv.vehicle_plate}</strong></div>
+  </div>
+  <div style="border:1px solid #eee;border-radius:8px;overflow:hidden;margin-bottom:14px">
+    <div style="background:#F15A22;color:#fff;padding:7px 14px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Payment Summary</div>
+    <table style="width:100%;border-collapse:collapse"><tbody>
+      <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:8px 14px;font-size:12px;color:#555">Invoice Reference</td><td style="padding:8px 14px;text-align:right;font-size:12px;font-family:monospace;font-weight:700">${inv.invoice_number}</td></tr>
+      ${discountRows}
+      <tr style="background:#fafafa"><td style="padding:10px 14px;font-size:13px;font-weight:800">Total Amount</td><td style="padding:10px 14px;text-align:right;font-size:15px;font-weight:800">RM ${(inv.total_amount??0).toFixed(2)}</td></tr>
+    </tbody></table>
+  </div>
+  <div style="border:2px solid #1a7b4b;border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;background:#f0fff6;position:relative">
+    <div>
+      <div style="font-size:11px;color:#666;margin-bottom:2px;text-transform:uppercase;letter-spacing:1px">Payment Received</div>
+      <div style="font-size:15px;font-weight:800;color:#111">RM ${(inv.amount_paid??0).toFixed(2)}</div>
+      <div style="font-size:12px;color:#555;margin-top:2px">${inv.payment_method?inv.payment_method.replace('_',' ').toUpperCase():'CASH'}${inv.payment_reference?` · Ref: ${inv.payment_reference}`:''}</div>
+    </div>
+    <div style="font-size:28px;font-weight:900;color:#1a7b4b;border:3px solid #1a7b4b;border-radius:6px;padding:4px 14px;letter-spacing:3px;transform:rotate(-8deg);opacity:0.85">PAID</div>
+  </div>
+  <div style="text-align:center;font-size:12px;color:#aaa;border-top:1px solid #eee;padding-top:8px;margin-bottom:6px">Thank you for your payment! Please keep this receipt for your records.</div>
+  <div style="display:flex;align-items:center;justify-content:center;gap:6px">
+    <span style="font-size:11px;color:#ccc">Powered by:</span><span style="font-size:11px;color:#bbb;font-weight:600">EZ Garage</span><span style="font-size:11px;color:#ccc">·</span><span style="font-size:11px;color:#bbb">http://ezgarage.app</span>
+  </div>
+</div></body></html>`
+}
+
+function openPrintTab(html: string) {
+  const blob = new Blob([html], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const tab = window.open(url, '_blank')
+  if (!tab) {
+    // fallback: same tab (popup was blocked)
+    window.location.href = url
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
+}
+
 function recalcTotals(inv: Partial<Invoice>, sstRate = 0): Partial<Invoice> {
   const items = (inv.line_items ?? []).filter(i => i.item_type !== 'custom' || true)
   const subtotal = items.reduce((s, i) => s + (i.amount ?? 0), 0)
@@ -852,9 +1020,9 @@ export function InvoicesPage() {
                       <CreditCard size={15} /> Record Payment
                     </button>
                   )}
-                  <a href={`/print/invoice/${editInvoice.id}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ ...btnOutline, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print Invoice</a>
+                  <button style={btnOutline} onClick={() => openPrintTab(buildInvoiceHtml(editInvoice, branchInfo))}><Printer size={15} /> Print Invoice</button>
                   {editInvoice.status === 'paid' && (
-                    <a href={`/print/receipt/${editInvoice.id}`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ ...btnOutline, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Printer size={15} /> Print Receipt</a>
+                    <button style={btnOutline} onClick={() => openPrintTab(buildReceiptHtml(editInvoice, branchInfo))}><Printer size={15} /> Print Receipt</button>
                   )}
                   {editInvoice.status !== 'void' && editInvoice.status !== 'paid' && (
                     <button onClick={voidInvoice} disabled={saving} style={{ background: '#1A0E0E', border: '1px solid #3D1515', color: '#F87171', borderRadius: 6, padding: '8px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
