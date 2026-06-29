@@ -90,62 +90,44 @@ function EZGarageLogo({ collapsed, branchLogoUrl }: { collapsed: boolean; branch
   )
 }
 
-export function Sidebar() {
-  const { user, signOut } = useAuthStore()
-  const [collapsed, setCollapsed] = useState(false)
-  const [logoutHover, setLogoutHover] = useState(false)
-  const [branchLogoUrl, setBranchLogoUrl] = useState<string | null>(null)
+interface ContentProps {
+  collapsed: boolean
+  setCollapsed: (v: boolean) => void
+  logoutHover: boolean
+  setLogoutHover: (v: boolean) => void
+  branchLogoUrl: string | null
+  visibleGroups: NavGroup[]
+  signOut: () => void
+  onNavClick?: () => void
+  showCollapseToggle?: boolean
+}
 
-  useEffect(() => {
-    if (!user?.branch_id) return
-    supabase.from('branches').select('logo_url').eq('id', user.branch_id).single()
-      .then(({ data }) => { if (data?.logo_url) setBranchLogoUrl(data.logo_url) })
-  }, [user?.branch_id])
-
-  if (!user) return null
-
-  // initials available if needed for avatar display
-
-  const visibleGroups = NAV_GROUPS
-    .map(group => ({ ...group, items: group.items.filter(item => item.roles.includes(user.role)) }))
-    .filter(group => group.items.length > 0)
-
+function SidebarContent({
+  collapsed, setCollapsed, logoutHover, setLogoutHover,
+  branchLogoUrl, visibleGroups, signOut, onNavClick, showCollapseToggle = true,
+}: ContentProps) {
   return (
-    <aside style={{
-      width: collapsed ? 64 : 240,
-      minWidth: collapsed ? 64 : 240,
-      backgroundColor: '#161616',
-      borderRight: '1px solid #2A2A2A',
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      flexShrink: 0,
-      position: 'relative',
-      transition: 'width 0.2s ease',
-    }}>
-      {/* Logo */}
+    <>
       <EZGarageLogo collapsed={collapsed} branchLogoUrl={branchLogoUrl} />
 
-      {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        style={{
-          position: 'absolute', right: -12, top: 56, zIndex: 10,
-          width: 24, height: 24, borderRadius: '50%',
-          backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A',
-          color: '#A0A0A0', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', cursor: 'pointer', padding: 0,
-        }}
-      >
-        {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
-      </button>
+      {showCollapseToggle && (
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          style={{
+            position: 'absolute', right: -12, top: 56, zIndex: 10,
+            width: 24, height: 24, borderRadius: '50%',
+            backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A',
+            color: '#A0A0A0', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', cursor: 'pointer', padding: 0,
+          }}
+        >
+          {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+        </button>
+      )}
 
-
-      {/* Nav groups */}
       <nav style={{ flex: 1, padding: '8px', overflowY: 'auto' }}>
         {visibleGroups.map((group, gi) => (
           <div key={group.label} style={{ marginBottom: gi < visibleGroups.length - 1 ? 8 : 0 }}>
-            {/* Section label */}
             {!collapsed ? (
               <div style={{ padding: '10px 10px 5px', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: '#4A4A4A', userSelect: 'none' as const }}>
                 {group.label}
@@ -154,7 +136,6 @@ export function Sidebar() {
               <div style={{ height: 1, background: '#2A2A2A', margin: '6px 8px' }} />
             ) : null}
 
-            {/* Items */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {group.items.map((item) => {
                 const Icon = item.icon
@@ -163,6 +144,7 @@ export function Sidebar() {
                     key={item.to}
                     to={item.to}
                     title={collapsed ? item.label : undefined}
+                    onClick={onNavClick}
                     style={({ isActive }) => ({
                       display: 'flex',
                       alignItems: 'center',
@@ -193,7 +175,6 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Logout */}
       <div style={{ padding: 8, borderTop: '1px solid #2A2A2A' }}>
         <button
           onClick={signOut}
@@ -215,6 +196,83 @@ export function Sidebar() {
           {!collapsed && <span>Sign Out</span>}
         </button>
       </div>
+    </>
+  )
+}
+
+export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; onMobileClose?: () => void }) {
+  const { user, signOut } = useAuthStore()
+  const [collapsed, setCollapsed] = useState(false)
+  const [logoutHover, setLogoutHover] = useState(false)
+  const [branchLogoUrl, setBranchLogoUrl] = useState<string | null>(null)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+
+  useEffect(() => {
+    if (!user?.branch_id) return
+    supabase.from('branches').select('logo_url').eq('id', user.branch_id).single()
+      .then(({ data }) => { if (data?.logo_url) setBranchLogoUrl(data.logo_url) })
+  }, [user?.branch_id])
+
+  if (!user) return null
+
+  const visibleGroups = NAV_GROUPS
+    .map(group => ({ ...group, items: group.items.filter(item => item.roles.includes(user.role)) }))
+    .filter(group => group.items.length > 0)
+
+  const contentProps: ContentProps = {
+    collapsed, setCollapsed, logoutHover, setLogoutHover,
+    branchLogoUrl, visibleGroups, signOut,
+  }
+
+  // Mobile: slide-in drawer with backdrop
+  if (isMobile) {
+    return (
+      <>
+        {mobileOpen && (
+          <div
+            onClick={onMobileClose}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 100,
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(2px)',
+            }}
+          />
+        )}
+        <aside style={{
+          position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 101,
+          width: 240, backgroundColor: '#161616',
+          borderRight: '1px solid #2A2A2A',
+          display: 'flex', flexDirection: 'column',
+          transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform 0.25s ease',
+        }}>
+          <SidebarContent {...contentProps} showCollapseToggle={false} onNavClick={onMobileClose} />
+        </aside>
+      </>
+    )
+  }
+
+  // Desktop: inline sidebar with collapse toggle
+  return (
+    <aside style={{
+      width: collapsed ? 64 : 240,
+      minWidth: collapsed ? 64 : 240,
+      backgroundColor: '#161616',
+      borderRight: '1px solid #2A2A2A',
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      flexShrink: 0,
+      position: 'relative',
+      transition: 'width 0.2s ease',
+    }}>
+      <SidebarContent {...contentProps} showCollapseToggle={true} />
     </aside>
   )
 }

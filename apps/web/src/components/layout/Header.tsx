@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bell, ChevronDown, LogOut } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, Menu } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
 import { ROLE_LABELS } from '@/types'
@@ -28,9 +28,10 @@ interface HeaderProps {
   title?: string
   selectedBranchId?: string | null
   onBranchChange?: (branchId: string | null) => void
+  onMenuToggle?: () => void
 }
 
-export function Header({ title: titleProp, selectedBranchId, onBranchChange }: HeaderProps) {
+export function Header({ title: titleProp, selectedBranchId, onBranchChange, onMenuToggle }: HeaderProps) {
   const { user, signOut } = useAuthStore()
   const location = useLocation()
   const [branches, setBranches] = useState<Branch[]>([])
@@ -74,7 +75,23 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange }: H
         flexShrink: 0,
       }}
     >
-      {/* Left: title + breadcrumb */}
+      {/* Left: hamburger (mobile) + title + breadcrumb */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {onMenuToggle && (
+          <button
+            onClick={onMenuToggle}
+            style={{
+              display: 'none', // hidden on desktop via CSS below
+              width: 36, height: 36, borderRadius: 8,
+              alignItems: 'center', justifyContent: 'center',
+              border: '1px solid #2A2A2A', backgroundColor: 'transparent',
+              color: '#A0A0A0', cursor: 'pointer', flexShrink: 0,
+            } as React.CSSProperties}
+            className="mobile-menu-btn"
+          >
+            <Menu size={18} />
+          </button>
+        )}
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
         <h1
           style={{
@@ -117,6 +134,7 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange }: H
             ))}
           </nav>
         )}
+      </div>
       </div>
 
       {/* Right: branch selector + notifications + user menu */}

@@ -45,3 +45,12 @@ body {
 
 /* Selection */
 ::selection { background: rgba(241, 90, 34, 0.3); }
+
+/* Mobile nav */
+@media (max-width: 767px) {
+  .mobile-menu-btn { display: flex !important; }
+}
+
+@media (min-width: 768px) {
+  .mobile-menu-btn { display: none !important; }
+}
