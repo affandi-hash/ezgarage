@@ -1560,7 +1560,6 @@ export function PartsPage() {
       if (form.part_number.trim()) payload.part_number = form.part_number.trim()
       if (form.supplier.trim()) payload.supplier = form.supplier.trim()
       if (form.unit_price) {
-        payload.unit_price = Number(form.unit_price)
         payload.selling_price = Number(form.unit_price)
       }
       if (form.notes.trim()) payload.notes = form.notes.trim()
