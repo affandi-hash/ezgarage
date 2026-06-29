@@ -336,15 +336,16 @@ function buildReceiptHtml(inv: Invoice, branch: BranchPrintInfo | null): string 
 }
 
 function openPrintTab(html: string) {
-  const w = window.open('about:blank', '_blank')
-  if (!w) {
-    alert('Please allow popups for this site to print invoices.\n\nClick the popup-blocked icon in your browser address bar and choose "Always allow".')
-    return
-  }
-  w.document.open()
-  w.document.write(html)
-  w.document.close()
-  w.focus()
+  const blob = new Blob([html], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
 }
 
 function recalcTotals(inv: Partial<Invoice>, sstRate = 0): Partial<Invoice> {
@@ -1751,8 +1752,8 @@ export function InvoicesPage() {
         </div>
       )}
 
-      {/* ── PRINT VIEW (DCU 7216 format) — now opens in new tab via /print/invoice/:id ── */}
-      {false && editInvoice && (
+      {/* ── PRINT VIEW — removed; print now opens via blob URL in new tab ── */}
+      {false && (
         <div style={{ position: 'fixed', inset: 0, background: '#fff', zIndex: 9999, overflowY: 'auto' }}>
           <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/cocogoose" />
           <style>{`
@@ -1946,8 +1947,8 @@ export function InvoicesPage() {
         </div>
       )}
 
-      {/* ── RECEIPT PRINT VIEW — now opens in new tab via /print/receipt/:id ── */}
-      {false && editInvoice && (
+      {/* ── RECEIPT PRINT VIEW — removed; receipt now opens via blob URL in new tab ── */}
+      {false && (
         <div style={{ position: 'fixed', inset: 0, background: '#fff', zIndex: 9999, overflowY: 'auto' }}>
           <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/cocogoose" />
           <style>{`
