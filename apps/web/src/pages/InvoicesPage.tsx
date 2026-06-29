@@ -13,6 +13,7 @@ interface LineItem {
   qty: number
   uom: string
   unit_price: number
+  cost_price?: number   // purchasing cost — used for COGS in reports
   discount_pct?: number
   amount: number
 }
@@ -94,6 +95,7 @@ interface CataloguePart {
   division: 'car' | 'bike' | 'both'
   unit: string
   selling_price?: number | null
+  cost_price?: number | null
   stock_qty: number
 }
 
@@ -104,6 +106,7 @@ interface InstalledPart {
   quantity: number
   ordered_qty: number | null
   selling_price: number | null
+  cost_price?: number | null
 }
 
 // ─── Theme ─────────────────────────────────────────────────────────────────────
@@ -333,7 +336,7 @@ export function InvoicesPage() {
 
   const loadCatalogueParts = useCallback(async () => {
     const tenantId = user?.tenant_id
-    let q = supabase.from('parts_catalogue').select('id,name,part_number,category,division,unit,selling_price,stock_qty').eq('is_active', true).order('name')
+    let q = supabase.from('parts_catalogue').select('id,name,part_number,category,division,unit,selling_price,cost_price,stock_qty').eq('is_active', true).order('name')
     if (tenantId) q = q.eq('tenant_id', tenantId)
     const { data } = await q
     setCatalogueParts((data as CataloguePart[]) ?? [])
@@ -343,12 +346,13 @@ export function InvoicesPage() {
     setLoadingParts(true)
     const { data } = await supabase
       .from('parts_requests')
-      .select('id, part_name, part_number, quantity, ordered_qty, selling_price, parts_catalogue(selling_price)')
+      .select('id, part_name, part_number, quantity, ordered_qty, selling_price, parts_catalogue(selling_price, cost_price)')
       .eq('job_id', jobId)
       .eq('status', 'installed')
     const parts: InstalledPart[] = (data ?? []).map((p: any) => ({
       ...p,
       selling_price: p.selling_price ?? p.parts_catalogue?.selling_price ?? null,
+      cost_price: p.parts_catalogue?.cost_price ?? null,
     }))
     setInstalledParts(parts)
     // Auto-populate invoice items from installed parts
@@ -361,6 +365,7 @@ export function InvoicesPage() {
           description: p.part_name + (p.part_number ? ` [${p.part_number}]` : ''),
           qty,
           uom: 'unit',
+          cost_price: p.cost_price ?? undefined,
           unit_price,
           discount_pct: 0,
           amount: parseFloat((qty * unit_price).toFixed(2)),
@@ -1262,7 +1267,7 @@ export function InvoicesPage() {
                 )
                 return visible.map(p => (
                   <div key={p.id} onClick={() => {
-                    const item: LineItem = { item_type: 'part', description: p.name + (p.part_number ? ` [${p.part_number}]` : ''), qty: 1, uom: p.unit || 'unit', unit_price: p.selling_price ?? 0, amount: p.selling_price ?? 0 }
+                    const item: LineItem = { item_type: 'part', description: p.name + (p.part_number ? ` [${p.part_number}]` : ''), qty: 1, uom: p.unit || 'unit', unit_price: p.selling_price ?? 0, cost_price: p.cost_price ?? undefined, amount: p.selling_price ?? 0 }
                     setNewInvoiceItems(prev => [...prev, item])
                     setShowPartPicker(false)
                   }} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

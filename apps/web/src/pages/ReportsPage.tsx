@@ -260,15 +260,19 @@ export function ReportsPage() {
           .select('job_id, line_items, status, total_amount, subtotal')
           .in('job_id', jobIds)
           .in('status', ['paid', 'sent', 'overdue'])
-        type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number }
+        type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number; cost_price?: number }
         invRows?.forEach((inv: { job_id: string; line_items: LineItem[] | null; status: string; total_amount: number | null; subtotal: number | null }) => {
           const invTotal = inv.total_amount ?? inv.subtotal ?? 0
           revenue += invTotal
           paidJobCount++
           ;(inv.line_items ?? []).forEach((li) => {
-            const amt = li.amount ?? (li.qty ?? 1) * (li.unit_price ?? 0)
-            if (li.item_type === 'part') totalParts += amt
-            else if (li.item_type === 'labour') totalLabour += amt
+            const qty = li.qty ?? 1
+            if (li.item_type === 'part') {
+              // Use purchasing cost_price for COGS; fall back to selling unit_price for old records
+              totalParts += li.cost_price != null ? li.cost_price * qty : (li.amount ?? qty * (li.unit_price ?? 0))
+            } else if (li.item_type === 'labour') {
+              totalLabour += li.amount ?? qty * (li.unit_price ?? 0)
+            }
           })
         })
       }
