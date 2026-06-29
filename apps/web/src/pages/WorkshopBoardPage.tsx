@@ -125,7 +125,7 @@ interface StatusChangeRequest {
 
 interface JobRow extends Job {
   customers?: { full_name: string; phone: string } | null
-  vehicles?: { plate_number: string; make: string; model: string; year: number | null; vehicle_type: string } | null
+  vehicles?: { plate_number: string; make: string; model: string; year: number | null; vehicle_type: string; is_internal_fleet?: boolean } | null
   assigned_foreman?: { full_name: string } | null
   assigned_mechanic?: { full_name: string } | null
   next_action?: string | null
@@ -684,6 +684,9 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
               </span>
             )}
             <span style={{ backgroundColor: vType === 'BIKE' ? 'rgba(139,92,246,0.2)' : 'rgba(59,130,246,0.2)', color: vType === 'BIKE' ? '#A78BFA' : '#60A5FA', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em' }}>{vType}</span>
+            {job.vehicles?.is_internal_fleet && (
+              <span style={{ backgroundColor: 'rgba(241,90,34,0.15)', color: '#F15A22', border: '1px solid rgba(241,90,34,0.35)', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>INTERNAL FLEET</span>
+            )}
           </div>
 
           {/* Vehicle + Customer */}
@@ -1326,6 +1329,9 @@ function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, o
           <span style={{ backgroundColor: vType === 'BIKE' ? 'rgba(139,92,246,0.2)' : 'rgba(59,130,246,0.2)', color: vType === 'BIKE' ? '#A78BFA' : '#60A5FA', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
             {vType}
           </span>
+          {job.vehicles?.is_internal_fleet && (
+            <span style={{ backgroundColor: 'rgba(241,90,34,0.15)', color: '#F15A22', border: '1px solid rgba(241,90,34,0.35)', padding: '2px 7px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>INT</span>
+          )}
         </div>
       </div>
 
@@ -1492,7 +1498,7 @@ export function WorkshopBoardPage() {
           customer_complaint, diagnosis_summary, branch_id, tenant_id, customer_id, vehicle_id,
           assigned_foreman_id, assigned_mechanic_id, source, arrival_mode, payment_status,
           customers!customer_id(full_name, phone),
-          vehicles!vehicle_id(plate_number, make, model, year, vehicle_type),
+          vehicles!vehicle_id(plate_number, make, model, year, vehicle_type, is_internal_fleet),
           assigned_foreman:users!assigned_foreman_id(full_name),
           assigned_mechanic:users!assigned_mechanic_id(full_name)`)
         .not('status', 'eq', 'closed')

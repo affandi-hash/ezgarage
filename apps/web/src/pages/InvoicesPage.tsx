@@ -48,6 +48,7 @@ interface Invoice {
   payment_date: string
   payment_reference: string
   notes: string
+  is_internal_fleet?: boolean
   created_by: string
   created_at: string
   updated_at: string
@@ -65,7 +66,7 @@ interface Job {
   branch_id: string
   invoice_id: string | null
   customers: { full_name: string; phone: string; email: string } | null
-  vehicles: { plate_number: string; make: string; model: string; year: number; vehicle_type?: string; mileage?: number } | null
+  vehicles: { plate_number: string; make: string; model: string; year: number; vehicle_type?: string; mileage?: number; is_internal_fleet?: boolean } | null
 }
 
 interface LabourCharge {
@@ -409,6 +410,7 @@ export function InvoicesPage() {
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [internalFilter, setInternalFilter] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // Modals
@@ -484,7 +486,7 @@ export function InvoicesPage() {
     setJobsLoading(true)
     let q = supabase
       .from('jobs')
-      .select('*, customers(full_name, phone, email), vehicles(plate_number, make, model, year, vehicle_type)')
+      .select('*, customers(full_name, phone, email), vehicles(plate_number, make, model, year, vehicle_type, is_internal_fleet)')
       .not('status', 'in', '("cancelled")')
     if (user?.role !== 'super_admin' && user?.branch_id) q = q.eq('branch_id', user.branch_id)
     const { data, error } = await q
@@ -680,6 +682,7 @@ export function InvoicesPage() {
         tenant_id: user.tenant_id ?? null,
         created_by: user.id,
         status: 'draft',
+        is_internal_fleet: selectedJob?.vehicles?.is_internal_fleet ?? false,
       }
       // Remove undefined/null fields that would break typed UUID columns
       delete payload.discount_pct
@@ -776,7 +779,8 @@ export function InvoicesPage() {
   const filtered = invoices.filter(inv => {
     const matchSearch = !searchTerm || inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) || (inv.customer_name ?? '').toLowerCase().includes(searchTerm.toLowerCase())
     const matchStatus = statusFilter === 'all' || inv.status === statusFilter
-    return matchSearch && matchStatus
+    const matchInternal = !internalFilter || inv.is_internal_fleet
+    return matchSearch && matchStatus && matchInternal
   })
 
   const filteredJobs = jobs.filter(j =>
@@ -835,6 +839,9 @@ export function InvoicesPage() {
                     {s === 'all' ? 'All' : s}
                   </button>
                 ))}
+                <button onClick={() => setInternalFilter(v => !v)} style={{ flexShrink: 0, background: internalFilter ? 'rgba(241,90,34,0.2)' : C.bg, color: internalFilter ? C.orange : C.text2, border: `1px solid ${internalFilter ? C.orange : C.border}`, borderRadius: 16, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  Internal Fleet
+                </button>
               </div>
             </div>
             <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -882,6 +889,7 @@ export function InvoicesPage() {
                     <div style={{ fontFamily: 'monospace', fontSize: 26, fontWeight: 700, color: C.orange, marginBottom: 6 }}>{editInvoice.invoice_number}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <StatusBadge status={editInvoice.status} />
+                      {editInvoice.is_internal_fleet && <span style={{ background: 'rgba(241,90,34,0.15)', color: C.orange, border: '1px solid rgba(241,90,34,0.4)', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em' }}>INTERNAL FLEET</span>}
                       <span style={{ fontSize: 13, color: C.text2 }}>{formatDate(editInvoice.issue_date)}</span>
                       {editInvoice.opened_by && <span style={{ fontSize: 13, color: C.text2 }}>Opened by: {editInvoice.opened_by}</span>}
                     </div>

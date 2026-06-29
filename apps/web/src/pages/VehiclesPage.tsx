@@ -17,6 +17,7 @@ import {
   Edit2,
   Trash2,
   Save,
+  Building2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -36,6 +37,7 @@ interface VehicleWithRelations {
   current_mileage?: number
   branch_id: string
   customer_id: string
+  is_internal_fleet?: boolean
   created_at: string
   customers: { full_name: string; phone: string }
   jobs: Array<{
@@ -65,6 +67,7 @@ interface VehicleFormData {
   color: string
   current_mileage: string
   customer_id: string
+  is_internal_fleet: boolean
 }
 
 const EMPTY_FORM: VehicleFormData = {
@@ -76,6 +79,7 @@ const EMPTY_FORM: VehicleFormData = {
   color: '',
   current_mileage: '',
   customer_id: '',
+  is_internal_fleet: false,
 }
 
 type VehicleTypeFilter = 'all' | 'car' | 'bike'
@@ -235,7 +239,7 @@ function VehicleFormFields({
   branchId?: string
   tenantId?: string
 }) {
-  const update = (key: keyof VehicleFormData, value: string) =>
+  const update = (key: keyof VehicleFormData, value: string | boolean) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 
   const [showNewCustomer, setShowNewCustomer] = useState(false)
@@ -402,6 +406,22 @@ function VehicleFormFields({
           ))}
         </select>
       </div>
+
+      {/* Internal Fleet toggle */}
+      <div>
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: '#1A1A1A', border: `1px solid ${form.is_internal_fleet ? '#F15A22' : '#2A2A2A'}`, borderRadius: 8, cursor: 'pointer' }}
+          onClick={() => update('is_internal_fleet', !form.is_internal_fleet)}
+        >
+          <div style={{ width: 36, height: 20, borderRadius: 10, background: form.is_internal_fleet ? '#F15A22' : '#3A3A3A', position: 'relative', flexShrink: 0 }}>
+            <div style={{ position: 'absolute', top: 2, left: form.is_internal_fleet ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff' }} />
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: 14, color: '#F0F0F0', fontWeight: 500 }}>Internal Fleet</p>
+            <p style={{ margin: 0, fontSize: 12, color: '#A0A0A0' }}>Company or subsidiary-owned vehicle</p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -452,6 +472,7 @@ function AddVehicleModal({
       color: form.color.trim() || null,
       current_mileage: form.current_mileage ? parseInt(form.current_mileage, 10) : null,
       customer_id: form.customer_id || null,
+      is_internal_fleet: form.is_internal_fleet ?? false,
       branch_id: branchId,
       tenant_id: tenantId,
     }
@@ -572,6 +593,7 @@ function EditVehiclePanel({
         ? String(vehicle.mileage)
         : '',
     customer_id: vehicle.customer_id ?? '',
+    is_internal_fleet: vehicle.is_internal_fleet ?? false,
   })
   const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [saving, setSaving] = useState(false)
@@ -609,6 +631,7 @@ function EditVehiclePanel({
         color: form.color.trim() || null,
         current_mileage: form.current_mileage ? parseInt(form.current_mileage, 10) : null,
         customer_id: form.customer_id || null,
+        is_internal_fleet: form.is_internal_fleet ?? false,
       })
       .eq('id', vehicle.id)
 
@@ -853,7 +876,14 @@ function VehicleListItem({
             {vehicle.customers?.full_name ?? '—'}
           </p>
         </div>
-        <TypeBadge type={vehicle.vehicle_type} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {vehicle.is_internal_fleet && (
+            <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, color: '#F15A22', backgroundColor: 'rgba(241,90,34,0.15)', border: '1px solid rgba(241,90,34,0.3)' }}>
+              Internal
+            </span>
+          )}
+          <TypeBadge type={vehicle.vehicle_type} />
+        </div>
       </div>
     </button>
   )
@@ -903,6 +933,15 @@ function OverviewTab({
             ? `${(vehicle.current_mileage ?? vehicle.mileage)!.toLocaleString()} km`
             : '—'}
         </span>
+      ),
+    },
+    {
+      icon: <Building2 size={14} />,
+      label: 'Fleet',
+      value: vehicle.is_internal_fleet ? (
+        <span style={{ color: '#F15A22', fontWeight: 600 }}>Internal Fleet</span>
+      ) : (
+        <span style={{ color: '#A0A0A0' }}>External</span>
       ),
     },
     {
@@ -1304,6 +1343,7 @@ export function VehiclesPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<VehicleTypeFilter>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [internalOnly, setInternalOnly] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<VehicleWithRelations | null>(null)
 
@@ -1349,6 +1389,7 @@ export function VehiclesPage() {
       }
 
       if (typeFilter !== 'all' && v.vehicle_type !== typeFilter) return false
+      if (internalOnly && !v.is_internal_fleet) return false
 
       if (statusFilter !== 'all') {
         if (statusFilter === 'active' && !ACTIVE_STATUSES.includes(getActiveJob(v.jobs)?.status ?? '')) return false
@@ -1459,6 +1500,24 @@ export function VehiclesPage() {
                 {label}
               </button>
             ))}
+          </div>
+
+          {/* Internal Fleet toggle */}
+          <div style={{ marginTop: 10 }}>
+            <button
+              onClick={() => setInternalOnly(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: internalOnly ? 'rgba(241,90,34,0.15)' : '#1E1E1E',
+                color: internalOnly ? '#F15A22' : '#A0A0A0',
+                border: `1px solid ${internalOnly ? 'rgba(241,90,34,0.5)' : '#2A2A2A'}`,
+                borderRadius: 999, fontSize: 12, fontWeight: 500,
+                padding: '6px 16px', minHeight: 32, cursor: 'pointer',
+              }}
+            >
+              <Building2 size={12} />
+              Internal Fleet Only
+            </button>
           </div>
         </div>
 
