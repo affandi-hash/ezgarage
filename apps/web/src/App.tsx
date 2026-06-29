@@ -26,6 +26,7 @@ import { OnboardingPage } from '@/pages/OnboardingPage'
 import { CustomerPortalPage } from '@/pages/CustomerPortalPage'
 import { OnlineBookingPage } from '@/pages/OnlineBookingPage'
 import { QuotationsPage } from '@/pages/QuotationsPage'
+import { LabourChargesPage } from '@/pages/LabourChargesPage'
 import { ChangePasswordPage } from '@/pages/ChangePasswordPage'
 import { PrintInvoicePage } from '@/pages/PrintInvoicePage'
 import { PrintReceiptPage } from '@/pages/PrintReceiptPage'
@@ -162,6 +163,16 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager','front_desk','finance','foreman']}>
                 <InvoicesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Labour Charges */}
+          <Route
+            path="/labour-charges"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','foreman']}>
+                <LabourChargesPage />
               </ProtectedRoute>
             }
           />
