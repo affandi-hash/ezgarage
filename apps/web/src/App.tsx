@@ -26,6 +26,8 @@ import { CustomerPortalPage } from '@/pages/CustomerPortalPage'
 import { OnlineBookingPage } from '@/pages/OnlineBookingPage'
 import { QuotationsPage } from '@/pages/QuotationsPage'
 import { ChangePasswordPage } from '@/pages/ChangePasswordPage'
+import { PrintInvoicePage } from '@/pages/PrintInvoicePage'
+import { PrintReceiptPage } from '@/pages/PrintReceiptPage'
 
 export default function App() {
   const { setUser, setLoading } = useAuthStore()
@@ -72,6 +74,8 @@ export default function App() {
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/portal" element={<CustomerPortalPage />} />
         <Route path="/book" element={<OnlineBookingPage />} />
+        <Route path="/print/invoice/:id" element={<ProtectedRoute><PrintInvoicePage /></ProtectedRoute>} />
+        <Route path="/print/receipt/:id" element={<ProtectedRoute><PrintReceiptPage /></ProtectedRoute>} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         <Route

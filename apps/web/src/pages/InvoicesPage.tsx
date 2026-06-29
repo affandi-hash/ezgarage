@@ -244,8 +244,7 @@ export function InvoicesPage() {
   // Modals
   const [showNewModal, setShowNewModal] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
-  const [showPrintView, setShowPrintView]     = useState(false)
-  const [showReceiptView, setShowReceiptView] = useState(false)
+
   const [showLabourPicker, setShowLabourPicker] = useState(false)
   const [labourPickerSearch, setLabourPickerSearch] = useState('')
   const [pickerVehicleType, setPickerVehicleType] = useState<string | null>(null)
@@ -853,9 +852,9 @@ export function InvoicesPage() {
                       <CreditCard size={15} /> Record Payment
                     </button>
                   )}
-                  <button style={btnOutline} onClick={() => setShowPrintView(true)}><Printer size={15} /> Print Invoice</button>
+                  <button style={btnOutline} onClick={() => window.open(`/print/invoice/${editInvoice.id}`, '_blank')}><Printer size={15} /> Print Invoice</button>
                   {editInvoice.status === 'paid' && (
-                    <button style={btnOutline} onClick={() => setShowReceiptView(true)}><Printer size={15} /> Print Receipt</button>
+                    <button style={btnOutline} onClick={() => window.open(`/print/receipt/${editInvoice.id}`, '_blank')}><Printer size={15} /> Print Receipt</button>
                   )}
                   {editInvoice.status !== 'void' && editInvoice.status !== 'paid' && (
                     <button onClick={voidInvoice} disabled={saving} style={{ background: '#1A0E0E', border: '1px solid #3D1515', color: '#F87171', borderRadius: 6, padding: '8px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1583,8 +1582,8 @@ export function InvoicesPage() {
         </div>
       )}
 
-      {/* ── PRINT VIEW (DCU 7216 format) ──────────────────────────────────────────── */}
-      {showPrintView && editInvoice && (
+      {/* ── PRINT VIEW (DCU 7216 format) — now opens in new tab via /print/invoice/:id ── */}
+      {false && editInvoice && (
         <div style={{ position: 'fixed', inset: 0, background: '#fff', zIndex: 9999, overflowY: 'auto' }}>
           <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/cocogoose" />
           <style>{`
@@ -1778,8 +1777,8 @@ export function InvoicesPage() {
         </div>
       )}
 
-      {/* ── RECEIPT PRINT VIEW ──────────────────────────────────────────────────── */}
-      {showReceiptView && editInvoice && (
+      {/* ── RECEIPT PRINT VIEW — now opens in new tab via /print/receipt/:id ── */}
+      {false && editInvoice && (
         <div style={{ position: 'fixed', inset: 0, background: '#fff', zIndex: 9999, overflowY: 'auto' }}>
           <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/cocogoose" />
           <style>{`
