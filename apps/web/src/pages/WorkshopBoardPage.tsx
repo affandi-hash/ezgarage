@@ -907,7 +907,7 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
                 </button>
               )}
               {['ops_manager', 'foreman', 'super_admin'].includes(user?.role ?? '') &&
-               ['new', 'booked', 'checked_in'].includes(job.status) && (
+               ['new', 'booked', 'checked_in', 'diagnosing', 'waiting_approval'].includes(job.status) && (
                 <button onClick={() => { setShowCancelConfirm(v => !v); setCancelReason('') }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1px solid #DC2626', backgroundColor: showCancelConfirm ? 'rgba(220,38,38,0.15)' : 'transparent', color: '#FCA5A5', fontSize: 13, cursor: 'pointer' }}>
                   <X size={14} /> Cancel Job
                 </button>
