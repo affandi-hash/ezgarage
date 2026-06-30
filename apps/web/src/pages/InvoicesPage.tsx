@@ -147,7 +147,7 @@ function futureDateStr(days: number): string {
 function statusColor(status: string): string {
   switch (status) {
     case 'draft': return '#555'
-    case 'sent': return '#1E6BB8'
+    case 'sent': return '#B91C1C'
     case 'issued': return '#1E6BB8'
     case 'paid': return '#1E7B4B'
     case 'void': return '#8B1E1E'
@@ -366,7 +366,7 @@ function recalcTotals(inv: Partial<Invoice>, sstRate = 0): Partial<Invoice> {
 function StatusBadge({ status }: { status: string }) {
   return (
     <span style={{ background: statusColor(status), color: '#fff', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase' as const, letterSpacing: 1 }}>
-      {status}
+      {status === 'sent' ? 'unpaid' : status}
     </span>
   )
 }
