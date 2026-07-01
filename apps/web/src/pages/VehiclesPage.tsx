@@ -689,7 +689,7 @@ function EditVehiclePanel({
               <span
                 style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', color: '#F15A22' }}
               >
-                {vehicle.plate_number}
+                {formatPlate(vehicle.plate_number)}
               </span>
             </div>
           </div>
@@ -858,7 +858,7 @@ function VehicleListItem({
         <span
           style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 18, letterSpacing: '0.1em', color: '#F15A22' }}
         >
-          {vehicle.plate_number}
+          {formatPlate(vehicle.plate_number)}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           {days !== null && <DaysPill days={days} />}
@@ -966,7 +966,7 @@ function OverviewTab({
           <span
             style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 36, letterSpacing: '0.1em', color: '#F15A22' }}
           >
-            {vehicle.plate_number}
+            {formatPlate(vehicle.plate_number)}
           </span>
           <TypeBadge type={vehicle.vehicle_type} />
         </div>
@@ -1117,6 +1117,15 @@ function CurrentJobTab({
   )
 }
 
+interface JobInvoiceDetail {
+  invoice_number: string
+  line_items: Array<{ item_type: string; description: string; qty: number; unit_price: number; total_price: number }>
+  subtotal: number
+  discount_amount: number
+  tax_amount: number
+  total_amount: number
+}
+
 function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
   const completedJobs = vehicle.jobs
     .filter((j) => !ACTIVE_STATUSES.includes(j.status))
@@ -1124,6 +1133,29 @@ function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
       (a, b) =>
         new Date(b.checked_in_at).getTime() - new Date(a.checked_in_at).getTime(),
     )
+
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
+  const [invoiceDetails, setInvoiceDetails] = useState<Record<string, JobInvoiceDetail | null>>({})
+  const [loadingJobId, setLoadingJobId] = useState<string | null>(null)
+
+  async function toggleJob(jobId: string) {
+    if (expandedJobId === jobId) {
+      setExpandedJobId(null)
+      return
+    }
+    setExpandedJobId(jobId)
+    if (invoiceDetails[jobId] !== undefined) return
+    setLoadingJobId(jobId)
+    const { data } = await supabase
+      .from('invoices')
+      .select('invoice_number, line_items, subtotal, discount_amount, tax_amount, total_amount')
+      .eq('job_id', jobId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    setInvoiceDetails(prev => ({ ...prev, [jobId]: data ?? null }))
+    setLoadingJobId(null)
+  }
 
   if (completedJobs.length === 0) {
     return (
@@ -1137,49 +1169,142 @@ function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
   }
 
   return (
-    <div style={{ padding: 16 }}>
-      <div
-        style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid #2A2A2A' }}
-      >
-        <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#1E1E1E' }}>
-              {['Job #', 'Date', 'Service', 'Status', 'Amount'].map((h) => (
-                <th
-                  key={h}
-                  style={{ textAlign: 'left', padding: '10px 12px', fontSize: 12, fontWeight: 600, color: '#A0A0A0', borderBottom: '1px solid #2A2A2A' }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {completedJobs.map((job, idx) => (
-              <tr
-                key={job.id}
-                style={{ backgroundColor: idx % 2 === 0 ? '#161616' : '#1A1A1A' }}
-              >
-                <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: 12, color: '#F15A22' }}>
-                  {job.job_number}
-                </td>
-                <td style={{ padding: '10px 12px', color: '#A0A0A0' }}>
-                  {formatDate(job.checked_in_at)}
-                </td>
-                <td style={{ padding: '10px 12px', color: '#F0F0F0' }}>
-                  {job.service_type || '—'}
-                </td>
-                <td style={{ padding: '10px 12px' }}>
-                  <StatusBadge status={job.status} />
-                </td>
-                <td style={{ padding: '10px 12px', color: '#F0F0F0' }}>
-                  {job.final_amount != null ? formatCurrency(job.final_amount) : '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {completedJobs.map((job) => {
+        const isOpen = expandedJobId === job.id
+        const detail = invoiceDetails[job.id]
+        const isLoading = loadingJobId === job.id
+        const parts = detail?.line_items?.filter(l => l.item_type === 'part') ?? []
+        const labour = detail?.line_items?.filter(l => l.item_type === 'labour') ?? []
+
+        return (
+          <div key={job.id} style={{ borderRadius: 10, border: `1px solid ${isOpen ? '#F15A22' : '#2A2A2A'}`, overflow: 'hidden', transition: 'border-color 0.15s' }}>
+            {/* Summary row */}
+            <button
+              onClick={() => toggleJob(job.id)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: isOpen ? '#1A0E0E' : '#161616', border: 'none', cursor: 'pointer', gap: 8, textAlign: 'left' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#F15A22', flexShrink: 0 }}>{job.job_number}</span>
+                <span style={{ fontSize: 12, color: '#A0A0A0', flexShrink: 0 }}>{formatDate(job.checked_in_at)}</span>
+                <span style={{ fontSize: 13, color: '#F0F0F0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.service_type || '—'}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                <StatusBadge status={job.status} />
+                {job.final_amount != null && (
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#F0F0F0' }}>{formatCurrency(job.final_amount)}</span>
+                )}
+                <span style={{ fontSize: 16, color: '#A0A0A0', lineHeight: 1 }}>{isOpen ? '▲' : '▼'}</span>
+              </div>
+            </button>
+
+            {/* Expanded detail */}
+            {isOpen && (
+              <div style={{ padding: '12px 14px 14px', backgroundColor: '#0E0E0E', borderTop: '1px solid #2A2A2A', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {isLoading && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#A0A0A0', fontSize: 13 }}>
+                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                    Loading details…
+                  </div>
+                )}
+
+                {/* Complaint / diagnosis */}
+                {(job.complaint || job.diagnosis) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {job.complaint && (
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Customer Complaint</span>
+                        <p style={{ margin: '2px 0 0', fontSize: 13, color: '#F0F0F0' }}>{job.complaint}</p>
+                      </div>
+                    )}
+                    {job.diagnosis && (
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Diagnosis / Work Done</span>
+                        <p style={{ margin: '2px 0 0', fontSize: 13, color: '#F0F0F0' }}>{job.diagnosis}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Invoice detail */}
+                {!isLoading && detail && (
+                  <>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Invoice {detail.invoice_number}
+                    </div>
+
+                    {/* Parts */}
+                    {parts.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, color: '#A0A0A0', marginBottom: 4 }}>Parts / Items</div>
+                        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                          <tbody>
+                            {parts.map((p, i) => (
+                              <tr key={i} style={{ borderBottom: '1px solid #1E1E1E' }}>
+                                <td style={{ padding: '5px 0', color: '#F0F0F0', paddingRight: 8 }}>{p.description}</td>
+                                <td style={{ padding: '5px 0', color: '#A0A0A0', textAlign: 'right', paddingRight: 8 }}>×{p.qty}</td>
+                                <td style={{ padding: '5px 0', color: '#A0A0A0', textAlign: 'right', paddingRight: 8 }}>{formatCurrency(p.unit_price)}</td>
+                                <td style={{ padding: '5px 0', color: '#F0F0F0', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(p.total_price)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Labour */}
+                    {labour.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, color: '#A0A0A0', marginBottom: 4 }}>Labour</div>
+                        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                          <tbody>
+                            {labour.map((l, i) => (
+                              <tr key={i} style={{ borderBottom: '1px solid #1E1E1E' }}>
+                                <td style={{ padding: '5px 0', color: '#F0F0F0', paddingRight: 8 }}>{l.description}</td>
+                                <td style={{ padding: '5px 0', color: '#A0A0A0', textAlign: 'right', paddingRight: 8 }}>×{l.qty}</td>
+                                <td style={{ padding: '5px 0', color: '#A0A0A0', textAlign: 'right', paddingRight: 8 }}>{formatCurrency(l.unit_price)}</td>
+                                <td style={{ padding: '5px 0', color: '#F0F0F0', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(l.total_price)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Totals */}
+                    <div style={{ borderTop: '1px solid #2A2A2A', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {detail.discount_amount > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#A0A0A0' }}>
+                          <span>Discount</span>
+                          <span>−{formatCurrency(detail.discount_amount)}</span>
+                        </div>
+                      )}
+                      {detail.tax_amount > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#A0A0A0' }}>
+                          <span>Tax (SST)</span>
+                          <span>{formatCurrency(detail.tax_amount)}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 700, color: '#F15A22' }}>
+                        <span>Total</span>
+                        <span>{formatCurrency(detail.total_amount)}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {!isLoading && detail === null && (
+                  <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>No invoice found for this job.</p>
+                )}
+
+                {!isLoading && detail === undefined && !isLoading && (
+                  <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>No details available.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -1250,7 +1375,7 @@ function VehicleDetail({
           <span
             style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 24, letterSpacing: '0.1em', color: '#F15A22' }}
           >
-            {vehicle.plate_number}
+            {formatPlate(vehicle.plate_number)}
           </span>
           <TypeBadge type={vehicle.vehicle_type} />
         </div>
