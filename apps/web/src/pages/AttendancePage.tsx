@@ -176,11 +176,13 @@ function EditAttendanceModal({ record, onClose, onSaved }: {
 
   const handleSave = async () => {
     setSaving(true)
+    // DB column is timestamptz — rebuild full ISO string from record.date + HH:MM
+    const toTs = (t: string) => t ? `${record.date}T${t}:00` : null
     const { error: err } = await supabase
       .from('attendance_records')
       .update({
-        clock_in_time: clockIn || null,
-        clock_out_time: clockOut || null,
+        clock_in_time: toTs(clockIn),
+        clock_out_time: toTs(clockOut),
         status,
         ot_hours: otHours > 0 ? otHours : null,
         late_minutes: lateMinutes > 0 ? lateMinutes : null,
