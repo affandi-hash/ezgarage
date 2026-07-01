@@ -154,6 +154,7 @@ function EditAttendanceModal({ record, onClose, onSaved }: {
   onClose: () => void
   onSaved: () => void
 }) {
+  const { user } = useAuthStore()
   const parseHM = (ts: string | null) => {
     const t = ts?.slice(11, 16) || ts?.slice(0, 5) || ''
     const [h = '', m = ''] = t.split(':')
@@ -201,7 +202,23 @@ function EditAttendanceModal({ record, onClose, onSaved }: {
       .eq('id', record.id)
     setSaving(false)
     if (err) { toast(err.message, 'error'); return }
-    toast(`Attendance updated${otHours > 0 ? ` Â· ${otHours}h OT calculated` : ''}`)
+    logAudit({
+      action: 'Attendance Edit',
+      module: 'Attendance',
+      record_id: record.id,
+      record_type: 'attendance_records',
+      details: {
+        staff: record.staff_profiles?.full_name ?? record.staff_id,
+        date: record.date,
+        clock_in: clockIn || null,
+        clock_out: clockOut || null,
+        status,
+      },
+      branch_id: user?.branch_id,
+      user_id: user?.id,
+      tenant_id: user?.tenant_id,
+    })
+    toast(`Attendance updated${otHours > 0 ? ` · ${otHours}h OT calculated` : ''}`)
     onSaved()
     onClose()
   }
