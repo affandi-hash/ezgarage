@@ -406,6 +406,8 @@ export function InvoicesPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [internalFilter, setInternalFilter] = useState(false)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [saving, setSaving] = useState(false)
 
   // Modals
@@ -701,7 +703,10 @@ export function InvoicesPage() {
     const matchSearch = !searchTerm || inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) || (inv.customer_name ?? '').toLowerCase().includes(searchTerm.toLowerCase())
     const matchStatus = statusFilter === 'all' || inv.status === statusFilter
     const matchInternal = !internalFilter || inv.is_internal_fleet
-    return matchSearch && matchStatus && matchInternal
+    const invDate = inv.issue_date ?? inv.created_at?.slice(0, 10)
+    const matchFrom = !dateFrom || invDate >= dateFrom
+    const matchTo = !dateTo || invDate <= dateTo
+    return matchSearch && matchStatus && matchInternal && matchFrom && matchTo
   })
 
   const filteredJobs = jobs.filter(j =>
@@ -740,6 +745,19 @@ export function InvoicesPage() {
               <div style={{ position: 'relative', marginBottom: 12 }}>
                 <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.text2 }} />
                 <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="Search invoice # or customer..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <span style={{ fontSize: 12, color: C.text2, whiteSpace: 'nowrap' as const }}>From</span>
+                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: '5px 8px' }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <span style={{ fontSize: 12, color: C.text2, whiteSpace: 'nowrap' as const }}>To</span>
+                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: '5px 8px' }} />
+                </div>
+                {(dateFrom || dateTo) && (
+                  <button onClick={() => { setDateFrom(''); setDateTo('') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text2, fontSize: 12, whiteSpace: 'nowrap' as const, padding: '4px 6px' }}>✕ Clear</button>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
                 {['all', 'draft', 'sent', 'paid', 'void'].map(s => (
