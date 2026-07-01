@@ -60,7 +60,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/quotations', label: 'Quotations', icon: ClipboardList, roles: ['super_admin', 'ops_manager', 'front_desk', 'foreman'] },
       { to: '/parts', label: 'Parts', icon: Package, roles: ['super_admin', 'ops_manager', 'parts_admin', 'foreman', 'mechanic'] },
-      { to: '/inventory', label: 'Inventory', icon: Archive, roles: ['super_admin', 'ops_manager', 'parts_admin'] },
+      { to: '/inventory', label: 'Inventory', icon: Archive, roles: ['super_admin', 'ops_manager', 'parts_admin', 'foreman'] },
       { to: '/invoices', label: 'Invoices', icon: FileText, roles: ['super_admin', 'ops_manager', 'front_desk', 'finance', 'foreman'] },
       { to: '/receipts', label: 'Receipts', icon: Receipt, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/labour-charges', label: 'Labour Charges', icon: Wrench, roles: ['super_admin', 'ops_manager', 'foreman'] },

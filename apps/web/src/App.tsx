@@ -152,7 +152,7 @@ export default function App() {
           <Route
             path="/inventory"
             element={
-              <ProtectedRoute allowedRoles={['super_admin','ops_manager','parts_admin']}>
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','parts_admin','foreman']}>
                 <InventoryPage />
               </ProtectedRoute>
             }
