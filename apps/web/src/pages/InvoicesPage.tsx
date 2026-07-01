@@ -1084,49 +1084,61 @@ export function InvoicesPage() {
                       const missingPrice = item.unit_price === 0
                       const stockShort = item.stock_qty !== undefined && item.qty > item.stock_qty
                       return (
-                        <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: `1px solid ${C.border}`, background: stockShort ? 'rgba(239,68,68,0.06)' : missingPrice ? 'rgba(245,158,11,0.06)' : undefined }}>
-                          <div style={{ flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0 }}>
-                            {item.description}
-                            {missingPrice && <span style={{ marginLeft: 6, fontSize: 10, color: '#F59E0B', fontWeight: 700, background: 'rgba(245,158,11,0.15)', padding: '1px 5px', borderRadius: 4 }}>SET PRICE</span>}
-                            {stockShort && <span style={{ marginLeft: 6, fontSize: 10, color: '#EF4444', fontWeight: 700, background: 'rgba(239,68,68,0.15)', padding: '1px 5px', borderRadius: 4 }}>ONLY {item.stock_qty} IN STOCK</span>}
+                        <div key={pi} style={{ padding: '9px 14px', borderBottom: `1px solid ${C.border}`, background: stockShort ? 'rgba(239,68,68,0.06)' : missingPrice ? 'rgba(245,158,11,0.06)' : undefined }}>
+                          {/* Row 1: name + delete */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                            <div style={{ flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0 }}>
+                              {item.description}
+                              {missingPrice && <span style={{ marginLeft: 6, fontSize: 10, color: '#F59E0B', fontWeight: 700, background: 'rgba(245,158,11,0.15)', padding: '1px 5px', borderRadius: 4 }}>SET PRICE</span>}
+                              {stockShort && <span style={{ marginLeft: 6, fontSize: 10, color: '#EF4444', fontWeight: 700, background: 'rgba(239,68,68,0.15)', padding: '1px 5px', borderRadius: 4 }}>ONLY {item.stock_qty} IN STOCK</span>}
+                            </div>
+                            <button onClick={() => setNewInvoiceItems(prev => prev.filter(it => it !== item))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#E05555', padding: 2, flexShrink: 0 }}><X size={13} /></button>
                           </div>
-                          {/* Unit Price */}
-                          <input
-                            type="number" min="0" step="0.01" placeholder="0.00"
-                            style={{ ...inputStyle, width: 76, padding: '3px 6px', fontSize: 12, textAlign: 'right' as const, color: missingPrice ? '#F59E0B' : undefined }}
-                            value={item.unit_price || ''}
-                            onChange={e => {
-                              const up = Math.max(0, Number(e.target.value) || 0)
-                              setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, unit_price: up, amount: parseFloat((it.qty * up * (1 - (it.discount_pct ?? 0) / 100)).toFixed(2)) }))
-                            }}
-                          />
-                          {/* Qty */}
-                          <input
-                            type="number" min="1" step="1" placeholder="1"
-                            style={{ ...inputStyle, width: 48, padding: '3px 6px', fontSize: 12, textAlign: 'center' as const }}
-                            value={item.qty}
-                            onChange={e => {
-                              const qty = Math.max(1, Number(e.target.value) || 1)
-                              setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, qty, amount: parseFloat((qty * it.unit_price * (1 - (it.discount_pct ?? 0) / 100)).toFixed(2)) }))
-                            }}
-                          />
-                          {/* Disc % */}
-                          <div style={{ position: 'relative' as const, display: 'flex', alignItems: 'center' }}>
-                            <input
-                              type="number" min="0" max="100" step="1" placeholder="0"
-                              style={{ ...inputStyle, width: 52, padding: '3px 18px 3px 6px', fontSize: 12, textAlign: 'right' as const }}
-                              value={discPct > 0 ? discPct : ''}
-                              onChange={e => {
-                                const pct = Math.min(100, Math.max(0, Number(e.target.value) || 0))
-                                setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, discount_pct: pct, amount: parseFloat((it.qty * it.unit_price * (1 - pct / 100)).toFixed(2)) }))
-                              }}
-                            />
-                            <span style={{ position: 'absolute' as const, right: 5, fontSize: 11, color: C.text2, pointerEvents: 'none' as const }}>%</span>
+                          {/* Row 2: controls */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: 11, color: C.text2 }}>Price</span>
+                              <input
+                                type="number" min="0" step="0.01" placeholder="0.00"
+                                style={{ ...inputStyle, width: 72, padding: '4px 6px', fontSize: 12, textAlign: 'right' as const, color: missingPrice ? '#F59E0B' : undefined }}
+                                value={item.unit_price || ''}
+                                onChange={e => {
+                                  const up = Math.max(0, Number(e.target.value) || 0)
+                                  setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, unit_price: up, amount: parseFloat((it.qty * up * (1 - (it.discount_pct ?? 0) / 100)).toFixed(2)) }))
+                                }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: 11, color: C.text2 }}>Qty</span>
+                              <input
+                                type="number" min="1" step="1" placeholder="1"
+                                style={{ ...inputStyle, width: 52, padding: '4px 6px', fontSize: 12, textAlign: 'center' as const }}
+                                value={item.qty}
+                                onChange={e => {
+                                  const qty = Math.max(1, Number(e.target.value) || 1)
+                                  setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, qty, amount: parseFloat((qty * it.unit_price * (1 - (it.discount_pct ?? 0) / 100)).toFixed(2)) }))
+                                }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: 11, color: C.text2 }}>Disc</span>
+                              <div style={{ position: 'relative' as const, display: 'flex', alignItems: 'center' }}>
+                                <input
+                                  type="number" min="0" max="100" step="1" placeholder="0"
+                                  style={{ ...inputStyle, width: 52, padding: '4px 18px 4px 6px', fontSize: 12, textAlign: 'right' as const }}
+                                  value={discPct > 0 ? discPct : ''}
+                                  onChange={e => {
+                                    const pct = Math.min(100, Math.max(0, Number(e.target.value) || 0))
+                                    setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, discount_pct: pct, amount: parseFloat((it.qty * it.unit_price * (1 - pct / 100)).toFixed(2)) }))
+                                  }}
+                                />
+                                <span style={{ position: 'absolute' as const, right: 5, fontSize: 11, color: C.text2, pointerEvents: 'none' as const }}>%</span>
+                              </div>
+                            </div>
+                            <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: discPct > 0 ? '#22C55E' : C.text }}>
+                              {formatRM(item.amount)}
+                            </div>
                           </div>
-                          <div style={{ fontSize: 13, fontWeight: 700, minWidth: 76, textAlign: 'right' as const, color: discPct > 0 ? '#22C55E' : C.text }}>
-                            {formatRM(item.amount)}
-                          </div>
-                          <button onClick={() => setNewInvoiceItems(prev => prev.filter(it => it !== item))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#E05555', padding: 2 }}><X size={13} /></button>
                         </div>
                       )
                     })}
@@ -1170,35 +1182,44 @@ export function InvoicesPage() {
                     ) : newInvoiceItems.filter(it => it.item_type === 'labour').map((item, li) => {
                       const discPct = item.discount_pct ?? 0
                       return (
-                        <div key={li} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: `1px solid ${C.border}` }}>
-                          <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{item.description}</div>
-                          {/* Unit Price */}
-                          <input
-                            type="number" min="0" step="0.01" placeholder="0.00"
-                            style={{ ...inputStyle, width: 76, padding: '3px 6px', fontSize: 12, textAlign: 'right' as const }}
-                            value={item.unit_price || ''}
-                            onChange={e => {
-                              const up = Math.max(0, Number(e.target.value) || 0)
-                              setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, unit_price: up, amount: parseFloat((it.qty * up * (1 - (it.discount_pct ?? 0) / 100)).toFixed(2)) }))
-                            }}
-                          />
-                          <div style={{ position: 'relative' as const, display: 'flex', alignItems: 'center' }}>
-                            <input
-                              type="number" min="0" max="100" step="1" placeholder="0"
-                              style={{ ...inputStyle, width: 52, padding: '3px 18px 3px 6px', fontSize: 12, textAlign: 'right' as const }}
-                              value={discPct > 0 ? discPct : ''}
-                              onChange={e => {
-                                const pct = Math.min(100, Math.max(0, Number(e.target.value) || 0))
-                                const currentUp = item.unit_price
-                                setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, discount_pct: pct, amount: parseFloat((it.qty * currentUp * (1 - pct / 100)).toFixed(2)) }))
-                              }}
-                            />
-                            <span style={{ position: 'absolute' as const, right: 5, fontSize: 11, color: C.text2, pointerEvents: 'none' as const }}>%</span>
+                        <div key={li} style={{ padding: '9px 14px', borderBottom: `1px solid ${C.border}` }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                            <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{item.description}</div>
+                            <button onClick={() => setNewInvoiceItems(prev => prev.filter(it => it !== item))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#E05555', padding: 2, flexShrink: 0 }}><X size={13} /></button>
                           </div>
-                          <div style={{ fontSize: 13, fontWeight: 700, minWidth: 76, textAlign: 'right' as const, color: discPct > 0 ? '#22C55E' : C.text }}>
-                            {formatRM(item.amount)}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: 11, color: C.text2 }}>Price</span>
+                              <input
+                                type="number" min="0" step="0.01" placeholder="0.00"
+                                style={{ ...inputStyle, width: 72, padding: '4px 6px', fontSize: 12, textAlign: 'right' as const }}
+                                value={item.unit_price || ''}
+                                onChange={e => {
+                                  const up = Math.max(0, Number(e.target.value) || 0)
+                                  setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, unit_price: up, amount: parseFloat((it.qty * up * (1 - (it.discount_pct ?? 0) / 100)).toFixed(2)) }))
+                                }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: 11, color: C.text2 }}>Disc</span>
+                              <div style={{ position: 'relative' as const, display: 'flex', alignItems: 'center' }}>
+                                <input
+                                  type="number" min="0" max="100" step="1" placeholder="0"
+                                  style={{ ...inputStyle, width: 52, padding: '4px 18px 4px 6px', fontSize: 12, textAlign: 'right' as const }}
+                                  value={discPct > 0 ? discPct : ''}
+                                  onChange={e => {
+                                    const pct = Math.min(100, Math.max(0, Number(e.target.value) || 0))
+                                    const currentUp = item.unit_price
+                                    setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, discount_pct: pct, amount: parseFloat((it.qty * currentUp * (1 - pct / 100)).toFixed(2)) }))
+                                  }}
+                                />
+                                <span style={{ position: 'absolute' as const, right: 5, fontSize: 11, color: C.text2, pointerEvents: 'none' as const }}>%</span>
+                              </div>
+                            </div>
+                            <div style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: discPct > 0 ? '#22C55E' : C.text }}>
+                              {formatRM(item.amount)}
+                            </div>
                           </div>
-                          <button onClick={() => setNewInvoiceItems(prev => prev.filter(it => it !== item))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#E05555', padding: 2 }}><X size={13} /></button>
                         </div>
                       )
                     })}
