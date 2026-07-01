@@ -128,6 +128,7 @@ interface JobRow extends Job {
   vehicles?: { plate_number: string; make: string; model: string; year: number | null; vehicle_type: string; is_internal_fleet?: boolean } | null
   assigned_foreman?: { full_name: string } | null
   assigned_mechanic?: { full_name: string } | null
+  mechanic_ids?: string[] | null
   next_action?: string | null
   status_updated_at?: string | null
   plate_number?: string | null
@@ -559,10 +560,13 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
+  const initMechanicIds = job.mechanic_ids?.length
+    ? job.mechanic_ids
+    : job.assigned_mechanic_id ? [job.assigned_mechanic_id] : []
   const [editData, setEditData] = useState({
     service_type: job.service_type as string,
     assigned_foreman_id: job.assigned_foreman_id ?? '',
-    assigned_mechanic_id: job.assigned_mechanic_id ?? '',
+    mechanic_ids: initMechanicIds as string[],
     estimated_cost: job.estimated_cost != null ? String(job.estimated_cost) : '',
     payment_status: job.payment_status ?? 'unpaid',
     customer_complaint: job.customer_complaint ?? '',
@@ -594,10 +598,13 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
   const mechanicOpts = staffOptions.filter(s => s.role === 'mechanic')
 
   function startEdit() {
+    const ids = job.mechanic_ids?.length
+      ? job.mechanic_ids
+      : job.assigned_mechanic_id ? [job.assigned_mechanic_id] : []
     setEditData({
       service_type: job.service_type as string,
       assigned_foreman_id: job.assigned_foreman_id ?? '',
-      assigned_mechanic_id: job.assigned_mechanic_id ?? '',
+      mechanic_ids: ids,
       estimated_cost: job.estimated_cost != null ? String(job.estimated_cost) : '',
       payment_status: job.payment_status ?? 'unpaid',
       customer_complaint: job.customer_complaint ?? '',
@@ -615,7 +622,8 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
     const { error } = await supabase.from('jobs').update({
       service_type: editData.service_type,
       assigned_foreman_id: editData.assigned_foreman_id || null,
-      assigned_mechanic_id: editData.assigned_mechanic_id || null,
+      mechanic_ids: editData.mechanic_ids,
+      assigned_mechanic_id: editData.mechanic_ids[0] ?? null,
       estimated_cost: isNaN(cost as number) ? null : cost,
       payment_status: editData.payment_status,
       customer_complaint: editData.customer_complaint.trim() || null,
@@ -720,14 +728,33 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
                 )}
               </div>
               <div>
-                <p style={{ color: '#A0A0A0', fontSize: 11, margin: '0 0 4px' }}>Mechanic</p>
+                <p style={{ color: '#A0A0A0', fontSize: 11, margin: '0 0 4px' }}>Mechanic{editMode && editData.mechanic_ids.length > 0 ? ` (${editData.mechanic_ids.length})` : ''}</p>
                 {editMode ? (
-                  <select value={editData.assigned_mechanic_id} onChange={e => setEditData(d => ({ ...d, assigned_mechanic_id: e.target.value }))} style={{ ...inputStyle, padding: '6px 10px' }}>
-                    <option value="">— None —</option>
-                    {mechanicOpts.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-                  </select>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {mechanicOpts.length === 0
+                      ? <span style={{ color: '#555', fontSize: 12 }}>No mechanics available</span>
+                      : mechanicOpts.map(s => {
+                          const sel = editData.mechanic_ids.includes(s.id)
+                          return (
+                            <button key={s.id} type="button"
+                              onClick={() => setEditData(d => ({
+                                ...d,
+                                mechanic_ids: sel
+                                  ? d.mechanic_ids.filter(id => id !== s.id)
+                                  : [...d.mechanic_ids, s.id],
+                              }))}
+                              style={{ padding: '4px 10px', borderRadius: 14, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${sel ? '#F15A22' : '#2A2A2A'}`, background: sel ? 'rgba(241,90,34,0.15)' : 'transparent', color: sel ? '#F15A22' : '#A0A0A0' }}>
+                              {s.full_name}
+                            </button>
+                          )
+                        })}
+                  </div>
                 ) : (
-                  <p style={{ color: '#F0F0F0', fontSize: 13, fontWeight: 600, margin: 0 }}>{mechanic}</p>
+                  <p style={{ color: '#F0F0F0', fontSize: 13, fontWeight: 600, margin: 0 }}>
+                    {(job.mechanic_ids?.length
+                      ? job.mechanic_ids.map(id => mechanicOpts.find(s => s.id === id)?.full_name).filter(Boolean).join(', ')
+                      : mechanic) || '—'}
+                  </p>
                 )}
               </div>
             </div>
@@ -953,7 +980,7 @@ function NewJobModal({ branchId, onClose, onCreated }: NewJobModalProps) {
   const [estimatedCost, setEstimatedCost] = useState('')
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([])
   const [foremanId, setForemanId] = useState('')
-  const [mechanicId, setMechanicId] = useState('')
+  const [mechanicIds, setMechanicIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -1038,7 +1065,9 @@ function NewJobModal({ branchId, onClose, onCreated }: NewJobModalProps) {
         status: 'checked_in', vehicle_type: 'car', source: 'walk_in',
         customer_complaint: complaint || null,
         estimated_cost: estimatedCost ? parseFloat(estimatedCost) : null,
-        assigned_foreman_id: foremanId || null, assigned_mechanic_id: mechanicId || null,
+        assigned_foreman_id: foremanId || null,
+        mechanic_ids: mechanicIds,
+        assigned_mechanic_id: mechanicIds[0] ?? null,
         checked_in_at: new Date().toISOString(), payment_status: 'unpaid',
       })
       if (err) throw err
@@ -1235,13 +1264,22 @@ function NewJobModal({ branchId, onClose, onCreated }: NewJobModalProps) {
               </div>
             </div>
             <div>
-              <label style={{ color: '#A0A0A0', fontSize: 11, display: 'block', marginBottom: 5 }}>MECHANIC</label>
-              <div style={{ position: 'relative' }}>
-                <select value={mechanicId} onChange={(e) => setMechanicId(e.target.value)} style={{ ...inputStyle, appearance: 'none', paddingRight: 28 }}>
-                  <option value="">— Unassigned —</option>
-                  {mechanicOptions.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-                </select>
-                <ChevronDown size={12} color="#A0A0A0" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+              <label style={{ color: '#A0A0A0', fontSize: 11, display: 'block', marginBottom: 5 }}>
+                MECHANIC{mechanicIds.length > 0 ? ` (${mechanicIds.length})` : ''}
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {mechanicOptions.length === 0
+                  ? <span style={{ color: '#555', fontSize: 12 }}>No mechanics available</span>
+                  : mechanicOptions.map(s => {
+                      const sel = mechanicIds.includes(s.id)
+                      return (
+                        <button key={s.id} type="button"
+                          onClick={() => setMechanicIds(prev => sel ? prev.filter(id => id !== s.id) : [...prev, s.id])}
+                          style={{ padding: '5px 12px', borderRadius: 14, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${sel ? '#F15A22' : '#2A2A2A'}`, background: sel ? 'rgba(241,90,34,0.15)' : 'transparent', color: sel ? '#F15A22' : '#A0A0A0' }}>
+                          {s.full_name}
+                        </button>
+                      )
+                    })}
               </div>
             </div>
           </div>
@@ -1378,6 +1416,11 @@ function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, o
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ color: '#555', fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', minWidth: 28 }}>MEC</span>
             <span style={{ color: mechanicName ? '#F0F0F0' : '#444', fontSize: 11, fontWeight: mechanicName ? 600 : 400 }}>{mechanicName ?? '—'}</span>
+            {(job.mechanic_ids?.length ?? 0) > 1 && (
+              <span style={{ background: '#F15A22', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 8, padding: '1px 5px' }}>
+                +{(job.mechanic_ids?.length ?? 1) - 1}
+              </span>
+            )}
           </div>
         </div>
         <span style={{ color: '#A0A0A0', fontSize: 11, fontFamily: 'monospace' }}>{job.job_number}</span>
@@ -1496,7 +1539,7 @@ export function WorkshopBoardPage() {
         .select(`id, job_number, status, service_type, vehicle_type, days_in_garage,
           internal_notes, next_action, checked_in_at, estimated_cost, status_updated_at,
           customer_complaint, diagnosis_summary, branch_id, tenant_id, customer_id, vehicle_id,
-          assigned_foreman_id, assigned_mechanic_id, source, arrival_mode, payment_status,
+          assigned_foreman_id, assigned_mechanic_id, mechanic_ids, source, arrival_mode, payment_status,
           customers!customer_id(full_name, phone),
           vehicles!vehicle_id(plate_number, make, model, year, vehicle_type, is_internal_fleet),
           assigned_foreman:users!assigned_foreman_id(full_name),
