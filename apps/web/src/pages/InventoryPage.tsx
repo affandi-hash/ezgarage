@@ -589,9 +589,8 @@ function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: stri
           <p>{search || catFilter !== 'All' ? 'No parts match your filters' : 'Catalogue is empty. Add your first part.'}</p>
         </div>
       ) : (
-        <div style={{ border: '1px solid #2A2A2A', borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', minWidth: 800, borderCollapse: 'collapse' }}>
+        <div style={{ border: '1px solid #2A2A2A', borderRadius: 12, overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#161616', borderBottom: '1px solid #2A2A2A' }}>
                 {['Part Name', 'Part No.', 'Division', 'Category', 'Supplier', 'Stock', 'Reorder At', 'Cost Price', 'Selling Price', ''].map(h => (
@@ -636,7 +635,6 @@ function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: stri
               })}
             </tbody>
           </table>
-          </div>
         </div>
       )}
       {showModal && (
