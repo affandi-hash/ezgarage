@@ -46,10 +46,10 @@ interface VehicleWithRelations {
     status: string
     service_type: string
     checked_in_at: string
-    complaint?: string
-    diagnosis?: string
-    assigned_staff_name?: string
+    customer_complaint?: string
+    diagnosis_summary?: string
     final_amount?: number
+    invoices?: Array<{ total_amount: number; payment_status: string }>
   }>
 }
 
@@ -1174,6 +1174,7 @@ function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
         const isOpen = expandedJobId === job.id
         const detail = invoiceDetails[job.id]
         const isLoading = loadingJobId === job.id
+        const invoiceAmount = job.invoices?.[0]?.total_amount ?? job.final_amount ?? null
         const parts = detail?.line_items?.filter(l => l.item_type === 'part') ?? []
         const labour = detail?.line_items?.filter(l => l.item_type === 'labour') ?? []
 
@@ -1191,8 +1192,8 @@ function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                 <StatusBadge status={job.status} />
-                {job.final_amount != null && (
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#F0F0F0' }}>{formatCurrency(job.final_amount)}</span>
+                {invoiceAmount != null && (
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#F0F0F0' }}>{formatCurrency(invoiceAmount)}</span>
                 )}
                 <span style={{ fontSize: 16, color: '#A0A0A0', lineHeight: 1 }}>{isOpen ? '▲' : '▼'}</span>
               </div>
@@ -1209,18 +1210,18 @@ function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
                 )}
 
                 {/* Complaint / diagnosis */}
-                {(job.complaint || job.diagnosis) && (
+                {(job.customer_complaint || job.diagnosis_summary) && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {job.complaint && (
+                    {job.customer_complaint && (
                       <div>
                         <span style={{ fontSize: 11, fontWeight: 600, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Customer Complaint</span>
-                        <p style={{ margin: '2px 0 0', fontSize: 13, color: '#F0F0F0' }}>{job.complaint}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 13, color: '#F0F0F0' }}>{job.customer_complaint}</p>
                       </div>
                     )}
-                    {job.diagnosis && (
+                    {job.diagnosis_summary && (
                       <div>
                         <span style={{ fontSize: 11, fontWeight: 600, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Diagnosis / Work Done</span>
-                        <p style={{ margin: '2px 0 0', fontSize: 13, color: '#F0F0F0' }}>{job.diagnosis}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 13, color: '#F0F0F0' }}>{job.diagnosis_summary}</p>
                       </div>
                     )}
                   </div>
@@ -1485,7 +1486,7 @@ export function VehiclesPage() {
       .select(
         `*,
         customers!customer_id(full_name, phone),
-        jobs!vehicle_id(id, job_number, status, service_type, checked_in_at, final_amount)`,
+        jobs!vehicle_id(id, job_number, status, service_type, checked_in_at, customer_complaint, diagnosis_summary, final_amount, invoices!job_id(total_amount, payment_status))`,
       )
       .eq('branch_id', branchId)
       .order('created_at', { ascending: false })
