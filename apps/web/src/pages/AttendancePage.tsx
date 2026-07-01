@@ -154,8 +154,19 @@ function EditAttendanceModal({ record, onClose, onSaved }: {
   onClose: () => void
   onSaved: () => void
 }) {
-  const [clockIn, setClockIn] = useState(record.clock_in_time?.slice(0, 5) ?? '')
-  const [clockOut, setClockOut] = useState(record.clock_out_time?.slice(0, 5) ?? '')
+  const parseHM = (ts: string | null) => {
+    const t = ts?.slice(11, 16) || ts?.slice(0, 5) || ''
+    const [h = '', m = ''] = t.split(':')
+    return { h, m }
+  }
+  const initIn = parseHM(record.clock_in_time)
+  const initOut = parseHM(record.clock_out_time)
+  const [inH, setInH] = useState(initIn.h)
+  const [inM, setInM] = useState(initIn.m)
+  const [outH, setOutH] = useState(initOut.h)
+  const [outM, setOutM] = useState(initOut.m)
+  const clockIn = inH && inM ? `${inH}:${inM}` : ''
+  const clockOut = outH && outM ? `${outH}:${outM}` : ''
   const [status, setStatus] = useState(record.status)
   const [saving, setSaving] = useState(false)
 
@@ -215,14 +226,29 @@ function EditAttendanceModal({ record, onClose, onSaved }: {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-          <div>
-            <label style={{ color: '#A0A0A0', fontSize: 11, display: 'block', marginBottom: 5 }}>CLOCK IN</label>
-            <input type="time" value={clockIn} onChange={e => setClockIn(e.target.value)} style={inputS} />
-          </div>
-          <div>
-            <label style={{ color: '#A0A0A0', fontSize: 11, display: 'block', marginBottom: 5 }}>CLOCK OUT</label>
-            <input type="time" value={clockOut} onChange={e => setClockOut(e.target.value)} style={inputS} />
-          </div>
+          {([
+            { label: 'CLOCK IN',  h: inH,  setH: setInH,  m: inM,  setM: setInM  },
+            { label: 'CLOCK OUT', h: outH, setH: setOutH, m: outM, setM: setOutM },
+          ] as const).map(({ label, h, setH, m, setM }) => (
+            <div key={label}>
+              <label style={{ color: '#A0A0A0', fontSize: 11, display: 'block', marginBottom: 5 }}>{label}</label>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <select value={h} onChange={e => setH(e.target.value)} style={{ ...inputS, flex: 1, cursor: 'pointer' }}>
+                  <option value="">HH</option>
+                  {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(v => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+                <span style={{ color: '#A0A0A0', fontWeight: 700 }}>:</span>
+                <select value={m} onChange={e => setM(e.target.value)} style={{ ...inputS, flex: 1, cursor: 'pointer' }}>
+                  <option value="">MM</option>
+                  {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0')).map(v => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          ))}
         </div>
 
         <div style={{ marginBottom: 16 }}>
