@@ -49,15 +49,6 @@ interface VehicleWithRelations {
     customer_complaint?: string
     diagnosis_summary?: string
     final_amount?: number
-    invoices?: Array<{
-      invoice_number: string
-      total_amount: number
-      subtotal: number
-      discount_amount: number
-      tax_amount: number
-      payment_status: string
-      line_items: Array<{ item_type: string; description: string; qty: number; unit_price: number; total_price: number }> | null
-    }>
   }>
 }
 
@@ -1125,12 +1116,43 @@ function CurrentJobTab({
   )
 }
 
+interface InvDetail {
+  invoice_number: string
+  total_amount: number
+  subtotal: number
+  discount_amount: number
+  tax_amount: number
+  line_items: Array<{ item_type: string; description: string; qty: number; unit_price: number; total_price: number }>
+}
+
 function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
   const completedJobs = vehicle.jobs
     .filter((j) => !ACTIVE_STATUSES.includes(j.status))
     .sort((a, b) => new Date(b.checked_in_at).getTime() - new Date(a.checked_in_at).getTime())
 
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
+  const [cache, setCache] = useState<Record<string, InvDetail | null>>({})
+  const [fetching, setFetching] = useState<string | null>(null)
+
+  async function handleExpand(jobId: string) {
+    if (expandedJobId === jobId) { setExpandedJobId(null); return }
+    setExpandedJobId(jobId)
+    if (jobId in cache) return
+    setFetching(jobId)
+    try {
+      const { data } = await supabase
+        .from('invoices')
+        .select('invoice_number, total_amount, subtotal, discount_amount, tax_amount, line_items')
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      setCache(prev => ({ ...prev, [jobId]: data?.[0] ?? null }))
+    } catch {
+      setCache(prev => ({ ...prev, [jobId]: null }))
+    } finally {
+      setFetching(null)
+    }
+  }
 
   if (completedJobs.length === 0) {
     return (
@@ -1145,17 +1167,15 @@ function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
     <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
       {completedJobs.map((job) => {
         const isOpen = expandedJobId === job.id
-        const inv = job.invoices?.[0] ?? null
-        const invoiceAmount = inv?.total_amount ?? job.final_amount ?? null
-        const lineItems = Array.isArray(inv?.line_items) ? inv!.line_items : []
-        const parts = lineItems.filter(l => l.item_type === 'part')
-        const labour = lineItems.filter(l => l.item_type === 'labour')
+        const isLoading = fetching === job.id
+        const inv = cache[job.id] ?? null
+        const parts = Array.isArray(inv?.line_items) ? inv!.line_items.filter(l => l.item_type === 'part') : []
+        const labour = Array.isArray(inv?.line_items) ? inv!.line_items.filter(l => l.item_type === 'labour') : []
 
         return (
           <div key={job.id} style={{ borderRadius: 10, border: `1px solid ${isOpen ? '#F15A22' : '#2A2A2A'}`, overflow: 'hidden' }}>
-            {/* Summary row */}
             <button
-              onClick={() => setExpandedJobId(isOpen ? null : job.id)}
+              onClick={() => handleExpand(job.id)}
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: isOpen ? '#1A0E0E' : '#161616', border: 'none', cursor: 'pointer', gap: 8 }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
@@ -1165,45 +1185,46 @@ function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                 <StatusBadge status={job.status} />
-                {invoiceAmount != null && (
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#F0F0F0' }}>{formatCurrency(invoiceAmount)}</span>
+                {job.final_amount != null && (
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#F0F0F0' }}>{formatCurrency(job.final_amount)}</span>
                 )}
                 <span style={{ fontSize: 14, color: '#A0A0A0' }}>{isOpen ? '▲' : '▼'}</span>
               </div>
             </button>
 
-            {/* Expanded detail */}
             {isOpen && (
               <div style={{ padding: '12px 14px 14px', backgroundColor: '#0E0E0E', borderTop: '1px solid #2A2A2A', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {isLoading && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#A0A0A0', fontSize: 13 }}>
+                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                    Loading…
+                  </div>
+                )}
 
-                {/* Complaint / diagnosis */}
                 {(job.customer_complaint || job.diagnosis_summary) && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {job.customer_complaint && (
                       <div>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Customer Complaint</span>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Customer Complaint</div>
                         <p style={{ margin: '2px 0 0', fontSize: 13, color: '#F0F0F0' }}>{job.customer_complaint}</p>
                       </div>
                     )}
                     {job.diagnosis_summary && (
                       <div>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Work Done</span>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Work Done</div>
                         <p style={{ margin: '2px 0 0', fontSize: 13, color: '#F0F0F0' }}>{job.diagnosis_summary}</p>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Invoice line items */}
-                {inv && (
+                {!isLoading && inv && (
                   <>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Invoice {inv.invoice_number}
-                    </div>
+                    <div style={{ fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Invoice {inv.invoice_number}</div>
 
                     {parts.length > 0 && (
                       <div>
-                        <div style={{ fontSize: 11, color: '#A0A0A0', marginBottom: 4 }}>Parts / Items</div>
+                        <div style={{ fontSize: 11, color: '#A0A0A0', marginBottom: 4 }}>Parts</div>
                         <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                           <tbody>
                             {parts.map((p, i) => (
@@ -1237,10 +1258,6 @@ function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
                       </div>
                     )}
 
-                    {parts.length === 0 && labour.length === 0 && (
-                      <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>No line items on this invoice.</p>
-                    )}
-
                     <div style={{ borderTop: '1px solid #2A2A2A', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                       {(inv.discount_amount ?? 0) > 0 && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#A0A0A0' }}>
@@ -1259,8 +1276,8 @@ function JobHistoryTab({ vehicle }: { vehicle: VehicleWithRelations }) {
                   </>
                 )}
 
-                {!inv && !job.customer_complaint && !job.diagnosis_summary && (
-                  <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>No invoice or notes for this job.</p>
+                {!isLoading && inv === null && !job.customer_complaint && !job.diagnosis_summary && (
+                  <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>No details available for this job.</p>
                 )}
               </div>
             )}
@@ -1447,7 +1464,7 @@ export function VehiclesPage() {
       .select(
         `*,
         customers!customer_id(full_name, phone),
-        jobs!vehicle_id(id, job_number, status, service_type, checked_in_at, customer_complaint, diagnosis_summary, final_amount, invoices!job_id(invoice_number, total_amount, subtotal, discount_amount, tax_amount, payment_status, line_items))`,
+        jobs!vehicle_id(id, job_number, status, service_type, checked_in_at, customer_complaint, diagnosis_summary, final_amount)`,
       )
       .eq('branch_id', branchId)
       .order('created_at', { ascending: false })

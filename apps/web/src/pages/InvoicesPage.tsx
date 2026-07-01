@@ -679,7 +679,7 @@ export function InvoicesPage() {
       if (insertErr) throw insertErr
 
       if (inserted && newInvoiceForm.job_id) {
-        await supabase.from('jobs').update({ invoice_id: (inserted as Invoice).id }).eq('id', newInvoiceForm.job_id)
+        await supabase.from('jobs').update({ invoice_id: (inserted as Invoice).id, final_amount: (inserted as Invoice).total_amount }).eq('id', newInvoiceForm.job_id)
       }
       await loadInvoices()
       setShowNewModal(false)
