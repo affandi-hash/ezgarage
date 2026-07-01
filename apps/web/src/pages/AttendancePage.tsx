@@ -188,8 +188,12 @@ function EditAttendanceModal({ record, onClose, onSaved }: {
 
   const handleSave = async () => {
     setSaving(true)
-    // DB column is timestamptz — rebuild full ISO string from record.date + HH:MM
-    const toTs = (t: string) => t ? `${record.date}T${t}:00` : null
+    // DB column is timestamptz — rebuild ISO string with local timezone offset
+    const tzOffset = new Date().getTimezoneOffset() // e.g. -480 for UTC+8
+    const sign = tzOffset <= 0 ? '+' : '-'
+    const absOff = Math.abs(tzOffset)
+    const tzStr = `${sign}${String(Math.floor(absOff / 60)).padStart(2, '0')}:${String(absOff % 60).padStart(2, '0')}`
+    const toTs = (t: string) => t ? `${record.date}T${t}:00${tzStr}` : null
     const { error: err } = await supabase
       .from('attendance_records')
       .update({

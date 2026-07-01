@@ -151,6 +151,7 @@ function summarize(log: AuditLog): { headline: string; detail: string; icon: str
   if (a === 'create' && mod.includes('customer')) return { icon: 'ðŸ§‘', headline: 'Customer Added', detail: `${who} created a customer record${d.customer ? ' for '+d.customer : ''}.`, context }
   if (a === 'create' && mod.includes('booking')) return { icon: 'ðŸ“…', headline: 'Booking Created', detail: `${who} created a new booking${vehicleRef}${customerRef}.`, context }
   if (a === 'create') return { icon: 'ðŸ†•', headline: `New ${log.module ?? log.record_type ?? 'Record'}`, detail: `${who} created a new record${vehicleRef}${customerRef}.`, context }
+  if (a === 'attendance edit') return { icon: 'u{1F550}', headline: 'Attendance Edited', detail: `\ edited attendance for \\\\.`, context }
   if (a.includes('update') || a.includes('edit')) return { icon: 'âœï¸', headline: 'Record Updated', detail: `${who} edited details${vehicleRef}${customerRef}.`, context }
   if (a.includes('delete') || a.includes('remove')) return { icon: 'ðŸ—‘ï¸', headline: 'Record Deleted', detail: `${who} deleted a record${vehicleRef}.`, context }
   if (a.includes('login'))    return { icon: 'ðŸ”', headline: 'User Signed In',    detail: `${who} logged into the system.`, context }
