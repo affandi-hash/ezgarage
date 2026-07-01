@@ -554,11 +554,6 @@ export function InvoicesPage() {
     setEditInvoice(recalcTotals({ ...editInvoice, line_items: items }, sstRate) as Invoice)
   }
 
-  function addCustomItem() {
-    if (!editInvoice) return
-    const items = [...editInvoice.line_items, { item_type: 'custom' as const, description: '', qty: 1, uom: 'unit', unit_price: 0, amount: 0 }]
-    setEditInvoice(recalcTotals({ ...editInvoice, line_items: items }, sstRate) as Invoice)
-  }
 
   function removeLineItem(index: number) {
     if (!editInvoice) return
