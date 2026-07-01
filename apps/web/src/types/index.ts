@@ -20,6 +20,7 @@ export type JobStatus =
   | 'waiting_parts'
   | 'in_progress'
   | 'ready'
+  | 'delivered'
   | 'closed'
   | 'long_due'
   | 'cancelled'
@@ -164,6 +165,7 @@ export const JOB_STATUS_COLORS: Record<JobStatus, string> = {
   waiting_parts: '#F97316',
   in_progress: '#10B981',
   ready: '#22C55E',
+  delivered: '#0EA5E9',
   closed: '#4B5563',
   long_due: '#DC2626',
   cancelled: '#6B7280',
@@ -178,6 +180,7 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   waiting_parts: 'Waiting Parts',
   in_progress: 'In Progress',
   ready: 'Ready',
+  delivered: 'Delivered',
   closed: 'Closed',
   long_due: 'Long Due',
   cancelled: 'Cancelled',

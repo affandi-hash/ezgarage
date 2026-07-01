@@ -19,6 +19,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; d
   waiting_parts:    { label: 'Waiting Parts',    bg: 'rgba(249,115,22,0.2)', text: '#FDBA74', dot: '#F97316' },
   in_progress:      { label: 'In Progress',      bg: 'rgba(16,185,129,0.2)', text: '#6EE7B7', dot: '#10B981' },
   ready:            { label: 'Ready',            bg: 'rgba(34,197,94,0.2)',  text: '#86EFAC', dot: '#22C55E' },
+  delivered:        { label: 'Delivered',        bg: 'rgba(14,165,233,0.2)', text: '#7DD3FC', dot: '#0EA5E9' },
   closed:           { label: 'Closed',           bg: 'rgba(75,85,99,0.2)',   text: '#6B7280', dot: '#4B5563' },
   long_due:         { label: 'Long Due',         bg: 'rgba(220,38,38,0.2)',  text: '#FCA5A5', dot: '#DC2626' },
   cancelled:        { label: 'Cancelled',        bg: 'rgba(107,114,128,0.2)', text: '#9CA3AF', dot: '#6B7280' },
@@ -26,7 +27,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; d
 
 const BOARD_COLUMNS: JobStatus[] = [
   'checked_in', 'diagnosing', 'waiting_approval',
-  'waiting_parts', 'in_progress', 'ready', 'long_due',
+  'waiting_parts', 'in_progress', 'ready', 'long_due', 'delivered',
 ]
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
@@ -1320,6 +1321,7 @@ interface VehicleCardProps {
   onUpdateStatus: (job: JobRow) => void
   onAddNote: (job: JobRow) => void
   onView: (job: JobRow) => void
+  onDeliver: (job: JobRow) => void
 }
 
 function useElapsed(checkedInAt: string | null) {
@@ -1340,7 +1342,7 @@ function useElapsed(checkedInAt: string | null) {
   return `${mins}m`
 }
 
-function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, onUpdateStatus, onAddNote, onView }: VehicleCardProps) {
+function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, onUpdateStatus, onAddNote, onView, onDeliver }: VehicleCardProps) {
   const plate = job.vehicles?.plate_number ?? '—'
   const make = job.vehicles?.make ?? ''
   const model = job.vehicles?.model ?? ''
@@ -1433,6 +1435,12 @@ function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, o
             Update Status
           </button>
         )}
+        {job.status === 'ready' && (
+          <button onClick={() => onDeliver(job)}
+            style={{ flex: 1, padding: '5px 0', border: '1px solid #0EA5E9', borderRadius: 6, backgroundColor: 'rgba(14,165,233,0.1)', color: '#0EA5E9', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+            Delivered
+          </button>
+        )}
         <button onClick={() => onAddNote(job)}
           style={{ flex: 1, padding: '5px 0', border: '1px solid #2A2A2A', borderRadius: 6, backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 11, cursor: 'pointer' }}>
           Add Note
@@ -1450,13 +1458,14 @@ function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, o
 // ---------------------------------------------------------------------------
 // Kanban column
 // ---------------------------------------------------------------------------
-function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap, onUpdateStatus, onAddNote, onView }: {
+function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap, onUpdateStatus, onAddNote, onView, onDeliver }: {
   status: JobStatus; jobs: JobRow[]; userId: string; userRole: string
   pendingMap: Map<string, StatusChangeRequest>
   rejectedMap: Map<string, StatusChangeRequest>
   onUpdateStatus: (job: JobRow) => void
   onAddNote: (job: JobRow) => void
   onView: (job: JobRow) => void
+  onDeliver: (job: JobRow) => void
 }) {
   const cfg = STATUS_CONFIG[status]
   const count = jobs.length
@@ -1478,7 +1487,7 @@ function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap,
             <VehicleCard key={job.id} job={job} userId={userId} userRole={userRole}
               pendingRequest={pendingMap.get(job.id) ?? null}
               rejectedRequest={rejectedMap.get(job.id) ?? null}
-              onUpdateStatus={onUpdateStatus} onAddNote={onAddNote} onView={onView}
+              onUpdateStatus={onUpdateStatus} onAddNote={onAddNote} onView={onView} onDeliver={onDeliver}
             />
           ))
         )}
@@ -1734,6 +1743,13 @@ export function WorkshopBoardPage() {
     fetchJobHistory(job.id)
   }
 
+  const handleDeliver = async (job: JobRow) => {
+    if (!confirm(`Mark ${job.plate_number} as Delivered?`)) return
+    await supabase.from('jobs').update({ status: 'delivered', updated_at: new Date().toISOString() }).eq('id', job.id)
+    logAudit({ action: 'status_change:delivered', module: 'Job', record_id: job.id, record_type: 'job', details: { job_number: job.job_number, plate: job.plate_number, customer: job.customer_name, from_status: 'ready', to_status: 'delivered' }, branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id })
+    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'delivered' } : j))
+  }
+
   const filteredJobs = jobs.filter((j) => {
     if (vehicleFilter === 'all') return true
     const vt = (j.vehicles?.vehicle_type ?? j.vehicle_type ?? '').toLowerCase()
@@ -1804,6 +1820,7 @@ export function WorkshopBoardPage() {
                 onUpdateStatus={setStatusModal}
                 onAddNote={setNoteModal}
                 onView={handleViewJob}
+                onDeliver={handleDeliver}
               />
             ))}
           </div>
