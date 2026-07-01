@@ -15,6 +15,7 @@ interface LineItem {
   cost_price?: number   // purchasing cost — used for COGS in reports
   discount_pct?: number
   amount: number
+  stock_qty?: number    // available stock at time of adding — for validation only
 }
 
 interface Invoice {
@@ -640,6 +641,10 @@ export function InvoicesPage() {
   async function createInvoice() {
     if (!newInvoiceForm.customer_name) { setInvoiceError('Customer name is missing — go back and re-select the job'); return }
     if (!user?.branch_id) { setInvoiceError('No branch assigned to your account'); return }
+    const stockErrors = newInvoiceItems
+      .filter(it => it.item_type === 'part' && it.stock_qty !== undefined && it.qty > it.stock_qty)
+      .map(it => `"${it.description}" — only ${it.stock_qty} in stock, but ${it.qty} requested`)
+    if (stockErrors.length > 0) { setInvoiceError('Insufficient stock:\n' + stockErrors.join('\n')); return }
     setInvoiceError('')
     setSaving(true)
     try {
@@ -1059,11 +1064,13 @@ export function InvoicesPage() {
                     {newInvoiceItems.filter(it => it.item_type === 'part').map((item, pi) => {
                       const discPct = item.discount_pct ?? 0
                       const missingPrice = item.unit_price === 0
+                      const stockShort = item.stock_qty !== undefined && item.qty > item.stock_qty
                       return (
-                        <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: `1px solid ${C.border}`, background: missingPrice ? 'rgba(245,158,11,0.06)' : undefined }}>
+                        <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: `1px solid ${C.border}`, background: stockShort ? 'rgba(239,68,68,0.06)' : missingPrice ? 'rgba(245,158,11,0.06)' : undefined }}>
                           <div style={{ flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0 }}>
                             {item.description}
                             {missingPrice && <span style={{ marginLeft: 6, fontSize: 10, color: '#F59E0B', fontWeight: 700, background: 'rgba(245,158,11,0.15)', padding: '1px 5px', borderRadius: 4 }}>SET PRICE</span>}
+                            {stockShort && <span style={{ marginLeft: 6, fontSize: 10, color: '#EF4444', fontWeight: 700, background: 'rgba(239,68,68,0.15)', padding: '1px 5px', borderRadius: 4 }}>ONLY {item.stock_qty} IN STOCK</span>}
                           </div>
                           {/* Unit Price */}
                           <input
@@ -1288,7 +1295,7 @@ export function InvoicesPage() {
                 )
                 return visible.map(p => (
                   <div key={p.id} onClick={() => {
-                    const item: LineItem = { item_type: 'part', description: p.name + (p.part_number ? ` [${p.part_number}]` : ''), qty: 1, uom: p.unit || 'unit', unit_price: p.selling_price ?? 0, cost_price: p.cost_price ?? undefined, amount: p.selling_price ?? 0 }
+                    const item: LineItem = { item_type: 'part', description: p.name + (p.part_number ? ` [${p.part_number}]` : ''), qty: 1, uom: p.unit || 'unit', unit_price: p.selling_price ?? 0, cost_price: p.cost_price ?? undefined, amount: p.selling_price ?? 0, stock_qty: p.stock_qty }
                     if (partPickerTarget === 'edit' && editInvoice) {
                       setEditInvoice(recalcTotals({ ...editInvoice, line_items: [...editInvoice.line_items, item] }, sstRate) as Invoice)
                     } else {
