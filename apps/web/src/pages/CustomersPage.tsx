@@ -119,7 +119,8 @@ function typeLabel(type: string): string {
   switch (type) {
     case 'individual': return 'Individual'
     case 'corporate': return 'Corporate'
-    default: return type
+    case 'fleet': return 'Fleet'
+    default: return 'Individual'
   }
 }
 
