@@ -1067,24 +1067,24 @@ function CurrentJobTab({
           </span>
         </div>
 
-        {activeJob.complaint && (
+        {activeJob.customer_complaint && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={{ fontSize: 12, color: '#A0A0A0' }}>
               Complaint
             </span>
             <p style={{ fontSize: 14, lineHeight: 1.6, color: '#F0F0F0', margin: 0 }}>
-              {activeJob.complaint}
+              {activeJob.customer_complaint}
             </p>
           </div>
         )}
 
-        {activeJob.diagnosis && (
+        {activeJob.diagnosis_summary && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={{ fontSize: 12, color: '#A0A0A0' }}>
               Diagnosis
             </span>
             <p style={{ fontSize: 14, lineHeight: 1.6, color: '#F0F0F0', margin: 0 }}>
-              {activeJob.diagnosis}
+              {activeJob.diagnosis_summary}
             </p>
           </div>
         )}
