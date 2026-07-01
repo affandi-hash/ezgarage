@@ -1088,15 +1088,6 @@ function CurrentJobTab({
           </div>
         )}
 
-        {activeJob.assigned_staff_name && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <User size={14} style={{ color: '#A0A0A0' }} />
-            <span style={{ fontSize: 14, color: '#A0A0A0' }}>
-              Assigned to{' '}
-              <span style={{ color: '#F0F0F0' }}>{activeJob.assigned_staff_name}</span>
-            </span>
-          </div>
-        )}
 
         <div
           style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 8, borderTop: '1px solid #2A2A2A' }}
