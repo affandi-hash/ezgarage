@@ -474,6 +474,9 @@ function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: stri
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('All')
   const [divFilter, setDivFilter] = useState('All')
+  const [showAddSupplier, setShowAddSupplier] = useState(false)
+  const [newSupplier, setNewSupplier] = useState({ name: '', contact_person: '', phone: '' })
+  const [savingSupplier, setSavingSupplier] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -487,6 +490,22 @@ function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: stri
   }, [tenantId])
 
   useEffect(() => { load() }, [load])
+
+  async function handleSaveSupplier() {
+    if (!newSupplier.name.trim()) return
+    setSavingSupplier(true)
+    const { data, error } = await supabase.from('suppliers')
+      .insert({ name: newSupplier.name.trim(), contact_person: newSupplier.contact_person.trim() || null, phone: newSupplier.phone.trim() || null, tenant_id: tenantId, is_active: true })
+      .select('id, name').single()
+    setSavingSupplier(false)
+    if (error || !data) { toast('Failed to save supplier', 'error'); return }
+    const { data: s } = await supabase.from('suppliers').select('id, name').eq('tenant_id', tenantId).eq('is_active', true).order('name')
+    setSuppliers(s ?? [])
+    setForm(f => ({ ...f, supplier_id: data.id }))
+    setShowAddSupplier(false)
+    setNewSupplier({ name: '', contact_person: '', phone: '' })
+    toast(`"${data.name}" added and selected`)
+  }
 
   function openAdd() { setEditing(null); setForm({ name: '', part_number: '', category: '', division: 'both', unit: 'unit', stock_qty: '0', reorder_level: '5', cost_price: '', markup: '', selling_price: '', supplier_id: '', notes: '' }); setShowModal(true) }
   async function openEdit(p: CataloguePart) {
@@ -639,11 +658,32 @@ function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: stri
                   </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>Supplier</label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <label style={labelStyle}>Supplier</label>
+                    <button type="button" onClick={() => { setShowAddSupplier(v => !v); setNewSupplier({ name: '', contact_person: '', phone: '' }) }}
+                      style={{ fontSize: 11, color: showAddSupplier ? '#A0A0A0' : '#F15A22', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}>
+                      {showAddSupplier ? '✕ Cancel' : '+ Add New'}
+                    </button>
+                  </div>
                   <select value={form.supplier_id} onChange={e => setForm(f => ({ ...f, supplier_id: e.target.value }))} style={inputStyle}>
                     <option value="">— None —</option>
                     {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
+                  {showAddSupplier && (
+                    <div style={{ background: '#0E0E0E', border: '1px solid #F15A22', borderRadius: 10, padding: 16, marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <p style={{ color: '#F15A22', fontSize: 11, fontWeight: 700, margin: 0, letterSpacing: '0.06em', textTransform: 'uppercase' }}>New Supplier</p>
+                      <input value={newSupplier.name} onChange={e => setNewSupplier(s => ({ ...s, name: e.target.value }))} placeholder="Supplier Name *" style={{ ...inputStyle, fontSize: 13 }} />
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <input value={newSupplier.contact_person} onChange={e => setNewSupplier(s => ({ ...s, contact_person: e.target.value }))} placeholder="Contact Person" style={{ ...inputStyle, fontSize: 13 }} />
+                        <input value={newSupplier.phone} onChange={e => setNewSupplier(s => ({ ...s, phone: e.target.value }))} placeholder="Phone" style={{ ...inputStyle, fontSize: 13 }} />
+                      </div>
+                      <button type="button" onClick={handleSaveSupplier} disabled={savingSupplier || !newSupplier.name.trim()}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: newSupplier.name.trim() ? '#F15A22' : '#2A2A2A', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 0', fontSize: 13, fontWeight: 600, cursor: newSupplier.name.trim() ? 'pointer' : 'not-allowed' }}>
+                        {savingSupplier ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                        Save & Select
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
               <div>

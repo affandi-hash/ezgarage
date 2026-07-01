@@ -425,6 +425,7 @@ export function InvoicesPage() {
   const [newInvoiceItems, setNewInvoiceItems] = useState<LineItem[]>([])
   const [addPartRow, setAddPartRow] = useState<{ description: string; qty: string; unit_price: string } | null>(null)
   const [showPartPicker, setShowPartPicker] = useState(false)
+  const [partPickerTarget, setPartPickerTarget] = useState<'new' | 'edit'>('new')
   const [partPickerSearch, setPartPickerSearch] = useState('')
   const [catalogueParts, setCatalogueParts] = useState<CataloguePart[]>([])
   const [_installedParts, setInstalledParts] = useState<InstalledPart[]>([])
@@ -471,7 +472,7 @@ export function InvoicesPage() {
     let q = supabase
       .from('jobs')
       .select('*, customers(full_name, phone, email), vehicles(plate_number, make, model, year, vehicle_type, is_internal_fleet)')
-      .not('status', 'in', '("cancelled")')
+      .eq('status', 'ready')
     if (user?.role !== 'super_admin' && user?.branch_id) q = q.eq('branch_id', user.branch_id)
     const { data, error } = await q
     console.log('[loadJobs] data:', data, 'error:', error, 'user branch:', user?.branch_id, 'role:', user?.role)
@@ -828,7 +829,7 @@ export function InvoicesPage() {
                         <button onClick={() => { loadLabourCharges(); setPickerVehicleType(null); setShowLabourPicker(true) }} style={{ ...btnOutline, fontSize: 12, padding: '5px 10px' }}>
                           <Wrench size={13} /> Add Labour
                         </button>
-                        <button onClick={addCustomItem} style={{ ...btnOutline, fontSize: 12, padding: '5px 10px' }}>
+                        <button onClick={() => { loadCatalogueParts(); setPartPickerSearch(''); setPickerVehicleType(null); setPartPickerTarget('edit'); setShowPartPicker(true) }} style={{ ...btnOutline, fontSize: 12, padding: '5px 10px' }}>
                           <Plus size={13} /> Add Item
                         </button>
                       </div>
@@ -849,9 +850,7 @@ export function InvoicesPage() {
                       {editInvoice.line_items.map((item, i) => (
                         <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
                           <td style={{ padding: '6px 8px' }}>
-                            {editInvoice.status === 'draft' ? (
-                              <input style={{ ...inputStyle, padding: '4px 8px' }} value={item.description} onChange={e => handleLineItemChange(i, 'description', e.target.value)} />
-                            ) : <span style={{ fontSize: 13 }}>{item.description}</span>}
+                            <span style={{ fontSize: 13 }}>{item.description}</span>
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                             {editInvoice.status === 'draft' ? (
@@ -859,9 +858,7 @@ export function InvoicesPage() {
                             ) : <span style={{ fontSize: 13 }}>{item.qty}</span>}
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                            {editInvoice.status === 'draft' ? (
-                              <input style={{ ...inputStyle, padding: '4px 6px', textAlign: 'center' }} value={item.uom} onChange={e => handleLineItemChange(i, 'uom', e.target.value)} />
-                            ) : <span style={{ fontSize: 13, color: C.text2 }}>{item.uom}</span>}
+                            <span style={{ fontSize: 13, color: C.text2 }}>{item.uom}</span>
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                             {editInvoice.status === 'draft' ? (
@@ -1050,7 +1047,7 @@ export function InvoicesPage() {
                   <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: C.bg, borderBottom: `1px solid ${C.border}` }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: C.text2, textTransform: 'uppercase' as const, letterSpacing: 1 }}>Parts {loadingParts && '(loading…)'}</div>
-                      <button onClick={() => { loadCatalogueParts(); setPartPickerSearch(''); setPickerVehicleType(selectedJob?.vehicles?.vehicle_type ?? null); setShowPartPicker(true) }} style={{ ...btnOutline, fontSize: 11, padding: '4px 10px' }}>
+                      <button onClick={() => { loadCatalogueParts(); setPartPickerSearch(''); setPickerVehicleType(selectedJob?.vehicles?.vehicle_type ?? null); setPartPickerTarget('new'); setShowPartPicker(true) }} style={{ ...btnOutline, fontSize: 11, padding: '4px 10px' }}>
                         <Plus size={12} /> Add Part
                       </button>
                     </div>
@@ -1064,16 +1061,25 @@ export function InvoicesPage() {
                     )}
 
                     {/* Parts list (auto-loaded + manually added) */}
-                    {newInvoiceItems.filter(it => it.item_type === 'part').map((item) => {
+                    {newInvoiceItems.filter(it => it.item_type === 'part').map((item, pi) => {
                       const discPct = item.discount_pct ?? 0
                       const missingPrice = item.unit_price === 0
                       return (
-                        <div key={item.description + item.unit_price} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: `1px solid ${C.border}`, background: missingPrice ? 'rgba(245,158,11,0.06)' : undefined }}>
+                        <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: `1px solid ${C.border}`, background: missingPrice ? 'rgba(245,158,11,0.06)' : undefined }}>
                           <div style={{ flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0 }}>
                             {item.description}
                             {missingPrice && <span style={{ marginLeft: 6, fontSize: 10, color: '#F59E0B', fontWeight: 700, background: 'rgba(245,158,11,0.15)', padding: '1px 5px', borderRadius: 4 }}>SET PRICE</span>}
                           </div>
-                          <div style={{ fontSize: 11, color: missingPrice ? '#F59E0B' : C.text2, whiteSpace: 'nowrap' as const }}>{formatRM(item.unit_price)}</div>
+                          {/* Unit Price */}
+                          <input
+                            type="number" min="0" step="0.01" placeholder="0.00"
+                            style={{ ...inputStyle, width: 76, padding: '3px 6px', fontSize: 12, textAlign: 'right' as const, color: missingPrice ? '#F59E0B' : undefined }}
+                            value={item.unit_price || ''}
+                            onChange={e => {
+                              const up = Math.max(0, Number(e.target.value) || 0)
+                              setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, unit_price: up, amount: parseFloat((it.qty * up * (1 - (it.discount_pct ?? 0) / 100)).toFixed(2)) }))
+                            }}
+                          />
                           {/* Qty */}
                           <input
                             type="number" min="1" step="1" placeholder="1"
@@ -1141,13 +1147,21 @@ export function InvoicesPage() {
 
                     {newInvoiceItems.filter(it => it.item_type === 'labour').length === 0 ? (
                       <div style={{ fontSize: 13, color: C.text2, padding: '12px 14px' }}>No labour charges yet.</div>
-                    ) : newInvoiceItems.filter(it => it.item_type === 'labour').map((item) => {
-                      const gross = item.qty * item.unit_price
+                    ) : newInvoiceItems.filter(it => it.item_type === 'labour').map((item, li) => {
                       const discPct = item.discount_pct ?? 0
                       return (
-                        <div key={item.description + item.unit_price} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: `1px solid ${C.border}` }}>
+                        <div key={li} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderBottom: `1px solid ${C.border}` }}>
                           <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{item.description}</div>
-                          <div style={{ fontSize: 11, color: C.text2, whiteSpace: 'nowrap' as const }}>×{item.qty} {item.uom} · {formatRM(item.unit_price)}</div>
+                          {/* Unit Price */}
+                          <input
+                            type="number" min="0" step="0.01" placeholder="0.00"
+                            style={{ ...inputStyle, width: 76, padding: '3px 6px', fontSize: 12, textAlign: 'right' as const }}
+                            value={item.unit_price || ''}
+                            onChange={e => {
+                              const up = Math.max(0, Number(e.target.value) || 0)
+                              setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, unit_price: up, amount: parseFloat((it.qty * up * (1 - (it.discount_pct ?? 0) / 100)).toFixed(2)) }))
+                            }}
+                          />
                           <div style={{ position: 'relative' as const, display: 'flex', alignItems: 'center' }}>
                             <input
                               type="number" min="0" max="100" step="1" placeholder="0"
@@ -1155,7 +1169,8 @@ export function InvoicesPage() {
                               value={discPct > 0 ? discPct : ''}
                               onChange={e => {
                                 const pct = Math.min(100, Math.max(0, Number(e.target.value) || 0))
-                                setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, discount_pct: pct, amount: parseFloat((gross * (1 - pct / 100)).toFixed(2)) }))
+                                const currentUp = item.unit_price
+                                setNewInvoiceItems(prev => prev.map(it => it !== item ? it : { ...it, discount_pct: pct, amount: parseFloat((it.qty * currentUp * (1 - pct / 100)).toFixed(2)) }))
                               }}
                             />
                             <span style={{ position: 'absolute' as const, right: 5, fontSize: 11, color: C.text2, pointerEvents: 'none' as const }}>%</span>
@@ -1279,7 +1294,11 @@ export function InvoicesPage() {
                 return visible.map(p => (
                   <div key={p.id} onClick={() => {
                     const item: LineItem = { item_type: 'part', description: p.name + (p.part_number ? ` [${p.part_number}]` : ''), qty: 1, uom: p.unit || 'unit', unit_price: p.selling_price ?? 0, cost_price: p.cost_price ?? undefined, amount: p.selling_price ?? 0 }
-                    setNewInvoiceItems(prev => [...prev, item])
+                    if (partPickerTarget === 'edit' && editInvoice) {
+                      setEditInvoice(recalcTotals({ ...editInvoice, line_items: [...editInvoice.line_items, item] }, sstRate) as Invoice)
+                    } else {
+                      setNewInvoiceItems(prev => [...prev, item])
+                    }
                     setShowPartPicker(false)
                   }} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 14px', marginBottom: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
