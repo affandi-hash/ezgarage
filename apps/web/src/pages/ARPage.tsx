@@ -13,21 +13,23 @@ import {
 interface ARInvoice {
   id: string
   invoice_number: string
-  created_at: string
+  customer_id: string | null
+  customer_name: string
+  customer_phone: string
+  vehicle_plate: string
+  issue_date: string
   due_date: string | null
   total_amount: number
+  amount_paid: number
+  balance_due: number
   status: string
-  job_id: string | null
-  customer_id: string | null
+  created_at: string
+  // joined
   customers?: {
-    id: string
-    full_name: string
-    phone: string
     customer_type: string
     credit_days?: number | null
     credit_limit?: number | null
   } | null
-  receipts?: { amount: number }[]
 }
 
 interface Receipt {
@@ -46,12 +48,13 @@ function fmtAmt(n: number) {
   return 'RM ' + Number(n).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function fmtDate(d: string | null) {
+function fmtDate(d: string | null | undefined) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function agingBucket(dueDate: string | null): string {
+function agingBucket(dueDate: string | null | undefined, status: string): string {
+  if (status === 'paid') return 'paid'
   if (!dueDate) return 'current'
   const diff = Math.floor((Date.now() - new Date(dueDate).getTime()) / 86400000)
   if (diff <= 0) return 'current'
@@ -60,21 +63,15 @@ function agingBucket(dueDate: string | null): string {
   return '60+'
 }
 
-function paidAmount(inv: ARInvoice): number {
-  return (inv.receipts ?? []).reduce((s, r) => s + r.amount, 0)
-}
-
-function balance(inv: ARInvoice): number {
-  return Math.max(0, inv.total_amount - paidAmount(inv))
-}
-
-function invStatus(inv: ARInvoice): 'paid' | 'partial' | 'overdue' | 'unpaid' {
-  const bal = balance(inv)
-  if (bal <= 0) return 'paid'
-  const paid = paidAmount(inv)
+function derivedStatus(inv: ARInvoice): string {
+  if (inv.balance_due <= 0 || inv.status === 'paid') return 'paid'
+  if (inv.amount_paid > 0) {
+    const today = new Date().toISOString().slice(0, 10)
+    if (inv.due_date && inv.due_date < today) return 'overdue'
+    return 'partial'
+  }
   const today = new Date().toISOString().slice(0, 10)
   if (inv.due_date && inv.due_date < today) return 'overdue'
-  if (paid > 0) return 'partial'
   return 'unpaid'
 }
 
@@ -88,7 +85,7 @@ const STATUS_BG: Record<string, string> = {
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span style={{ background: STATUS_BG[status], color: STATUS_COLOR[status], borderRadius: 9999, padding: '3px 10px', fontSize: 11, fontWeight: 600, textTransform: 'capitalize' as const, whiteSpace: 'nowrap' as const }}>
+    <span style={{ background: STATUS_BG[status] ?? STATUS_BG.unpaid, color: STATUS_COLOR[status] ?? STATUS_COLOR.unpaid, borderRadius: 9999, padding: '3px 10px', fontSize: 11, fontWeight: 600, textTransform: 'capitalize' as const, whiteSpace: 'nowrap' as const }}>
       {status}
     </span>
   )
@@ -124,7 +121,13 @@ function DetailPanel({
   const [receipts, setReceipts] = useState<Receipt[]>([])
   const [loading, setLoading] = useState(true)
   const [showPayForm, setShowPayForm] = useState(false)
-  const [form, setForm] = useState({ payment_date: new Date().toISOString().slice(0, 10), amount: '', payment_method: 'cash', reference_number: '', notes: '' })
+  const [form, setForm] = useState({
+    payment_date: new Date().toISOString().slice(0, 10),
+    amount: String(invoice.balance_due > 0 ? invoice.balance_due.toFixed(2) : ''),
+    payment_method: 'cash',
+    reference_number: '',
+    notes: '',
+  })
   const [saving, setSaving] = useState(false)
 
   const loadReceipts = useCallback(async () => {
@@ -136,15 +139,13 @@ function DetailPanel({
 
   useEffect(() => { loadReceipts() }, [loadReceipts])
 
-  const totalPaid = receipts.reduce((s, r) => s + r.amount, 0)
-  const bal = Math.max(0, invoice.total_amount - totalPaid)
-  const status = invStatus({ ...invoice, receipts: receipts.map(r => ({ amount: r.amount })) })
+  const status = derivedStatus(invoice)
   const customer = invoice.customers
 
   async function handlePay() {
     const amt = parseFloat(form.amount)
     if (!amt || amt <= 0) { toast('Enter a valid amount', 'error'); return }
-    if (amt > bal + 0.001) { toast('Amount exceeds balance', 'error'); return }
+    if (amt > invoice.balance_due + 0.001) { toast('Amount exceeds balance', 'error'); return }
     setSaving(true)
     const { error } = await supabase.from('receipts').insert({
       tenant_id: tenantId,
@@ -155,14 +156,22 @@ function DetailPanel({
       reference_number: form.reference_number || null,
       notes: form.notes || null,
     })
+    if (error) { setSaving(false); toast(error.message, 'error'); return }
+
+    // update invoice amount_paid + balance_due
+    const newPaid = invoice.amount_paid + amt
+    const newBalance = Math.max(0, invoice.total_amount - newPaid)
+    const newStatus = newBalance <= 0 ? 'paid' : invoice.status
+    await supabase.from('invoices').update({ amount_paid: newPaid, balance_due: newBalance, status: newStatus }).eq('id', invoice.id)
+
     setSaving(false)
-    if (error) { toast(error.message, 'error'); return }
     toast('Payment recorded')
     setShowPayForm(false)
-    setForm(f => ({ ...f, amount: '' }))
     loadReceipts()
     onRefresh()
   }
+
+  const inputStyle: React.CSSProperties = { background: '#161616', border: '1px solid #2A2A2A', borderRadius: 6, color: '#F0F0F0', fontSize: 13, padding: '8px 10px', width: '100%', boxSizing: 'border-box' as const, outline: 'none' }
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end' }} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -170,7 +179,7 @@ function DetailPanel({
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #2A2A2A', flexShrink: 0 }}>
           <div>
-            <p style={{ color: '#A0A0A0', fontSize: 12, margin: 0 }}>{customer?.full_name}</p>
+            <p style={{ color: '#A0A0A0', fontSize: 12, margin: 0 }}>{invoice.customer_name} · {invoice.vehicle_plate}</p>
             <h2 style={{ color: '#F0F0F0', fontSize: 16, fontWeight: 700, margin: '4px 0 0' }}>{invoice.invoice_number}</h2>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A0A0A0' }}><X size={18} /></button>
@@ -181,8 +190,8 @@ function DetailPanel({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
             {[
               { label: 'Total', value: fmtAmt(invoice.total_amount), color: '#F0F0F0' },
-              { label: 'Paid', value: fmtAmt(totalPaid), color: '#22C55E' },
-              { label: 'Balance', value: fmtAmt(bal), color: bal > 0 ? '#F15A22' : '#22C55E' },
+              { label: 'Paid', value: fmtAmt(invoice.amount_paid), color: '#22C55E' },
+              { label: 'Balance', value: fmtAmt(invoice.balance_due), color: invoice.balance_due > 0 ? '#F15A22' : '#22C55E' },
             ].map(item => (
               <div key={item.label} style={{ background: '#1E1E1E', borderRadius: 8, padding: '12px 14px' }}>
                 <p style={{ color: '#A0A0A0', fontSize: 11, margin: 0 }}>{item.label}</p>
@@ -208,14 +217,14 @@ function DetailPanel({
         <div style={{ padding: '20px 24px', borderBottom: '1px solid #2A2A2A' }}>
           <p style={{ color: '#A0A0A0', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 12px' }}>Invoice Details</p>
           {[
-            { label: 'Invoice Date', value: fmtDate(invoice.created_at) },
+            { label: 'Issue Date', value: fmtDate(invoice.issue_date) },
             { label: 'Due Date', value: fmtDate(invoice.due_date) },
-            { label: 'Customer Type', value: customer?.customer_type ?? '—' },
-            { label: 'Phone', value: customer?.phone ?? '—' },
+            { label: 'Phone', value: invoice.customer_phone || '—' },
+            { label: 'Vehicle', value: invoice.vehicle_plate || '—' },
           ].map(row => (
             <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={{ fontSize: 13, color: '#A0A0A0' }}>{row.label}</span>
-              <span style={{ fontSize: 13, color: '#F0F0F0', textTransform: 'capitalize' }}>{row.value}</span>
+              <span style={{ fontSize: 13, color: '#F0F0F0' }}>{row.value}</span>
             </div>
           ))}
         </div>
@@ -224,7 +233,7 @@ function DetailPanel({
         <div style={{ padding: '20px 24px', flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <p style={{ color: '#A0A0A0', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>Payment History</p>
-            {bal > 0 && !showPayForm && (
+            {invoice.balance_due > 0 && !showPayForm && (
               <button onClick={() => setShowPayForm(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#F15A22', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 <Plus size={13} /> Add Payment
               </button>
@@ -236,16 +245,16 @@ function DetailPanel({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
                   <label style={{ fontSize: 11, color: '#A0A0A0', display: 'block', marginBottom: 4 }}>Date</label>
-                  <input type="date" value={form.payment_date} onChange={e => setForm(f => ({ ...f, payment_date: e.target.value }))} style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 6, color: '#F0F0F0', fontSize: 13, padding: '8px 10px', width: '100%', boxSizing: 'border-box' as const }} />
+                  <input type="date" value={form.payment_date} onChange={e => setForm(f => ({ ...f, payment_date: e.target.value }))} style={inputStyle} />
                 </div>
                 <div>
                   <label style={{ fontSize: 11, color: '#A0A0A0', display: 'block', marginBottom: 4 }}>Amount (RM)</label>
-                  <input type="number" min="0" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder={bal.toFixed(2)} style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 6, color: '#F0F0F0', fontSize: 13, padding: '8px 10px', width: '100%', boxSizing: 'border-box' as const }} />
+                  <input type="number" min="0" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} style={inputStyle} />
                 </div>
               </div>
               <div>
                 <label style={{ fontSize: 11, color: '#A0A0A0', display: 'block', marginBottom: 4 }}>Method</label>
-                <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 6, color: '#F0F0F0', fontSize: 13, padding: '8px 10px', width: '100%' }}>
+                <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} style={inputStyle}>
                   <option value="cash">Cash</option>
                   <option value="bank_transfer">Bank Transfer</option>
                   <option value="cheque">Cheque</option>
@@ -255,7 +264,7 @@ function DetailPanel({
               </div>
               <div>
                 <label style={{ fontSize: 11, color: '#A0A0A0', display: 'block', marginBottom: 4 }}>Reference No.</label>
-                <input value={form.reference_number} onChange={e => setForm(f => ({ ...f, reference_number: e.target.value }))} placeholder="optional" style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 6, color: '#F0F0F0', fontSize: 13, padding: '8px 10px', width: '100%', boxSizing: 'border-box' as const }} />
+                <input value={form.reference_number} onChange={e => setForm(f => ({ ...f, reference_number: e.target.value }))} placeholder="optional" style={inputStyle} />
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={handlePay} disabled={saving} style={{ flex: 1, background: '#F15A22', color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
@@ -271,7 +280,7 @@ function DetailPanel({
           ) : receipts.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '30px 0', color: '#4A4A4A' }}>
               <CheckCircle size={28} style={{ margin: '0 auto 8px' }} />
-              <p style={{ fontSize: 13, margin: 0 }}>No payments yet</p>
+              <p style={{ fontSize: 13, margin: 0 }}>No payments recorded yet</p>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -307,16 +316,17 @@ export function ARPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
-  const [filterType, setFilterType] = useState('')
   const [selected, setSelected] = useState<ARInvoice | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     let query = supabase
       .from('invoices')
-      .select('id, invoice_number, created_at, due_date, total_amount, status, job_id, customer_id, customers(id, full_name, phone, customer_type, credit_days, credit_limit), receipts(amount)')
+      .select('id, invoice_number, customer_id, customer_name, customer_phone, vehicle_plate, issue_date, due_date, total_amount, amount_paid, balance_due, status, created_at, customers(customer_type, credit_days, credit_limit)')
       .eq('tenant_id', tenantId)
       .neq('status', 'void')
+      .neq('status', 'draft')
+      .gt('total_amount', 0)
       .order('created_at', { ascending: false })
 
     if (branchId) query = query.eq('branch_id', branchId)
@@ -324,42 +334,37 @@ export function ARPage() {
     const { data } = await query
     const rows = (data as unknown as ARInvoice[]) ?? []
 
-    // Only show invoices for corporate/fleet customers (credit customers)
-    const creditOnly = rows.filter(inv =>
-      inv.customers?.customer_type === 'corporate' || inv.customers?.customer_type === 'fleet'
-    )
-    setInvoices(creditOnly)
+    // Show invoices that still have an outstanding balance
+    const outstanding = rows.filter(inv => inv.balance_due > 0 || inv.amount_paid < inv.total_amount)
+    setInvoices(outstanding)
     setLoading(false)
   }, [tenantId, branchId])
 
   useEffect(() => { load() }, [load])
 
-  // Derived status for each invoice
-  const withStatus = invoices.map(inv => ({ ...inv, _status: invStatus(inv), _balance: balance(inv), _paid: paidAmount(inv) }))
+  const withStatus = invoices.map(inv => ({ ...inv, _status: derivedStatus(inv) }))
 
   // Summary
-  const today = new Date().toISOString().slice(0, 10)
+  const todayStr = new Date().toISOString().slice(0, 10)
   const week = new Date(); week.setDate(week.getDate() + 7)
   const weekStr = week.toISOString().slice(0, 10)
 
-  const overdue = withStatus.filter(i => i._status === 'overdue').reduce((s, i) => s + i._balance, 0)
-  const dueThisWeek = withStatus.filter(i => i._status !== 'paid' && i.due_date && i.due_date >= today && i.due_date <= weekStr).reduce((s, i) => s + i._balance, 0)
-  const totalOutstanding = withStatus.filter(i => i._status !== 'paid').reduce((s, i) => s + i._balance, 0)
+  const overdue = withStatus.filter(i => i._status === 'overdue').reduce((s, i) => s + i.balance_due, 0)
+  const dueThisWeek = withStatus.filter(i => i._status !== 'paid' && i.due_date && i.due_date >= todayStr && i.due_date <= weekStr).reduce((s, i) => s + i.balance_due, 0)
+  const totalOutstanding = withStatus.reduce((s, i) => s + i.balance_due, 0)
 
   // Aging buckets
   const aging = {
-    current: withStatus.filter(i => i._status !== 'paid' && agingBucket(i.due_date) === 'current').reduce((s, i) => s + i._balance, 0),
-    '1-30': withStatus.filter(i => i._status !== 'paid' && agingBucket(i.due_date) === '1-30').reduce((s, i) => s + i._balance, 0),
-    '31-60': withStatus.filter(i => i._status !== 'paid' && agingBucket(i.due_date) === '31-60').reduce((s, i) => s + i._balance, 0),
-    '60+': withStatus.filter(i => i._status !== 'paid' && agingBucket(i.due_date) === '60+').reduce((s, i) => s + i._balance, 0),
+    current: withStatus.filter(i => agingBucket(i.due_date, i._status) === 'current').reduce((s, i) => s + i.balance_due, 0),
+    '1-30': withStatus.filter(i => agingBucket(i.due_date, i._status) === '1-30').reduce((s, i) => s + i.balance_due, 0),
+    '31-60': withStatus.filter(i => agingBucket(i.due_date, i._status) === '31-60').reduce((s, i) => s + i.balance_due, 0),
+    '60+': withStatus.filter(i => agingBucket(i.due_date, i._status) === '60+').reduce((s, i) => s + i.balance_due, 0),
   }
 
   const filtered = withStatus.filter(inv => {
-    const name = inv.customers?.full_name ?? ''
-    const matchSearch = !search || name.toLowerCase().includes(search.toLowerCase()) || inv.invoice_number.toLowerCase().includes(search.toLowerCase())
+    const matchSearch = !search || inv.customer_name.toLowerCase().includes(search.toLowerCase()) || inv.invoice_number.toLowerCase().includes(search.toLowerCase())
     const matchStatus = !filterStatus || inv._status === filterStatus
-    const matchType = !filterType || inv.customers?.customer_type === filterType
-    return matchSearch && matchStatus && matchType
+    return matchSearch && matchStatus
   })
 
   const inputStyle: React.CSSProperties = { background: '#161616', border: '1px solid #2A2A2A', borderRadius: 8, color: '#F0F0F0', fontSize: 14, padding: '10px 12px', outline: 'none' }
@@ -369,7 +374,7 @@ export function ARPage() {
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ color: '#F0F0F0', fontSize: 22, fontWeight: 800, margin: 0 }}>Accounts Receivable</h1>
-        <p style={{ color: '#A0A0A0', fontSize: 13, margin: '4px 0 0' }}>Outstanding invoices from corporate & fleet customers</p>
+        <p style={{ color: '#A0A0A0', fontSize: 13, margin: '4px 0 0' }}>Outstanding invoices with unpaid balances</p>
       </div>
 
       {/* Summary Cards */}
@@ -377,7 +382,7 @@ export function ARPage() {
         <SummaryCard label="Overdue" value={fmtAmt(overdue)} icon={AlertCircle} color="#EF4444" />
         <SummaryCard label="Due This Week" value={fmtAmt(dueThisWeek)} icon={AlertTriangle} color="#EAB308" />
         <SummaryCard label="Total Outstanding" value={fmtAmt(totalOutstanding)} icon={DollarSign} color="#F15A22" />
-        <SummaryCard label="Total Invoices" value={String(withStatus.filter(i => i._status !== 'paid').length)} icon={FileText} color="#3B82F6" />
+        <SummaryCard label="Open Invoices" value={String(withStatus.length)} icon={FileText} color="#3B82F6" />
       </div>
 
       {/* Aging Report */}
@@ -385,7 +390,7 @@ export function ARPage() {
         <p style={{ color: '#A0A0A0', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 14px' }}>Aging Report</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           {[
-            { label: 'Current', value: aging.current, color: '#22C55E' },
+            { label: 'Not Yet Due', value: aging.current, color: '#22C55E' },
             { label: '1–30 Days', value: aging['1-30'], color: '#EAB308' },
             { label: '31–60 Days', value: aging['31-60'], color: '#F97316' },
             { label: '60+ Days', value: aging['60+'], color: '#EF4444' },
@@ -409,12 +414,6 @@ export function ARPage() {
           <option value="unpaid">Unpaid</option>
           <option value="partial">Partial</option>
           <option value="overdue">Overdue</option>
-          <option value="paid">Paid</option>
-        </select>
-        <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...inputStyle, minWidth: 140 }}>
-          <option value="">All Types</option>
-          <option value="corporate">Corporate</option>
-          <option value="fleet">Fleet</option>
         </select>
       </div>
 
@@ -423,34 +422,32 @@ export function ARPage() {
         <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}><Loader2 size={32} style={{ color: '#F15A22' }} className="animate-spin" /></div>
       ) : filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 80, color: '#A0A0A0' }}>
-          <FileText size={44} style={{ margin: '0 auto 12px', color: '#2A2A2A' }} />
-          <p style={{ fontSize: 15 }}>{invoices.length === 0 ? 'No credit customer invoices yet. Add corporate or fleet customers and raise invoices for them.' : 'No invoices match your filters.'}</p>
+          <CheckCircle size={44} style={{ margin: '0 auto 12px', color: '#2A2A2A' }} />
+          <p style={{ fontSize: 15 }}>{invoices.length === 0 ? 'No outstanding invoices. All payments are up to date.' : 'No invoices match your filters.'}</p>
         </div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', minWidth: 750, borderCollapse: 'collapse' }}>
+          <table style={{ width: '100%', minWidth: 700, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #2A2A2A' }}>
-                {['Customer', 'Type', 'Invoice #', 'Invoice Date', 'Due Date', 'Total', 'Paid', 'Balance', 'Status'].map(h => (
+                {['Customer', 'Invoice #', 'Vehicle', 'Issue Date', 'Due Date', 'Total', 'Paid', 'Balance', 'Status'].map(h => (
                   <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, color: '#4A4A4A', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map(inv => (
-                <tr key={inv.id} onClick={() => setSelected(inv)} style={{ borderBottom: '1px solid #1E1E1E', cursor: 'pointer', transition: 'background 0.1s' }}
+                <tr key={inv.id} onClick={() => setSelected(inv)} style={{ borderBottom: '1px solid #1E1E1E', cursor: 'pointer' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#1A1A1A')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  <td style={{ padding: '14px', color: '#F0F0F0', fontWeight: 600, fontSize: 14 }}>{inv.customers?.full_name ?? '—'}</td>
-                  <td style={{ padding: '14px' }}>
-                    <span style={{ fontSize: 11, background: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 4, padding: '2px 8px', color: '#A0A0A0', textTransform: 'capitalize' }}>{inv.customers?.customer_type ?? '—'}</span>
-                  </td>
+                  <td style={{ padding: '14px', color: '#F0F0F0', fontWeight: 600, fontSize: 14 }}>{inv.customer_name || '—'}</td>
                   <td style={{ padding: '14px', color: '#A0A0A0', fontSize: 13, fontFamily: 'monospace' }}>{inv.invoice_number}</td>
-                  <td style={{ padding: '14px', color: '#A0A0A0', fontSize: 13, whiteSpace: 'nowrap' }}>{fmtDate(inv.created_at)}</td>
+                  <td style={{ padding: '14px', color: '#A0A0A0', fontSize: 13 }}>{inv.vehicle_plate || '—'}</td>
+                  <td style={{ padding: '14px', color: '#A0A0A0', fontSize: 13, whiteSpace: 'nowrap' }}>{fmtDate(inv.issue_date)}</td>
                   <td style={{ padding: '14px', fontSize: 13, whiteSpace: 'nowrap', color: inv._status === 'overdue' ? '#EF4444' : '#A0A0A0' }}>{fmtDate(inv.due_date)}</td>
                   <td style={{ padding: '14px', color: '#F0F0F0', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtAmt(inv.total_amount)}</td>
-                  <td style={{ padding: '14px', color: '#22C55E', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtAmt(inv._paid)}</td>
-                  <td style={{ padding: '14px', color: inv._balance > 0 ? '#F15A22' : '#22C55E', fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtAmt(inv._balance)}</td>
+                  <td style={{ padding: '14px', color: '#22C55E', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtAmt(inv.amount_paid)}</td>
+                  <td style={{ padding: '14px', color: '#F15A22', fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtAmt(inv.balance_due)}</td>
                   <td style={{ padding: '14px' }}><StatusBadge status={inv._status} /></td>
                 </tr>
               ))}
