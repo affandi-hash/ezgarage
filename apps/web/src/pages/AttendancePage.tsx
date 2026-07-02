@@ -1297,9 +1297,22 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
     if (!videoRef.current || !canvasRef.current) return
     const v = videoRef.current
     const c = canvasRef.current
-    c.width = v.videoWidth; c.height = v.videoHeight
-    c.getContext('2d')!.drawImage(v, 0, 0)
-    setPhoto(c.toDataURL('image/jpeg', 0.85))
+    // videoWidth/videoHeight can be 0 on Android if not fully decoded yet
+    const w = v.videoWidth || v.clientWidth || 640
+    const h = v.videoHeight || v.clientHeight || 480
+    c.width = w
+    c.height = h
+    const ctx = c.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(v, 0, 0, w, h)
+    const data = c.toDataURL('image/jpeg', 0.85)
+    // guard: blank canvas produces a tiny data URL (~50 chars)
+    if (data.length < 1000) {
+      // video not ready — try again in 200ms
+      setTimeout(() => capture(), 200)
+      return
+    }
+    setPhoto(data)
     streamRef.current?.getTracks().forEach(t => t.stop())
   }
 
