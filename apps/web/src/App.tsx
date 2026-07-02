@@ -273,7 +273,7 @@ export default function App() {
           <Route
             path="/finance"
             element={
-              <ProtectedRoute allowedRoles={['super_admin','ops_manager','finance']}>
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','finance','foreman']}>
                 <FinancePage />
               </ProtectedRoute>
             }
