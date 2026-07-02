@@ -75,6 +75,8 @@ interface Supplier {
   email?: string | null
   address?: string | null
   notes?: string | null
+  credit_limit?: number | null
+  credit_days?: number | null
   is_active?: boolean
   created_at?: string
 }
@@ -351,7 +353,7 @@ function SuppliersTab({ tenantId, branchId }: { tenantId: string; branchId: stri
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Supplier | null>(null)
-  const [form, setForm] = useState({ name: '', contact_person: '', phone: '', email: '', address: '', notes: '' })
+  const [form, setForm] = useState({ name: '', contact_person: '', phone: '', email: '', address: '', notes: '', credit_limit: '', credit_days: '' })
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -364,13 +366,20 @@ function SuppliersTab({ tenantId, branchId }: { tenantId: string; branchId: stri
 
   useEffect(() => { load() }, [load])
 
-  function openAdd() { setEditing(null); setForm({ name: '', contact_person: '', phone: '', email: '', address: '', notes: '' }); setShowModal(true) }
-  function openEdit(s: Supplier) { setEditing(s); setForm({ name: s.name, contact_person: s.contact_person ?? '', phone: s.phone ?? '', email: s.email ?? '', address: s.address ?? '', notes: s.notes ?? '' }); setShowModal(true) }
+  function openAdd() { setEditing(null); setForm({ name: '', contact_person: '', phone: '', email: '', address: '', notes: '', credit_limit: '', credit_days: '' }); setShowModal(true) }
+  function openEdit(s: Supplier) { setEditing(s); setForm({ name: s.name, contact_person: s.contact_person ?? '', phone: s.phone ?? '', email: s.email ?? '', address: s.address ?? '', notes: s.notes ?? '', credit_limit: s.credit_limit != null ? String(s.credit_limit) : '', credit_days: s.credit_days != null ? String(s.credit_days) : '' }); setShowModal(true) }
 
   async function save() {
     if (!form.name.trim()) { toast('Supplier name is required', 'error'); return }
     setSaving(true)
-    const payload = { ...form, tenant_id: tenantId, branch_id: branchId || null, is_active: true }
+    const payload = {
+      name: form.name, contact_person: form.contact_person || null,
+      phone: form.phone || null, email: form.email || null,
+      address: form.address || null, notes: form.notes || null,
+      credit_limit: form.credit_limit ? parseFloat(form.credit_limit) : null,
+      credit_days: form.credit_days ? parseInt(form.credit_days) : null,
+      tenant_id: tenantId, branch_id: branchId || null, is_active: true
+    }
     const { error } = editing
       ? await supabase.from('suppliers').update(payload).eq('id', editing.id)
       : await supabase.from('suppliers').insert(payload)
@@ -426,6 +435,12 @@ function SuppliersTab({ tenantId, branchId }: { tenantId: string; branchId: stri
                 {s.email && <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Mail size={12} style={{ color: '#A0A0A0' }} /><span style={{ color: '#A0A0A0', fontSize: 13 }}>{s.email}</span></div>}
                 {s.address && <p style={{ color: '#A0A0A0', fontSize: 12, margin: 0 }}>{s.address}</p>}
                 {s.notes && <p style={{ color: '#4A4A4A', fontSize: 12, margin: 0, fontStyle: 'italic' }}>{s.notes}</p>}
+                {(s.credit_limit != null || s.credit_days != null) && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    {s.credit_limit != null && <span style={{ fontSize: 11, background: 'rgba(241,90,34,0.1)', color: '#F15A22', borderRadius: 4, padding: '2px 8px' }}>Credit RM {Number(s.credit_limit).toLocaleString()}</span>}
+                    {s.credit_days != null && <span style={{ fontSize: 11, background: '#1E1E1E', color: '#A0A0A0', border: '1px solid #2A2A2A', borderRadius: 4, padding: '2px 8px' }}>{s.credit_days}d</span>}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -447,6 +462,10 @@ function SuppliersTab({ tenantId, branchId }: { tenantId: string; branchId: stri
               <div><label style={labelStyle}>Email</label><input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} onBlur={e => setForm(f => ({ ...f, email: formatEmail(e.target.value) }))} placeholder="e.g. supplier@email.com" style={inputStyle} /></div>
               <div><label style={labelStyle}>Address</label><input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="e.g. No 12, Jalan..." style={inputStyle} /></div>
               <div><label style={labelStyle}>Notes</label><textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'none' }} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div><label style={labelStyle}>Credit Limit (RM)</label><input type="number" min="0" step="0.01" value={form.credit_limit} onChange={e => setForm(f => ({ ...f, credit_limit: e.target.value }))} placeholder="e.g. 5000" style={inputStyle} /></div>
+                <div><label style={labelStyle}>Credit Days</label><input type="number" min="0" step="1" value={form.credit_days} onChange={e => setForm(f => ({ ...f, credit_days: e.target.value }))} placeholder="e.g. 30" style={inputStyle} /></div>
+              </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: '1px solid #2A2A2A' }}>
               <button onClick={() => setShowModal(false)} style={{ background: '#2A2A2A', color: '#A0A0A0', border: 'none', borderRadius: 8, padding: '0 20px', minHeight: 44, cursor: 'pointer' }}>Cancel</button>
