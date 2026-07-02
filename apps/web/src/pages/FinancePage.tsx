@@ -242,6 +242,7 @@ interface NewInvoiceModalProps {
 function NewInvoiceModal({ suppliers, onClose, onSave, saving }: NewInvoiceModalProps) {
   const [form, setForm] = useState<NewInvoiceForm>(EMPTY_NEW_INVOICE)
   const [errors, setErrors] = useState<Partial<Record<keyof NewInvoiceForm, string>>>({})
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   function set<K extends keyof NewInvoiceForm>(field: K, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -270,7 +271,12 @@ function NewInvoiceModal({ suppliers, onClose, onSave, saving }: NewInvoiceModal
   async function handleSubmit(ev: React.FormEvent) {
     ev.preventDefault()
     if (!validate()) return
-    await onSave(form)
+    setSaveError(null)
+    try {
+      await onSave(form)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save invoice')
+    }
   }
 
   const inp: React.CSSProperties = {
@@ -421,6 +427,11 @@ function NewInvoiceModal({ suppliers, onClose, onSave, saving }: NewInvoiceModal
             </div>
           </div>
 
+          {saveError && (
+            <div style={{ padding: '0 24px 12px' }}>
+              <p style={{ color: '#EF4444', fontSize: 13, margin: 0, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px' }}>{saveError}</p>
+            </div>
+          )}
           <div
             style={{
               display: 'flex',
