@@ -29,6 +29,7 @@ import { QuotationsPage } from '@/pages/QuotationsPage'
 import { LabourChargesPage } from '@/pages/LabourChargesPage'
 import { ReceiptsPage } from '@/pages/ReceiptsPage'
 import { FinancePage } from '@/pages/FinancePage'
+import { ARPage } from '@/pages/ARPage'
 import { ChangePasswordPage } from '@/pages/ChangePasswordPage'
 import { PrintInvoicePage } from '@/pages/PrintInvoicePage'
 import { PrintReceiptPage } from '@/pages/PrintReceiptPage'
@@ -265,6 +266,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
                 <AuditLogPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ar"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','finance','foreman']}>
+                <ARPage />
               </ProtectedRoute>
             }
           />

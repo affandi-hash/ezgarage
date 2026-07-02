@@ -35,6 +35,8 @@ interface Customer {
   customer_type: string
   customer_status: string
   notes?: string
+  credit_days?: number | null
+  credit_limit?: number | null
   created_at: string
 }
 
@@ -70,6 +72,8 @@ interface NewCustomerForm {
   full_address: string
   customer_type: string
   notes: string
+  credit_days: string
+  credit_limit: string
 }
 
 interface EditForm {
@@ -81,6 +85,8 @@ interface EditForm {
   customer_type: string
   customer_status: string
   notes: string
+  credit_days: string
+  credit_limit: string
 }
 
 // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -323,6 +329,8 @@ function OverviewTab({
     customer_type: customer.customer_type,
     customer_status: customer.customer_status ?? 'active',
     notes: customer.notes ?? '',
+    credit_days: customer.credit_days != null ? String(customer.credit_days) : '',
+    credit_limit: customer.credit_limit != null ? String(customer.credit_limit) : '',
   })
 
   useEffect(() => {
@@ -336,6 +344,8 @@ function OverviewTab({
       customer_type: customer.customer_type,
       customer_status: customer.customer_status ?? 'active',
       notes: customer.notes ?? '',
+      credit_days: customer.credit_days != null ? String(customer.credit_days) : '',
+      credit_limit: customer.credit_limit != null ? String(customer.credit_limit) : '',
     })
   }, [customer.id])
 
@@ -357,6 +367,8 @@ function OverviewTab({
         customer_type: form.customer_type,
         customer_status: form.customer_status,
         notes: form.notes || null,
+        credit_days: form.credit_days ? parseInt(form.credit_days) : null,
+        credit_limit: form.credit_limit ? parseFloat(form.credit_limit) : null,
       })
       .eq('id', customer.id)
       .select()
@@ -522,6 +534,18 @@ function OverviewTab({
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
             />
           </div>
+          {(form.customer_type === 'corporate' || form.customer_type === 'fleet') && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <p style={labelStyle}>Credit Days</p>
+                <input type="number" min="0" step="1" style={inputStyle} value={form.credit_days} onChange={e => setForm(f => ({ ...f, credit_days: e.target.value }))} placeholder="e.g. 30" />
+              </div>
+              <div>
+                <p style={labelStyle}>Credit Limit (RM)</p>
+                <input type="number" min="0" step="0.01" style={inputStyle} value={form.credit_limit} onChange={e => setForm(f => ({ ...f, credit_limit: e.target.value }))} placeholder="e.g. 5000" />
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
               onClick={handleSave}
@@ -1056,6 +1080,8 @@ function NewCustomerPanel({
     full_address: '',
     customer_type: 'individual',
     notes: '',
+    credit_days: '',
+    credit_limit: '',
   })
 
   async function handleSubmit() {
@@ -1077,6 +1103,8 @@ function NewCustomerPanel({
         full_address: form.full_address || null,
         customer_type: form.customer_type,
         notes: form.notes || null,
+        credit_days: form.credit_days ? parseInt(form.credit_days) : null,
+        credit_limit: form.credit_limit ? parseFloat(form.credit_limit) : null,
       })
       .select()
       .single()
@@ -1222,6 +1250,18 @@ function NewCustomerPanel({
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
               />
             </div>
+            {(form.customer_type === 'corporate' || form.customer_type === 'fleet') && (
+              <>
+                <div>
+                  <p style={labelStyle}>Credit Days</p>
+                  <input type="number" min="0" step="1" style={inputStyle} value={form.credit_days} onChange={e => setForm(f => ({ ...f, credit_days: e.target.value }))} placeholder="e.g. 30" />
+                </div>
+                <div>
+                  <p style={labelStyle}>Credit Limit (RM)</p>
+                  <input type="number" min="0" step="0.01" style={inputStyle} value={form.credit_limit} onChange={e => setForm(f => ({ ...f, credit_limit: e.target.value }))} placeholder="e.g. 5000" />
+                </div>
+              </>
+            )}
           </div>
         </div>
 

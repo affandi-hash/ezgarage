@@ -23,6 +23,7 @@ import {
   Archive,
   Receipt,
   Landmark,
+  TrendingUp,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
@@ -65,6 +66,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/invoices', label: 'Invoices', icon: FileText, roles: ['super_admin', 'ops_manager', 'front_desk', 'finance', 'foreman'] },
       { to: '/receipts', label: 'Receipts', icon: Receipt, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/finance', label: 'Accounts Payable', icon: Landmark, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
+      { to: '/ar', label: 'Accounts Receivable', icon: TrendingUp, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/labour-charges', label: 'Labour Charges', icon: Wrench, roles: ['super_admin', 'ops_manager', 'foreman'] },
       { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
     ],
