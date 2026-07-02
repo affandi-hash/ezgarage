@@ -1272,12 +1272,24 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
   const [saving,   setSaving]  = useState(false)
 
   useEffect(() => {
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    const constraints = { video: { facingMode: { ideal: 'user' } }, audio: false }
+    navigator.mediaDevices.getUserMedia(constraints)
       .then(s => {
         streamRef.current = s
-        if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play() }
+        const vid = videoRef.current
+        if (vid) {
+          vid.srcObject = s
+          vid.onloadedmetadata = () => { vid.play().catch(() => {}) }
+        }
       })
-      .catch(() => setCamErr('Camera access denied. Please allow camera permission and try again.'))
+      .catch(err => {
+        const msg = err?.name === 'NotAllowedError'
+          ? 'Camera permission denied. Allow camera access in your browser settings and try again.'
+          : err?.name === 'NotFoundError'
+          ? 'No camera found on this device.'
+          : 'Could not start camera. Please try again.'
+        setCamErr(msg)
+      })
     return () => streamRef.current?.getTracks().forEach(t => t.stop())
   }, [])
 
@@ -1293,10 +1305,14 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
 
   function retake() {
     setPhoto(null)
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'user' } }, audio: false })
       .then(s => {
         streamRef.current = s
-        if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play() }
+        const vid = videoRef.current
+        if (vid) {
+          vid.srcObject = s
+          vid.onloadedmetadata = () => { vid.play().catch(() => {}) }
+        }
       })
   }
 
