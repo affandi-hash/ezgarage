@@ -235,7 +235,7 @@ function StatusBadge({ status }: StatusBadgeProps) {
 interface NewInvoiceModalProps {
   suppliers: Supplier[]
   onClose: () => void
-  onSave: (form: NewInvoiceForm) => Promise<void>
+  onSave: (form: NewInvoiceForm, file?: File) => Promise<void>
   saving: boolean
 }
 
@@ -243,6 +243,7 @@ function NewInvoiceModal({ suppliers, onClose, onSave, saving }: NewInvoiceModal
   const [form, setForm] = useState<NewInvoiceForm>(EMPTY_NEW_INVOICE)
   const [errors, setErrors] = useState<Partial<Record<keyof NewInvoiceForm, string>>>({})
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [file, setFile] = useState<File | null>(null)
 
   function set<K extends keyof NewInvoiceForm>(field: K, value: string) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -273,7 +274,7 @@ function NewInvoiceModal({ suppliers, onClose, onSave, saving }: NewInvoiceModal
     if (!validate()) return
     setSaveError(null)
     try {
-      await onSave(form)
+      await onSave(form, file ?? undefined)
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save invoice')
     }
@@ -424,6 +425,21 @@ function NewInvoiceModal({ suppliers, onClose, onSave, saving }: NewInvoiceModal
                 rows={3}
                 style={{ ...inp, resize: 'none' }}
               />
+            </div>
+
+            {/* File Upload */}
+            <div>
+              <label style={{ display: 'block', fontSize: 13, color: '#A0A0A0', marginBottom: 6 }}>Invoice File (optional)</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#0E0E0E', border: '1px dashed #3A3A3A', borderRadius: 8, padding: '10px 14px', cursor: 'pointer' }}>
+                <Upload size={16} color={file ? '#22C55E' : '#A0A0A0'} />
+                <span style={{ fontSize: 13, color: file ? '#22C55E' : '#A0A0A0', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {file ? file.name : 'Click to upload image or PDF'}
+                </span>
+                {file && (
+                  <span onClick={e => { e.preventDefault(); setFile(null) }} style={{ color: '#EF4444', cursor: 'pointer', fontSize: 11 }}>Remove</span>
+                )}
+                <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] ?? null)} />
+              </label>
             </div>
           </div>
 
@@ -1361,26 +1377,36 @@ export function FinancePage() {
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
-  async function handleNewInvoiceSave(form: NewInvoiceForm) {
+  async function handleNewInvoiceSave(form: NewInvoiceForm, file?: File) {
     setNewSaving(true)
     try {
-      const { error: insErr } = await supabase.from('supplier_invoices').insert({
+      const { data: inserted, error: insErr } = await supabase.from('supplier_invoices').insert({
         tenant_id: tenantId,
         branch_id: branchId || null,
         supplier_id: form.supplier_id,
         invoice_number: form.invoice_number.trim() || null,
         invoice_date: form.invoice_date,
-        due_date: form.due_date,
+        due_date: form.due_date || null,
         total_amount: parseFloat(form.total_amount),
         amount_paid: 0,
         status: 'unpaid',
         notes: form.notes.trim() || null,
-      })
+      }).select('id').single()
       if (insErr) throw insErr
+
+      if (file && inserted?.id) {
+        const ext = file.name.split('.').pop()
+        const path = `${inserted.id}/${Date.now()}.${ext}`
+        const { error: upErr } = await supabase.storage.from('supplier-invoices').upload(path, file, { upsert: true })
+        if (!upErr) {
+          const { data: urlData } = supabase.storage.from('supplier-invoices').getPublicUrl(path)
+          await supabase.from('supplier_invoices').update({ file_url: urlData.publicUrl }).eq('id', inserted.id)
+        }
+      }
+
       setShowNewModal(false)
       await loadInvoices()
     } catch (err) {
-      // re-throw so the modal can show it
       throw err
     } finally {
       setNewSaving(false)
