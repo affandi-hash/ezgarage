@@ -529,12 +529,12 @@ export function ExpensesPage() {
         <Tile label="YTD OPEX" value={fmtAmt(ytdOpex)} sub={`${year} year-to-date`} color="#EAB308" icon={TrendingDown} />
         <Tile label="YTD CAPEX" value={fmtAmt(ytdCapex)} sub={`${year} year-to-date`} color="#10B981" icon={TrendingUp} />
         {(() => {
-          const netProfit = monthCOGS - monthLabour - opexThis - capexThis
+          const netProfit = monthCOGS + monthLabour - opexThis - capexThis
           return (
             <Tile
               label="Net Profit / Loss"
               value={fmtAmt(netProfit)}
-              sub={`GP ${fmtAmt(monthCOGS)} − Labour ${fmtAmt(monthLabour)} − OPEX ${fmtAmt(opexThis)} − CAPEX ${fmtAmt(capexThis)}`}
+              sub={`GP ${fmtAmt(monthCOGS)} + Labour ${fmtAmt(monthLabour)} − OPEX ${fmtAmt(opexThis)} − CAPEX ${fmtAmt(capexThis)}`}
               color={netProfit >= 0 ? '#22C55E' : '#EF4444'}
               icon={DollarSign}
             />
