@@ -419,19 +419,20 @@ export function ExpensesPage() {
     const revenue = (invData ?? []).reduce((s: number, r: { total_amount: number }) => s + (r.total_amount ?? 0), 0)
     setMonthRevenue(revenue)
 
-    // labour + COGS from invoice line items this month
+    // parts + labour from invoice line items (matching Reports page calculation)
     const { data: itemsData } = await supabase.from('invoice_items')
-      .select('type, total, cost_price, quantity, invoices!inner(issue_date, status, tenant_id)')
+      .select('type, total, invoices!inner(issue_date, status, tenant_id)')
       .eq('invoices.tenant_id', tenantId)
       .gte('invoices.issue_date', monthStart)
       .lt('invoices.issue_date', nextMonth)
       .neq('invoices.status', 'void')
       .neq('invoices.status', 'draft')
-    const items = (itemsData ?? []) as { type: string; total: number; cost_price: number | null; quantity: number }[]
+    const items = (itemsData ?? []) as { type: string; total: number }[]
     const labour = items.filter(r => r.type === 'labour').reduce((s, r) => s + (r.total ?? 0), 0)
-    const cogs = items.filter(r => r.type === 'part').reduce((s, r) => s + ((r.cost_price ?? 0) * (r.quantity ?? 1)), 0)
+    const parts = items.filter(r => r.type === 'part').reduce((s, r) => s + (r.total ?? 0), 0)
+    // Gross Profit = Revenue - Parts - Labour (same as Reports page)
     setMonthLabour(labour)
-    setMonthCOGS(cogs)
+    setMonthCOGS(revenue - parts - labour)
 
     setLoading(false)
   }, [tenantId, branchId])
@@ -515,14 +516,13 @@ export function ExpensesPage() {
         <Tile label="Total Expenses" value={fmtAmt(totalThis)} sub={trendLabel(totalThis, totalLast)} color="#8B5CF6" icon={MoreHorizontal} />
         <Tile label="YTD OPEX" value={fmtAmt(ytdOpex)} sub={`${year} year-to-date`} color="#EAB308" icon={TrendingDown} />
         <Tile label="YTD CAPEX" value={fmtAmt(ytdCapex)} sub={`${year} year-to-date`} color="#10B981" icon={TrendingUp} />
-        <Tile label="Total Labour" value={fmtAmt(monthLabour)} sub="Billed labour this month" color="#06B6D4" icon={HardHat} />
         {(() => {
-          const netProfit = monthRevenue - monthCOGS - opexThis - capexThis
+          const netProfit = monthCOGS - monthLabour - opexThis - capexThis
           return (
             <Tile
               label="Net Profit / Loss"
               value={fmtAmt(netProfit)}
-              sub={`Rev ${fmtAmt(monthRevenue)} − COGS ${fmtAmt(monthCOGS)} − OPEX ${fmtAmt(opexThis)} − CAPEX ${fmtAmt(capexThis)}`}
+              sub={`GP ${fmtAmt(monthCOGS)} − Labour ${fmtAmt(monthLabour)} − OPEX ${fmtAmt(opexThis)} − CAPEX ${fmtAmt(capexThis)}`}
               color={netProfit >= 0 ? '#22C55E' : '#EF4444'}
               icon={DollarSign}
             />
