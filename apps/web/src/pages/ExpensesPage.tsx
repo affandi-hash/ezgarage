@@ -391,6 +391,7 @@ export function ExpensesPage() {
   const [editing, setEditing] = useState<Expense | null>(null)
   const [monthRevenue, setMonthRevenue] = useState(0)
   const [monthLabour, setMonthLabour] = useState(0)
+  const [monthCOGS, setMonthCOGS] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -418,18 +419,19 @@ export function ExpensesPage() {
     const revenue = (invData ?? []).reduce((s: number, r: { total_amount: number }) => s + (r.total_amount ?? 0), 0)
     setMonthRevenue(revenue)
 
-    // labour: sum of invoice line items of type 'labour' this month
-    let labourQuery = supabase.from('invoice_items')
-      .select('total, invoices!inner(issue_date, status, tenant_id)')
-      .eq('type', 'labour')
+    // labour + COGS from invoice line items this month
+    const { data: itemsData } = await supabase.from('invoice_items')
+      .select('type, total, cost_price, quantity, invoices!inner(issue_date, status, tenant_id)')
       .eq('invoices.tenant_id', tenantId)
       .gte('invoices.issue_date', monthStart)
       .lt('invoices.issue_date', nextMonth)
       .neq('invoices.status', 'void')
       .neq('invoices.status', 'draft')
-    const { data: labourData } = await labourQuery
-    const labour = (labourData ?? []).reduce((s: number, r: { total: number }) => s + (r.total ?? 0), 0)
+    const items = (itemsData ?? []) as { type: string; total: number; cost_price: number | null; quantity: number }[]
+    const labour = items.filter(r => r.type === 'labour').reduce((s, r) => s + (r.total ?? 0), 0)
+    const cogs = items.filter(r => r.type === 'part').reduce((s, r) => s + ((r.cost_price ?? 0) * (r.quantity ?? 1)), 0)
     setMonthLabour(labour)
+    setMonthCOGS(cogs)
 
     setLoading(false)
   }, [tenantId, branchId])
@@ -516,9 +518,9 @@ export function ExpensesPage() {
         <Tile label="Total Labour" value={fmtAmt(monthLabour)} sub="Billed labour this month" color="#06B6D4" icon={HardHat} />
         <Tile
           label="Gross Profit"
-          value={fmtAmt(monthRevenue - totalThis)}
-          sub={`Revenue ${fmtAmt(monthRevenue)} − Expenses ${fmtAmt(totalThis)}`}
-          color={(monthRevenue - totalThis) >= 0 ? '#22C55E' : '#EF4444'}
+          value={fmtAmt(monthRevenue - monthCOGS - opexThis - capexThis)}
+          sub={`Rev ${fmtAmt(monthRevenue)} − COGS ${fmtAmt(monthCOGS)} − OPEX ${fmtAmt(opexThis)} − CAPEX ${fmtAmt(capexThis)}`}
+          color={(monthRevenue - monthCOGS - opexThis - capexThis) >= 0 ? '#22C55E' : '#EF4444'}
           icon={DollarSign}
         />
       </div>
