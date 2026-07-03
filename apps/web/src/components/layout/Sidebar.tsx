@@ -65,10 +65,15 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/inventory', label: 'Inventory', icon: Archive, roles: ['super_admin', 'ops_manager', 'parts_admin', 'foreman'] },
       { to: '/invoices', label: 'Invoices', icon: FileText, roles: ['super_admin', 'ops_manager', 'front_desk', 'finance', 'foreman'] },
       { to: '/receipts', label: 'Receipts', icon: Receipt, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
+      { to: '/labour-charges', label: 'Labour Charges', icon: Wrench, roles: ['super_admin', 'ops_manager', 'foreman'] },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
       { to: '/expenses', label: 'Expenses (OPEX/CAPEX)', icon: TrendingUp, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/finance', label: 'Accounts Payable', icon: Landmark, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/ar', label: 'Accounts Receivable', icon: TrendingUp, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
-      { to: '/labour-charges', label: 'Labour Charges', icon: Wrench, roles: ['super_admin', 'ops_manager', 'foreman'] },
       { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
     ],
   },
