@@ -419,17 +419,29 @@ export function ExpensesPage() {
     const revenue = (invData ?? []).reduce((s: number, r: { total_amount: number }) => s + (r.total_amount ?? 0), 0)
     setMonthRevenue(revenue)
 
-    // parts + labour from invoice line items (matching Reports page calculation)
-    const { data: itemsData } = await supabase.from('invoice_items')
-      .select('type, total, invoices!inner(issue_date, status, tenant_id)')
-      .eq('invoices.tenant_id', tenantId)
-      .gte('invoices.issue_date', monthStart)
-      .lt('invoices.issue_date', nextMonth)
-      .neq('invoices.status', 'void')
-      .neq('invoices.status', 'draft')
-    const items = (itemsData ?? []) as { type: string; total: number }[]
-    const labour = items.filter(r => r.type === 'labour').reduce((s, r) => s + (r.total ?? 0), 0)
-    const parts = items.filter(r => r.type === 'part').reduce((s, r) => s + (r.total ?? 0), 0)
+    // step 1: get invoice IDs for this month (same filter as revenue query)
+    let invIdsQuery = supabase.from('invoices')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .gte('issue_date', monthStart)
+      .lt('issue_date', nextMonth)
+      .neq('status', 'void')
+      .neq('status', 'draft')
+    if (branchId) invIdsQuery = invIdsQuery.eq('branch_id', branchId)
+    const { data: invIds } = await invIdsQuery
+    const ids = (invIds ?? []).map((r: { id: string }) => r.id)
+
+    // step 2: get line items for those invoices
+    let labour = 0
+    let parts = 0
+    if (ids.length > 0) {
+      const { data: itemsData } = await supabase.from('invoice_items')
+        .select('type, total')
+        .in('invoice_id', ids)
+      const items = (itemsData ?? []) as { type: string; total: number }[]
+      labour = items.filter(r => r.type === 'labour').reduce((s, r) => s + (r.total ?? 0), 0)
+      parts = items.filter(r => r.type === 'part').reduce((s, r) => s + (r.total ?? 0), 0)
+    }
     // Gross Profit = Revenue - Parts - Labour (same as Reports page)
     setMonthLabour(labour)
     setMonthCOGS(revenue - parts - labour)
