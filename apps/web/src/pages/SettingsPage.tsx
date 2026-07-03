@@ -72,6 +72,7 @@ interface BranchSettings {
 }
 
 interface WorkingHours {
+  attendance_grace_minutes?: number
   id: string
   work_days: string[]
   work_start_time: string
@@ -976,6 +977,7 @@ function WorkingHoursSection({ branchId }: { branchId: string | null }) {
   const [form, setForm] = useState<Partial<WorkingHours>>({
     work_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
     work_start_time: '09:00', work_end_time: '18:00',
+    attendance_grace_minutes: 5,
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -985,7 +987,7 @@ function WorkingHoursSection({ branchId }: { branchId: string | null }) {
     if (!branchId) { setLoading(false); return }
     supabase
       .from('branches')
-      .select('id, work_days, work_start_time, work_end_time')
+      .select('id, work_days, work_start_time, work_end_time, attendance_grace_minutes')
       .eq('id', branchId)
       .single()
       .then(({ data }) => {
@@ -995,6 +997,7 @@ function WorkingHoursSection({ branchId }: { branchId: string | null }) {
             work_days: (data as any).work_days ?? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
             work_start_time: (data as any).work_start_time ?? '09:00',
             work_end_time: (data as any).work_end_time ?? '18:00',
+            attendance_grace_minutes: (data as any).attendance_grace_minutes ?? 5,
           })
         }
         setLoading(false)
@@ -1016,6 +1019,7 @@ function WorkingHoursSection({ branchId }: { branchId: string | null }) {
       work_days: form.work_days,
       work_start_time: form.work_start_time,
       work_end_time: form.work_end_time,
+      attendance_grace_minutes: form.attendance_grace_minutes ?? 5,
     }).eq('id', branchId)
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
@@ -1067,6 +1071,24 @@ function WorkingHoursSection({ branchId }: { branchId: string | null }) {
                 value={form.work_end_time ?? '18:00'}
                 onChange={e => setForm(f => ({ ...f, work_end_time: e.target.value }))}
               />
+            </div>
+          </div>
+
+          {/* Grace period */}
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Attendance Grace Period (minutes)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <input
+                type="number"
+                min={0}
+                max={60}
+                style={{ ...inputStyle, width: 100 }}
+                value={form.attendance_grace_minutes ?? 5}
+                onChange={e => setForm(f => ({ ...f, attendance_grace_minutes: parseInt(e.target.value) || 0 }))}
+              />
+              <span style={{ fontSize: 13, color: '#6A6A6A' }}>
+                Staff clocking in within {form.attendance_grace_minutes ?? 5} min of start time are marked <span style={{ color: '#22C55E', fontWeight: 600 }}>Present</span>
+              </span>
             </div>
           </div>
 

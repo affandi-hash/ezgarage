@@ -149,10 +149,12 @@ function parseTimeToMinutes(t: string): number {
   return (parts[0] ?? 0) * 60 + (parts[1] ?? 0)
 }
 
-function EditAttendanceModal({ record, onClose, onSaved }: {
+function EditAttendanceModal({ record, onClose, onSaved, branchWorkStart, branchGrace }: {
   record: AttendanceRecord
   onClose: () => void
   onSaved: () => void
+  branchWorkStart?: string
+  branchGrace?: number
 }) {
   const { user } = useAuthStore()
   const parseHM = (ts: string | null) => {
@@ -181,7 +183,7 @@ function EditAttendanceModal({ record, onClose, onSaved }: {
 
   const lateMinutes = (() => {
     if (!clockIn) return 0
-    const workStart = parseTimeToMinutes('09:00')
+    const workStart = parseTimeToMinutes(branchWorkStart ?? '09:00') + (branchGrace ?? 5)
     const actual = parseTimeToMinutes(clockIn)
     return Math.max(0, actual - workStart)
   })()
@@ -342,6 +344,22 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [editRecord, setEditRecord] = useState<AttendanceRecord | null>(null)
+  const [branchWorkStart, setBranchWorkStart] = useState('09:00')
+  const [branchGrace, setBranchGrace] = useState(5)
+
+  useEffect(() => {
+    if (!branchId) return
+    supabase.from('branches')
+      .select('work_start_time, attendance_grace_minutes')
+      .eq('id', branchId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setBranchWorkStart((data as any).work_start_time ?? '09:00')
+          setBranchGrace((data as any).attendance_grace_minutes ?? 5)
+        }
+      })
+  }, [branchId])
 
   const fetchRecords = useCallback(async (d: string) => {
     setLoading(true)
@@ -506,6 +524,8 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
           record={editRecord}
           onClose={() => setEditRecord(null)}
           onSaved={() => fetchRecords(date)}
+          branchWorkStart={branchWorkStart}
+          branchGrace={branchGrace}
         />
       )}
     </div>
@@ -1270,6 +1290,21 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
   const [photo,    setPhoto]   = useState<string | null>(null)
   const [camErr,   setCamErr]  = useState('')
   const [saving,   setSaving]  = useState(false)
+  const [workStartTime, setWorkStartTime] = useState('09:00')
+  const [graceMinutes, setGraceMinutes] = useState(5)
+
+  useEffect(() => {
+    supabase.from('branches')
+      .select('work_start_time, attendance_grace_minutes')
+      .eq('id', branchId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setWorkStartTime((data as any).work_start_time ?? '09:00')
+          setGraceMinutes((data as any).attendance_grace_minutes ?? 5)
+        }
+      })
+  }, [branchId])
 
   useEffect(() => {
     const constraints = { video: { facingMode: { ideal: 'user' } }, audio: false }
@@ -1346,7 +1381,10 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
 
       if (mode === 'clock_in') {
         const h = now.getHours(), m = now.getMinutes()
-        const lateMinutes = Math.max(0, h * 60 + m - 9 * 60)
+        const [startH, startM] = workStartTime.split(':').map(Number)
+        const thresholdMinutes = startH * 60 + startM + graceMinutes
+        const actualMinutes = h * 60 + m
+        const lateMinutes = Math.max(0, actualMinutes - thresholdMinutes)
         const status = lateMinutes > 0 ? 'late' : 'present'
         const { error } = await supabase.from('attendance_records').insert({
           staff_id: staffId, branch_id: branchId, tenant_id: tenantId,
