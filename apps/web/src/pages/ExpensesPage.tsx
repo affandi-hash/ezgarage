@@ -516,13 +516,18 @@ export function ExpensesPage() {
         <Tile label="YTD OPEX" value={fmtAmt(ytdOpex)} sub={`${year} year-to-date`} color="#EAB308" icon={TrendingDown} />
         <Tile label="YTD CAPEX" value={fmtAmt(ytdCapex)} sub={`${year} year-to-date`} color="#10B981" icon={TrendingUp} />
         <Tile label="Total Labour" value={fmtAmt(monthLabour)} sub="Billed labour this month" color="#06B6D4" icon={HardHat} />
-        <Tile
-          label="Gross Profit"
-          value={fmtAmt(monthRevenue - monthCOGS + monthLabour - opexThis - capexThis)}
-          sub={`Rev ${fmtAmt(monthRevenue)} − COGS ${fmtAmt(monthCOGS)} + Labour ${fmtAmt(monthLabour)} − OPEX ${fmtAmt(opexThis)} − CAPEX ${fmtAmt(capexThis)}`}
-          color={(monthRevenue - monthCOGS + monthLabour - opexThis - capexThis) >= 0 ? '#22C55E' : '#EF4444'}
-          icon={DollarSign}
-        />
+        {(() => {
+          const netProfit = monthRevenue - monthCOGS - opexThis - capexThis
+          return (
+            <Tile
+              label="Net Profit / Loss"
+              value={fmtAmt(netProfit)}
+              sub={`Rev ${fmtAmt(monthRevenue)} − COGS ${fmtAmt(monthCOGS)} − OPEX ${fmtAmt(opexThis)} − CAPEX ${fmtAmt(capexThis)}`}
+              color={netProfit >= 0 ? '#22C55E' : '#EF4444'}
+              icon={DollarSign}
+            />
+          )
+        })()}
       </div>
 
       {/* Category Breakdown */}
