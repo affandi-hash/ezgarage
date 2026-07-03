@@ -408,7 +408,7 @@ export function ExpensesPage() {
     const [y, m] = currentMonth.split('-').map(Number)
     const nextMonth = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
     let revQuery = supabase.from('invoices')
-      .select('total_amount')
+      .select('total_amount, line_items')
       .eq('tenant_id', tenantId)
       .gte('issue_date', monthStart)
       .lt('issue_date', nextMonth)
@@ -419,29 +419,20 @@ export function ExpensesPage() {
     const revenue = (invData ?? []).reduce((s: number, r: { total_amount: number }) => s + (r.total_amount ?? 0), 0)
     setMonthRevenue(revenue)
 
-    // step 1: get invoice IDs for this month (same filter as revenue query)
-    let invIdsQuery = supabase.from('invoices')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .gte('issue_date', monthStart)
-      .lt('issue_date', nextMonth)
-      .neq('status', 'void')
-      .neq('status', 'draft')
-    if (branchId) invIdsQuery = invIdsQuery.eq('branch_id', branchId)
-    const { data: invIds } = await invIdsQuery
-    const ids = (invIds ?? []).map((r: { id: string }) => r.id)
-
-    // step 2: get line items for those invoices
+    // parse line_items JSONB directly from invoices (same as Reports page)
+    type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number; cost_price?: number }
     let labour = 0
     let parts = 0
-    if (ids.length > 0) {
-      const { data: itemsData } = await supabase.from('invoice_items')
-        .select('type, total')
-        .in('invoice_id', ids)
-      const items = (itemsData ?? []) as { type: string; total: number }[]
-      labour = items.filter(r => r.type === 'labour').reduce((s, r) => s + (r.total ?? 0), 0)
-      parts = items.filter(r => r.type === 'part').reduce((s, r) => s + (r.total ?? 0), 0)
-    }
+    ;(invData ?? []).forEach((inv: { line_items?: LineItem[] | null }) => {
+      ;(inv.line_items ?? []).forEach((li) => {
+        const qty = li.qty ?? 1
+        if (li.item_type === 'part') {
+          parts += li.cost_price != null ? li.cost_price * qty : (li.amount ?? qty * (li.unit_price ?? 0))
+        } else if (li.item_type === 'labour') {
+          labour += li.amount ?? qty * (li.unit_price ?? 0)
+        }
+      })
+    })
     // Gross Profit = Revenue - Parts - Labour (same as Reports page)
     setMonthLabour(labour)
     setMonthCOGS(revenue - parts - labour)
