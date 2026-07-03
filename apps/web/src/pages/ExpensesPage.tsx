@@ -6,7 +6,8 @@ import { toast } from '@/components/ui/Toast'
 import {
   Plus, X, Loader2, Search, Upload, FileText,
   Zap, Wrench, TrendingDown, TrendingUp, Building,
-  Megaphone, Users, Package, MoreHorizontal, Pencil, Trash2
+  Megaphone, Users, Package, MoreHorizontal, Pencil, Trash2,
+  DollarSign, HardHat
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -388,13 +389,48 @@ export function ExpensesPage() {
   const [month, setMonth] = useState(thisMonth())
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
+  const [monthRevenue, setMonthRevenue] = useState(0)
+  const [monthLabour, setMonthLabour] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
+    const currentMonth = thisMonth()
+
+    // expenses
     let query = supabase.from('expenses').select('*').eq('tenant_id', tenantId).order('expense_date', { ascending: false })
     if (branchId) query = query.eq('branch_id', branchId)
     const { data } = await query
     setExpenses((data as Expense[]) ?? [])
+
+    // revenue: sum of invoices issued this month (not void/draft)
+    const monthStart = `${currentMonth}-01`
+    const [y, m] = currentMonth.split('-').map(Number)
+    const nextMonth = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
+    let revQuery = supabase.from('invoices')
+      .select('total_amount')
+      .eq('tenant_id', tenantId)
+      .gte('issue_date', monthStart)
+      .lt('issue_date', nextMonth)
+      .neq('status', 'void')
+      .neq('status', 'draft')
+    if (branchId) revQuery = revQuery.eq('branch_id', branchId)
+    const { data: invData } = await revQuery
+    const revenue = (invData ?? []).reduce((s: number, r: { total_amount: number }) => s + (r.total_amount ?? 0), 0)
+    setMonthRevenue(revenue)
+
+    // labour: sum of invoice line items of type 'labour' this month
+    let labourQuery = supabase.from('invoice_items')
+      .select('total, invoices!inner(issue_date, status, tenant_id)')
+      .eq('type', 'labour')
+      .eq('invoices.tenant_id', tenantId)
+      .gte('invoices.issue_date', monthStart)
+      .lt('invoices.issue_date', nextMonth)
+      .neq('invoices.status', 'void')
+      .neq('invoices.status', 'draft')
+    const { data: labourData } = await labourQuery
+    const labour = (labourData ?? []).reduce((s: number, r: { total: number }) => s + (r.total ?? 0), 0)
+    setMonthLabour(labour)
+
     setLoading(false)
   }, [tenantId, branchId])
 
@@ -471,12 +507,20 @@ export function ExpensesPage() {
       </div>
 
       {/* Summary Tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', gap: 12, marginBottom: 24 }}>
         <Tile label="OPEX This Month" value={fmtAmt(opexThis)} sub={trendLabel(opexThis, opexLast)} color="#F15A22" icon={TrendingDown} />
         <Tile label="CAPEX This Month" value={fmtAmt(capexThis)} sub={trendLabel(capexThis, capexLast)} color="#3B82F6" icon={TrendingUp} />
-        <Tile label="Total This Month" value={fmtAmt(totalThis)} sub={trendLabel(totalThis, totalLast)} color="#8B5CF6" icon={MoreHorizontal} />
+        <Tile label="Total Expenses" value={fmtAmt(totalThis)} sub={trendLabel(totalThis, totalLast)} color="#8B5CF6" icon={MoreHorizontal} />
         <Tile label="YTD OPEX" value={fmtAmt(ytdOpex)} sub={`${year} year-to-date`} color="#EAB308" icon={TrendingDown} />
         <Tile label="YTD CAPEX" value={fmtAmt(ytdCapex)} sub={`${year} year-to-date`} color="#10B981" icon={TrendingUp} />
+        <Tile label="Total Labour" value={fmtAmt(monthLabour)} sub="Billed labour this month" color="#06B6D4" icon={HardHat} />
+        <Tile
+          label="Gross Profit"
+          value={fmtAmt(monthRevenue - totalThis)}
+          sub={`Revenue ${fmtAmt(monthRevenue)} − Expenses ${fmtAmt(totalThis)}`}
+          color={(monthRevenue - totalThis) >= 0 ? '#22C55E' : '#EF4444'}
+          icon={DollarSign}
+        />
       </div>
 
       {/* Category Breakdown */}
