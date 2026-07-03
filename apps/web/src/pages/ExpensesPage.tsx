@@ -7,7 +7,7 @@ import {
   Plus, X, Loader2, Search, Upload, FileText,
   Zap, Wrench, TrendingDown, TrendingUp, Building,
   Megaphone, Users, Package, MoreHorizontal, Pencil, Trash2,
-  DollarSign, HardHat
+  DollarSign
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -389,7 +389,7 @@ export function ExpensesPage() {
   const [month, setMonth] = useState(thisMonth())
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
-  const [monthRevenue, setMonthRevenue] = useState(0)
+  const [_monthRevenue, setMonthRevenue] = useState(0)
   const [monthLabour, setMonthLabour] = useState(0)
   const [monthCOGS, setMonthCOGS] = useState(0)
 
