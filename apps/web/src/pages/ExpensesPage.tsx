@@ -518,9 +518,9 @@ export function ExpensesPage() {
         <Tile label="Total Labour" value={fmtAmt(monthLabour)} sub="Billed labour this month" color="#06B6D4" icon={HardHat} />
         <Tile
           label="Gross Profit"
-          value={fmtAmt(monthRevenue - monthCOGS - opexThis - capexThis)}
-          sub={`Rev ${fmtAmt(monthRevenue)} − COGS ${fmtAmt(monthCOGS)} − OPEX ${fmtAmt(opexThis)} − CAPEX ${fmtAmt(capexThis)}`}
-          color={(monthRevenue - monthCOGS - opexThis - capexThis) >= 0 ? '#22C55E' : '#EF4444'}
+          value={fmtAmt(monthRevenue - monthCOGS + monthLabour - opexThis - capexThis)}
+          sub={`Rev ${fmtAmt(monthRevenue)} − COGS ${fmtAmt(monthCOGS)} + Labour ${fmtAmt(monthLabour)} − OPEX ${fmtAmt(opexThis)} − CAPEX ${fmtAmt(capexThis)}`}
+          color={(monthRevenue - monthCOGS + monthLabour - opexThis - capexThis) >= 0 ? '#22C55E' : '#EF4444'}
           icon={DollarSign}
         />
       </div>
