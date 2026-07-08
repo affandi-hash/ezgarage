@@ -920,6 +920,25 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
     await updateStatus(id, 'cancelled')
   }
 
+  async function handleDeletePurchase(part: PartRequest) {
+    const warning = part.status === 'received'
+      ? 'This purchase was already received — deleting it will NOT reduce the stock quantity already added. Delete the record anyway?'
+      : 'Delete this stock purchase record? This cannot be undone.'
+    if (!confirm(warning)) return
+    setActionLoading(part.id)
+    try {
+      if (part.invoice_url) await supabase.storage.from('supplier-invoices').remove([part.invoice_url])
+      const { error: dbErr } = await supabase.from('parts_requests').delete().eq('id', part.id)
+      if (dbErr) throw dbErr
+      toast('Stock purchase deleted')
+      await loadParts()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Delete failed', 'error')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   async function handleConfirmLinkReceive() {
     if (!linkReceiveModal.part) return
     setLinkReceiveSaving(true)
@@ -1139,6 +1158,9 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
                                 <X size={16} />
                               </button>
                             )}
+                            <button onClick={() => handleDeletePurchase(part)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: '#F87171', padding: '0 12px', minHeight: 44 }}>
+                              <Trash2 size={16} />
+                            </button>
                           </>
                         )}
                       </div>
