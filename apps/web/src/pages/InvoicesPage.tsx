@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { FileText, Plus, X, Printer, CreditCard, Check, ChevronRight, Search, Send, Ban, Wrench } from 'lucide-react'
+import { FileText, Plus, X, Printer, CreditCard, Check, ChevronRight, Search, Send, Ban, Wrench, Paperclip, Loader2 } from 'lucide-react'
 import { toast } from '@/components/ui/Toast'
+
+const MAX_PROOF_FILE_BYTES = 10 * 1024 * 1024
+const ALLOWED_PROOF_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
 
 // ─── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -438,6 +441,34 @@ export function InvoicesPage() {
 
   // Payment
   const [payment, setPayment] = useState({ payment_method: 'cash', amount_paid: 0, payment_date: todayStr(), payment_reference: '' })
+  const [proofFile, setProofFile] = useState<File | null>(null)
+  const [proofFileError, setProofFileError] = useState<string | null>(null)
+  const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; payment_method: string; payment_date: string; proof_url: string | null }[]>([])
+  const [viewingProofId, setViewingProofId] = useState<string | null>(null)
+
+  function handleProofFileChange(file: File | null) {
+    setProofFileError(null)
+    if (!file) { setProofFile(null); return }
+    if (!ALLOWED_PROOF_TYPES.includes(file.type)) { setProofFileError('Only JPG, PNG, WEBP or PDF files are allowed'); return }
+    if (file.size > MAX_PROOF_FILE_BYTES) { setProofFileError('File must be under 10 MB'); return }
+    setProofFile(file)
+  }
+
+  async function loadPaymentHistory(invoiceId: string) {
+    const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
+    setPaymentHistory(data ?? [])
+  }
+
+  async function handleViewProof(proofUrl: string, id: string) {
+    setViewingProofId(id)
+    try {
+      const { data, error } = await supabase.storage.from('payment-proofs').createSignedUrl(proofUrl, 3600)
+      if (error || !data?.signedUrl) { toast.error('Failed to open proof of payment'); return }
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+    } finally {
+      setViewingProofId(null)
+    }
+  }
 
   // Labour Charges (kept for the labour picker used when editing invoices)
   const [labourCharges, setLabourCharges] = useState<LabourCharge[]>([])
@@ -602,13 +633,40 @@ export function InvoicesPage() {
 
   async function recordPayment() {
     if (!editInvoice) return
+    if (!payment.amount_paid || payment.amount_paid <= 0) { toast.error('Enter a valid amount'); return }
+    const outstanding = editInvoice.total_amount - editInvoice.amount_paid
+    if (payment.amount_paid > outstanding + 0.001) { toast.error('Amount exceeds balance'); return }
     setSaving(true)
     try {
-      const balance_due = editInvoice.total_amount - payment.amount_paid
-      const status: Invoice['status'] = balance_due <= 0 ? 'paid' : 'sent'
+      // Each payment is its own receipt — supports installments (deposit + balance, etc.)
+      const { data: inserted, error: insErr } = await supabase.from('receipts').insert({
+        tenant_id: editInvoice.tenant_id || null,
+        branch_id: editInvoice.branch_id,
+        invoice_id: editInvoice.id,
+        amount: payment.amount_paid,
+        payment_method: payment.payment_method,
+        payment_date: payment.payment_date,
+        reference_number: payment.payment_reference || null,
+      }).select('id').single()
+      if (insErr) throw insErr
+
+      if (proofFile && inserted) {
+        const ext = proofFile.name.split('.').pop()
+        const path = `${inserted.id}/${Date.now()}.${ext}`
+        const { error: uploadErr } = await supabase.storage.from('payment-proofs').upload(path, proofFile, { contentType: proofFile.type, upsert: false })
+        if (uploadErr) {
+          toast.error(`Payment recorded, but proof upload failed: ${uploadErr.message}`)
+        } else {
+          await supabase.from('receipts').update({ proof_url: path }).eq('id', inserted.id)
+        }
+      }
+
+      const newPaid = editInvoice.amount_paid + payment.amount_paid
+      const newBalance = editInvoice.total_amount - newPaid
+      const status: Invoice['status'] = newBalance <= 0 ? 'paid' : 'sent'
       const { error } = await supabase.from('invoices').update({
         payment_method: payment.payment_method,
-        amount_paid: payment.amount_paid,
+        amount_paid: newPaid,
         payment_date: payment.payment_date,
         payment_reference: payment.payment_reference,
         status,
@@ -619,6 +677,7 @@ export function InvoicesPage() {
       const { data } = await supabase.from('invoices').select('*').eq('id', editInvoice.id).single()
       if (data) setSelected(data as Invoice)
       setShowPaymentModal(false)
+      setProofFile(null)
       toast.success(status === 'paid' ? 'Payment recorded — invoice marked as Paid' : 'Partial payment recorded')
     } catch (e: any) {
       toast.error('Payment failed: ' + e.message)
@@ -948,7 +1007,12 @@ export function InvoicesPage() {
                     <button style={btnOrange} onClick={issueInvoice} disabled={saving}><Send size={15} /> Issue Invoice</button>
                   </>}
                   {(editInvoice.status === 'sent') && (
-                    <button style={btnGreen} onClick={() => { setPayment({ payment_method: 'cash', amount_paid: editInvoice.total_amount, payment_date: todayStr(), payment_reference: '' }); setShowPaymentModal(true) }}>
+                    <button style={btnGreen} onClick={() => {
+                      setPayment({ payment_method: 'cash', amount_paid: Math.max(0, editInvoice.total_amount - editInvoice.amount_paid), payment_date: todayStr(), payment_reference: '' })
+                      setProofFile(null)
+                      loadPaymentHistory(editInvoice.id)
+                      setShowPaymentModal(true)
+                    }}>
                       <CreditCard size={15} /> Record Payment
                     </button>
                   )}
@@ -1461,7 +1525,7 @@ export function InvoicesPage() {
                 </div>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Amount Paid (RM)</label>
+                <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Payment Amount (RM)</label>
                 <input type="number" style={inputStyle} value={payment.amount_paid} onChange={e => setPayment({ ...payment, amount_paid: Number(e.target.value) })} />
               </div>
               <div>
@@ -1472,16 +1536,56 @@ export function InvoicesPage() {
                 <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Reference / Receipt No.</label>
                 <input style={inputStyle} value={payment.payment_reference} onChange={e => setPayment({ ...payment, payment_reference: e.target.value })} />
               </div>
+              <div>
+                <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Proof of Payment</label>
+                {proofFile ? (
+                  <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <FileText size={14} style={{ flexShrink: 0, color: C.green }} />
+                      {proofFile.name}
+                    </span>
+                    <button type="button" onClick={() => handleProofFileChange(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text2, flexShrink: 0 }}><X size={14} /></button>
+                  </div>
+                ) : (
+                  <label style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: C.text2 }}>
+                    <Paperclip size={14} />
+                    Attach image or PDF
+                    <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf" style={{ display: 'none' }} onChange={e => handleProofFileChange(e.target.files?.[0] ?? null)} />
+                  </label>
+                )}
+                {proofFileError && <p style={{ color: '#F15A22', fontSize: 11, margin: '4px 0 0' }}>{proofFileError}</p>}
+              </div>
               <div style={{ background: C.bg, borderRadius: 6, padding: 10, fontSize: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span style={{ color: C.text2 }}>Invoice Total</span>
                   <span>{formatRM(editInvoice.total_amount)}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: editInvoice.total_amount - payment.amount_paid <= 0 ? C.green : C.orange }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ color: C.text2 }}>Already Paid</span>
+                  <span>{formatRM(editInvoice.amount_paid)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: editInvoice.total_amount - editInvoice.amount_paid - payment.amount_paid <= 0 ? C.green : C.orange }}>
                   <span>Balance After</span>
-                  <span>{formatRM(Math.max(0, editInvoice.total_amount - payment.amount_paid))}</span>
+                  <span>{formatRM(Math.max(0, editInvoice.total_amount - editInvoice.amount_paid - payment.amount_paid))}</span>
                 </div>
               </div>
+              {paymentHistory.length > 0 && (
+                <div>
+                  <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Payment History</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
+                    {paymentHistory.map(r => (
+                      <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.bg, borderRadius: 6, padding: '8px 10px', fontSize: 12 }}>
+                        <span>{formatRM(r.amount)} · {r.payment_method.replace('_', ' ')} · {new Date(r.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                        {r.proof_url && (
+                          <button onClick={() => handleViewProof(r.proof_url!, r.id)} disabled={viewingProofId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: C.orange, cursor: 'pointer', fontSize: 12 }}>
+                            {viewingProofId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} Proof
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button style={btnOutline} onClick={() => setShowPaymentModal(false)}>Cancel</button>
                 <button style={btnGreen} onClick={recordPayment} disabled={saving}>{saving ? 'Saving...' : 'Confirm Payment'}</button>

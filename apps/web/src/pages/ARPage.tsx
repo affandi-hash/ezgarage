@@ -5,7 +5,7 @@ import { useOutletContext } from 'react-router-dom'
 import { toast } from '@/components/ui/Toast'
 import {
   Search, AlertCircle, AlertTriangle, DollarSign,
-  FileText, X, Loader2, CheckCircle, Plus
+  FileText, X, Loader2, CheckCircle, Plus, Paperclip
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -39,8 +39,12 @@ interface Receipt {
   payment_method: string
   payment_date: string
   reference_number: string | null
+  proof_url: string | null
   notes: string | null
 }
+
+const MAX_PROOF_FILE_BYTES = 10 * 1024 * 1024
+const ALLOWED_PROOF_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -129,6 +133,29 @@ function DetailPanel({
     notes: '',
   })
   const [saving, setSaving] = useState(false)
+  const [proofFile, setProofFile] = useState<File | null>(null)
+  const [proofFileError, setProofFileError] = useState<string | null>(null)
+  const [viewingProofId, setViewingProofId] = useState<string | null>(null)
+
+  function handleProofFileChange(file: File | null) {
+    setProofFileError(null)
+    if (!file) { setProofFile(null); return }
+    if (!ALLOWED_PROOF_TYPES.includes(file.type)) { setProofFileError('Only JPG, PNG, WEBP or PDF files are allowed'); return }
+    if (file.size > MAX_PROOF_FILE_BYTES) { setProofFileError('File must be under 10 MB'); return }
+    setProofFile(file)
+  }
+
+  async function handleViewProof(r: Receipt) {
+    if (!r.proof_url) return
+    setViewingProofId(r.id)
+    try {
+      const { data, error } = await supabase.storage.from('payment-proofs').createSignedUrl(r.proof_url, 3600)
+      if (error || !data?.signedUrl) { toast('Failed to open proof of payment', 'error'); return }
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+    } finally {
+      setViewingProofId(null)
+    }
+  }
 
   const loadReceipts = useCallback(async () => {
     setLoading(true)
@@ -147,7 +174,7 @@ function DetailPanel({
     if (!amt || amt <= 0) { toast('Enter a valid amount', 'error'); return }
     if (amt > invoice.balance_due + 0.001) { toast('Amount exceeds balance', 'error'); return }
     setSaving(true)
-    const { error } = await supabase.from('receipts').insert({
+    const { data: inserted, error } = await supabase.from('receipts').insert({
       tenant_id: tenantId,
       invoice_id: invoice.id,
       amount: amt,
@@ -155,18 +182,30 @@ function DetailPanel({
       payment_date: form.payment_date,
       reference_number: form.reference_number || null,
       notes: form.notes || null,
-    })
+    }).select('id').single()
     if (error) { setSaving(false); toast(error.message, 'error'); return }
 
-    // update invoice amount_paid + balance_due
+    if (proofFile && inserted) {
+      const ext = proofFile.name.split('.').pop()
+      const path = `${inserted.id}/${Date.now()}.${ext}`
+      const { error: uploadErr } = await supabase.storage.from('payment-proofs').upload(path, proofFile, { contentType: proofFile.type, upsert: false })
+      if (uploadErr) {
+        toast(`Payment recorded, but proof upload failed: ${uploadErr.message}`, 'error')
+      } else {
+        await supabase.from('receipts').update({ proof_url: path }).eq('id', inserted.id)
+      }
+    }
+
+    // update invoice amount_paid (balance_due is a generated column — do not write to it)
     const newPaid = invoice.amount_paid + amt
     const newBalance = Math.max(0, invoice.total_amount - newPaid)
     const newStatus = newBalance <= 0 ? 'paid' : invoice.status
-    await supabase.from('invoices').update({ amount_paid: newPaid, balance_due: newBalance, status: newStatus }).eq('id', invoice.id)
+    await supabase.from('invoices').update({ amount_paid: newPaid, status: newStatus }).eq('id', invoice.id)
 
     setSaving(false)
     toast('Payment recorded')
     setShowPayForm(false)
+    setProofFile(null)
     loadReceipts()
     onRefresh()
   }
@@ -266,6 +305,25 @@ function DetailPanel({
                 <label style={{ fontSize: 11, color: '#A0A0A0', display: 'block', marginBottom: 4 }}>Reference No.</label>
                 <input value={form.reference_number} onChange={e => setForm(f => ({ ...f, reference_number: e.target.value }))} placeholder="optional" style={inputStyle} />
               </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#A0A0A0', display: 'block', marginBottom: 4 }}>Proof of Payment</label>
+                {proofFile ? (
+                  <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#F0F0F0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <FileText size={14} style={{ flexShrink: 0, color: '#22C55E' }} />
+                      {proofFile.name}
+                    </span>
+                    <button type="button" onClick={() => handleProofFileChange(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A0A0A0', flexShrink: 0 }}><X size={14} /></button>
+                  </div>
+                ) : (
+                  <label style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#A0A0A0' }}>
+                    <Paperclip size={14} />
+                    Attach image or PDF
+                    <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf" style={{ display: 'none' }} onChange={e => handleProofFileChange(e.target.files?.[0] ?? null)} />
+                  </label>
+                )}
+                {proofFileError && <p style={{ color: '#F15A22', fontSize: 11, margin: '4px 0 0' }}>{proofFileError}</p>}
+              </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={handlePay} disabled={saving} style={{ flex: 1, background: '#F15A22', color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                   {saving && <Loader2 size={13} className="animate-spin" />}Record Payment
@@ -290,9 +348,14 @@ function DetailPanel({
                     <span style={{ color: '#F0F0F0', fontWeight: 700, fontSize: 14 }}>{fmtAmt(r.amount)}</span>
                     <span style={{ color: '#22C55E', fontSize: 12 }}>{fmtDate(r.payment_date)}</span>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center' }}>
                     <span style={{ fontSize: 11, color: '#A0A0A0', textTransform: 'capitalize' }}>{r.payment_method.replace('_', ' ')}</span>
                     {r.reference_number && <span style={{ fontSize: 11, color: '#6A6A6A' }}>Ref: {r.reference_number}</span>}
+                    {r.proof_url && (
+                      <button onClick={() => handleViewProof(r)} disabled={viewingProofId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: '#F15A22', cursor: 'pointer', fontSize: 11, marginLeft: 'auto' }}>
+                        {viewingProofId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} Proof
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
