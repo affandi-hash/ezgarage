@@ -5,3 +5,5 @@ dist/
 build/
 .expo/
 *.log
+.vercel
+.env*

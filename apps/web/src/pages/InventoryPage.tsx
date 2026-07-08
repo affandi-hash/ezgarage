@@ -14,6 +14,8 @@ import {
   Trash2,
   Phone,
   Mail,
+  Paperclip,
+  FileText,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -38,6 +40,8 @@ interface PartRequest {
   urgency: 'low' | 'normal' | 'urgent' | 'critical'
   status: 'pending' | 'ordered' | 'received' | 'installed' | 'cancelled'
   notes?: string | null
+  invoice_number?: string | null
+  invoice_url?: string | null
   created_at: string
 }
 
@@ -52,6 +56,7 @@ interface StockPurchaseForm {
   supplier: string
   catalogue_part_id: string
   notes: string
+  invoice_number: string
 }
 
 const EMPTY_STOCK_FORM: StockPurchaseForm = {
@@ -63,6 +68,7 @@ const EMPTY_STOCK_FORM: StockPurchaseForm = {
   supplier: '',
   catalogue_part_id: '',
   notes: '',
+  invoice_number: '',
 }
 
 interface Supplier {
@@ -161,10 +167,13 @@ function StatusBadge({ status }: { status: PartRequest['status'] }) {
 
 interface NewStockPurchaseModalProps {
   onClose: () => void
-  onSubmit: (form: StockPurchaseForm) => Promise<void>
+  onSubmit: (form: StockPurchaseForm, invoiceFile: File | null) => Promise<void>
   loading: boolean
   tenantId: string
 }
+
+const MAX_INVOICE_FILE_BYTES = 10 * 1024 * 1024
+const ALLOWED_INVOICE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
 
 function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStockPurchaseModalProps) {
   const [form, setForm] = useState<StockPurchaseForm>(EMPTY_STOCK_FORM)
@@ -174,6 +183,8 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
   const [showAddSupplier, setShowAddSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', contact_person: '', phone: '', address: '' })
   const [savingSupplier, setSavingSupplier] = useState(false)
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null)
+  const [invoiceFileError, setInvoiceFileError] = useState<string | null>(null)
 
   const loadSuppliers = useCallback(async () => {
     if (!tenantId) return
@@ -215,10 +226,24 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
     return Object.keys(e).length === 0
   }
 
+  function handleInvoiceFileChange(file: File | null) {
+    setInvoiceFileError(null)
+    if (!file) { setInvoiceFile(null); return }
+    if (!ALLOWED_INVOICE_TYPES.includes(file.type)) {
+      setInvoiceFileError('Only JPG, PNG, WEBP or PDF files are allowed')
+      return
+    }
+    if (file.size > MAX_INVOICE_FILE_BYTES) {
+      setInvoiceFileError('File must be under 10 MB')
+      return
+    }
+    setInvoiceFile(file)
+  }
+
   async function handleSubmit(ev: React.FormEvent) {
     ev.preventDefault()
     if (!validate()) return
-    await onSubmit(form)
+    await onSubmit(form, invoiceFile)
   }
 
   return (
@@ -329,6 +354,31 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
                 </button>
               </div>
             )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={labelStyle}>Invoice Number</label>
+                <input value={form.invoice_number} onChange={e => set('invoice_number', e.target.value)} placeholder="e.g. INV-2451" style={inputStyle} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={labelStyle}>Supplier Invoice File</label>
+                {invoiceFile ? (
+                  <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 8, gap: 8 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#F0F0F0', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <FileText size={14} style={{ flexShrink: 0, color: '#22C55E' }} />
+                      {invoiceFile.name}
+                    </span>
+                    <button type="button" onClick={() => handleInvoiceFileChange(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A0A0A0', flexShrink: 0 }}><X size={14} /></button>
+                  </div>
+                ) : (
+                  <label style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#A0A0A0', borderRadius: 8 }}>
+                    <Paperclip size={14} />
+                    Attach image or PDF
+                    <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf" style={{ display: 'none' }} onChange={e => handleInvoiceFileChange(e.target.files?.[0] ?? null)} />
+                  </label>
+                )}
+                {invoiceFileError && <p style={{ color: '#F15A22', fontSize: 11, margin: 0 }}>{invoiceFileError}</p>}
+              </div>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label style={labelStyle}>Notes</label>
               <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} placeholder="e.g. Bulk buy for Q3 stock-up" style={{ ...inputStyle, resize: 'none' }} />
@@ -895,7 +945,7 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
     }
   }
 
-  async function handleStockPurchaseSubmit(form: StockPurchaseForm) {
+  async function handleStockPurchaseSubmit(form: StockPurchaseForm, invoiceFile: File | null) {
     setStockLoading(true)
     try {
       const payload: Record<string, unknown> = {
@@ -915,9 +965,22 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
       }
       if (form.catalogue_part_id) payload.catalogue_part_id = form.catalogue_part_id
       if (form.notes.trim()) payload.notes = form.notes.trim()
+      if (form.invoice_number.trim()) payload.invoice_number = form.invoice_number.trim()
       if (tenantId) payload.tenant_id = tenantId
-      const { error: dbErr } = await supabase.from('parts_requests').insert(payload)
+      const { data: inserted, error: dbErr } = await supabase.from('parts_requests').insert(payload).select('id').single()
       if (dbErr) throw dbErr
+
+      if (invoiceFile && inserted) {
+        const ext = invoiceFile.name.split('.').pop()
+        const path = `${branchId}/${inserted.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+        const { error: uploadErr } = await supabase.storage.from('supplier-invoices').upload(path, invoiceFile, { contentType: invoiceFile.type, upsert: false })
+        if (uploadErr) {
+          toast(`Purchase created, but invoice upload failed: ${uploadErr.message}`, 'error')
+        } else {
+          await supabase.from('parts_requests').update({ invoice_url: path }).eq('id', inserted.id)
+        }
+      }
+
       toast('Stock purchase created')
       setShowStockModal(false)
       await loadParts()
@@ -926,6 +989,13 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
     } finally {
       setStockLoading(false)
     }
+  }
+
+  async function handleViewInvoice(part: PartRequest) {
+    if (!part.invoice_url) return
+    const { data, error: urlErr } = await supabase.storage.from('supplier-invoices').createSignedUrl(part.invoice_url, 3600)
+    if (urlErr || !data?.signedUrl) { toast('Failed to open invoice', 'error'); return }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
   }
 
   const STATUS_TABS: { key: StatusFilter; label: string }[] = [
@@ -1005,7 +1075,7 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#161616', borderBottom: '1px solid #2A2A2A' }}>
-                  {['Part', 'Qty', 'Ord. Qty', 'Selling Price', 'Supplier', 'Status', 'Date', 'Actions'].map(h => (
+                  {['Part', 'Qty', 'Ord. Qty', 'Selling Price', 'Supplier', 'Invoice', 'Status', 'Date', 'Actions'].map(h => (
                     <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#A0A0A0' }}>{h}</th>
                   ))}
                 </tr>
@@ -1027,6 +1097,14 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
                       </span>
                     </td>
                     <td style={{ padding: '12px 16px' }}><span style={{ fontSize: 14, color: '#F0F0F0' }}>{part.supplier ?? '—'}</span></td>
+                    <td style={{ padding: '12px 16px' }}>
+                      {part.invoice_number || part.invoice_url ? (
+                        <button onClick={() => handleViewInvoice(part)} disabled={!part.invoice_url} title={part.invoice_url ? 'View invoice attachment' : 'No file attached'} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, color: part.invoice_url ? '#F15A22' : '#A0A0A0', cursor: part.invoice_url ? 'pointer' : 'default', fontSize: 13 }}>
+                          {part.invoice_url && <Paperclip size={13} />}
+                          {part.invoice_number || 'Attachment'}
+                        </button>
+                      ) : <span style={{ color: '#4A4A4A' }}>—</span>}
+                    </td>
                     <td style={{ padding: '12px 16px' }}><StatusBadge status={part.status} /></td>
                     <td style={{ padding: '12px 16px' }}><span style={{ fontSize: 14, color: '#A0A0A0' }}>{formatDate(part.created_at)}</span></td>
                     <td style={{ padding: '12px 16px' }}>
