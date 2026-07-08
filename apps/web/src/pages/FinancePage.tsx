@@ -39,6 +39,7 @@ interface SupplierInvoice {
   total_amount: number
   amount_paid: number
   status: 'unpaid' | 'partial' | 'paid' | 'overdue'
+  payment_priority: 'low' | 'normal' | 'high' | 'urgent'
   file_url: string | null
   notes: string | null
   created_at: string
@@ -68,6 +69,7 @@ interface NewInvoiceForm {
   due_date: string
   total_amount: string
   notes: string
+  payment_priority: SupplierInvoice['payment_priority']
 }
 
 interface PaymentForm {
@@ -99,6 +101,42 @@ function formatDate(d: string | null): string {
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+// Older rows may have a full public URL saved (from before the bucket went
+// private); new rows store the bare storage path. Normalize to a path either way.
+function toStoragePath(fileUrl: string): string {
+  const marker = '/object/public/supplier-invoices/'
+  const idx = fileUrl.indexOf(marker)
+  return idx >= 0 ? fileUrl.slice(idx + marker.length) : fileUrl
+}
+
+const PRIORITY_RANK: Record<SupplierInvoice['payment_priority'], number> = {
+  urgent: 0,
+  high: 1,
+  normal: 2,
+  low: 3,
+}
+
+const PRIORITY_COLOR: Record<SupplierInvoice['payment_priority'], string> = {
+  urgent: '#EF4444',
+  high: '#F15A22',
+  normal: '#A0A0A0',
+  low: '#3B82F6',
+}
+
+const PRIORITY_BG: Record<SupplierInvoice['payment_priority'], string> = {
+  urgent: 'rgba(239,68,68,0.12)',
+  high: 'rgba(241,90,34,0.12)',
+  normal: 'rgba(160,160,160,0.12)',
+  low: 'rgba(59,130,246,0.12)',
+}
+
+const PRIORITY_LABEL: Record<SupplierInvoice['payment_priority'], string> = {
+  urgent: 'Urgent',
+  high: 'High',
+  normal: 'Normal',
+  low: 'Low',
 }
 
 function addDays(dateStr: string, days: number): string {
@@ -147,6 +185,7 @@ const EMPTY_NEW_INVOICE: NewInvoiceForm = {
   due_date: '',
   total_amount: '',
   notes: '',
+  payment_priority: 'normal',
 }
 
 const EMPTY_PAYMENT: PaymentForm = {
@@ -226,6 +265,26 @@ function StatusBadge({ status }: StatusBadgeProps) {
       }}
     >
       {status}
+    </span>
+  )
+}
+
+function PriorityBadge({ priority }: { priority: SupplierInvoice['payment_priority'] }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '3px 10px',
+        borderRadius: 9999,
+        fontSize: 11,
+        fontWeight: 600,
+        color: PRIORITY_COLOR[priority],
+        background: PRIORITY_BG[priority],
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {PRIORITY_LABEL[priority]}
     </span>
   )
 }
@@ -413,6 +472,21 @@ function NewInvoiceModal({ suppliers, onClose, onSave, saving }: NewInvoiceModal
                 style={{ ...inp, borderColor: errors.total_amount ? '#F15A22' : '#2A2A2A' }}
               />
               {errors.total_amount && <p style={{ fontSize: 11, marginTop: 4, color: '#F15A22' }}>{errors.total_amount}</p>}
+            </div>
+
+            {/* Payment priority */}
+            <div>
+              <label style={{ display: 'block', fontSize: 13, color: '#A0A0A0', marginBottom: 6 }}>Payment Priority</label>
+              <select
+                value={form.payment_priority}
+                onChange={(e) => set('payment_priority', e.target.value)}
+                style={{ ...inp, color: '#F0F0F0' }}
+              >
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
             </div>
 
             {/* Notes */}
@@ -657,12 +731,9 @@ function DetailPanel({
       const { error: upErr } = await supabase.storage.from('supplier-invoices').upload(path, file, { upsert: true })
       if (upErr) throw upErr
 
-      const { data: urlData } = supabase.storage.from('supplier-invoices').getPublicUrl(path)
-      const publicUrl = urlData.publicUrl
-
       const { data: updInv, error: updErr } = await supabase
         .from('supplier_invoices')
-        .update({ file_url: publicUrl, updated_at: new Date().toISOString() })
+        .update({ file_url: path, updated_at: new Date().toISOString() })
         .eq('id', invoice.id)
         .select('*, suppliers(*)')
         .single()
@@ -673,6 +744,21 @@ function DetailPanel({
       setUploadError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setUploading(false)
+    }
+  }
+
+  const [viewingFile, setViewingFile] = useState(false)
+
+  async function handleViewFile() {
+    if (!invoice.file_url) return
+    setViewingFile(true)
+    try {
+      const path = toStoragePath(invoice.file_url)
+      const { data, error } = await supabase.storage.from('supplier-invoices').createSignedUrl(path, 3600)
+      if (error || !data?.signedUrl) { setUploadError('Failed to open invoice'); return }
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+    } finally {
+      setViewingFile(false)
     }
   }
 
@@ -801,10 +887,9 @@ function DetailPanel({
           <p style={sectionHead}>Invoice File</p>
           {invoice.file_url ? (
             <div style={{ display: 'flex', gap: 8 }}>
-              <a
-                href={invoice.file_url}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={handleViewFile}
+                disabled={viewingFile}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -816,13 +901,13 @@ function DetailPanel({
                   padding: '8px 14px',
                   fontSize: 13,
                   fontWeight: 600,
-                  textDecoration: 'none',
+                  cursor: viewingFile ? 'not-allowed' : 'pointer',
                   flex: 1,
                   justifyContent: 'center',
                 }}
               >
-                <FileText size={14} /> View Invoice
-              </a>
+                {viewingFile ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <FileText size={14} />} View Invoice
+              </button>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
@@ -1245,6 +1330,7 @@ export function FinancePage() {
   const tenantId: string = user?.tenant_id ?? ''
   const userId: string = user?.id ?? ''
   const branchId: string = selectedBranchId ?? user?.branch_id ?? ''
+  const canPrioritize = ['ops_manager', 'foreman', 'super_admin'].includes(user?.role ?? '')
 
   // Data
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([])
@@ -1367,13 +1453,30 @@ export function FinancePage() {
 
   // ── Filtering ─────────────────────────────────────────────────────────────────
 
-  const filtered = invoices.filter((inv) => {
-    if (supplierFilter !== 'all' && inv.supplier_id !== supplierFilter) return false
-    if (statusFilter !== 'all' && inv.status !== statusFilter) return false
-    if (dateFrom && inv.invoice_date && inv.invoice_date < dateFrom) return false
-    if (dateTo && inv.invoice_date && inv.invoice_date > dateTo) return false
-    return true
-  })
+  const filtered = invoices
+    .filter((inv) => {
+      if (supplierFilter !== 'all' && inv.supplier_id !== supplierFilter) return false
+      if (statusFilter !== 'all' && inv.status !== statusFilter) return false
+      if (dateFrom && inv.invoice_date && inv.invoice_date < dateFrom) return false
+      if (dateTo && inv.invoice_date && inv.invoice_date > dateTo) return false
+      return true
+    })
+    .sort((a, b) => {
+      // Paid invoices sink to the bottom — this is a queue of what still needs paying
+      if ((a.status === 'paid') !== (b.status === 'paid')) return a.status === 'paid' ? 1 : -1
+      const rankDiff = PRIORITY_RANK[a.payment_priority] - PRIORITY_RANK[b.payment_priority]
+      if (rankDiff !== 0) return rankDiff
+      if (a.due_date && b.due_date && a.due_date !== b.due_date) return a.due_date < b.due_date ? -1 : 1
+      if (a.due_date && !b.due_date) return -1
+      if (!a.due_date && b.due_date) return 1
+      return b.created_at.localeCompare(a.created_at)
+    })
+
+  async function handlePriorityChange(inv: SupplierInvoice, priority: SupplierInvoice['payment_priority']) {
+    setInvoices((prev) => prev.map((i) => (i.id === inv.id ? { ...i, payment_priority: priority } : i)))
+    const { error } = await supabase.from('supplier_invoices').update({ payment_priority: priority, updated_at: new Date().toISOString() }).eq('id', inv.id)
+    if (error) await loadInvoices()
+  }
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -1390,6 +1493,7 @@ export function FinancePage() {
         total_amount: parseFloat(form.total_amount),
         amount_paid: 0,
         status: 'unpaid',
+        payment_priority: form.payment_priority,
         notes: form.notes.trim() || null,
       }).select('id').single()
       if (insErr) throw insErr
@@ -1399,8 +1503,7 @@ export function FinancePage() {
         const path = `${inserted.id}/${Date.now()}.${ext}`
         const { error: upErr } = await supabase.storage.from('supplier-invoices').upload(path, file, { upsert: true })
         if (!upErr) {
-          const { data: urlData } = supabase.storage.from('supplier-invoices').getPublicUrl(path)
-          await supabase.from('supplier_invoices').update({ file_url: urlData.publicUrl }).eq('id', inserted.id)
+          await supabase.from('supplier_invoices').update({ file_url: path }).eq('id', inserted.id)
         }
       }
 
@@ -1688,6 +1791,7 @@ export function FinancePage() {
                 <thead>
                   <tr style={{ background: '#161616', borderBottom: '1px solid #2A2A2A' }}>
                     {[
+                      'Priority',
                       'Supplier',
                       'Inv #',
                       'Invoice Date',
@@ -1735,6 +1839,34 @@ export function FinancePage() {
                         }}
                         onClick={() => setSelectedInvoice(inv)}
                       >
+                        {/* Priority */}
+                        <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
+                          {canPrioritize ? (
+                            <select
+                              value={inv.payment_priority}
+                              onChange={(e) => handlePriorityChange(inv, e.target.value as SupplierInvoice['payment_priority'])}
+                              style={{
+                                background: PRIORITY_BG[inv.payment_priority],
+                                color: PRIORITY_COLOR[inv.payment_priority],
+                                border: 'none',
+                                borderRadius: 9999,
+                                padding: '3px 10px',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                outline: 'none',
+                              }}
+                            >
+                              <option value="low">Low</option>
+                              <option value="normal">Normal</option>
+                              <option value="high">High</option>
+                              <option value="urgent">Urgent</option>
+                            </select>
+                          ) : (
+                            <PriorityBadge priority={inv.payment_priority} />
+                          )}
+                        </td>
+
                         {/* Supplier */}
                         <td style={{ padding: '12px 16px' }}>
                           <p style={{ fontWeight: 600, fontSize: 14, margin: 0, color: '#F0F0F0', whiteSpace: 'nowrap' }}>

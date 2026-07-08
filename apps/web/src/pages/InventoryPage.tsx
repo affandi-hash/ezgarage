@@ -55,9 +55,23 @@ interface StockPurchaseForm {
   unit_price: string
   markup: string
   supplier: string
+  supplier_id: string
   catalogue_part_id: string
   notes: string
   invoice_number: string
+  invoice_amount: string
+  invoice_date: string
+  invoice_due_date: string
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
 }
 
 const EMPTY_STOCK_FORM: StockPurchaseForm = {
@@ -67,9 +81,13 @@ const EMPTY_STOCK_FORM: StockPurchaseForm = {
   unit_price: '',
   markup: '1.5',
   supplier: '',
+  supplier_id: '',
   catalogue_part_id: '',
   notes: '',
   invoice_number: '',
+  invoice_amount: '',
+  invoice_date: today(),
+  invoice_due_date: '',
 }
 
 interface Supplier {
@@ -181,7 +199,7 @@ const ALLOWED_INVOICE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/we
 function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStockPurchaseModalProps) {
   const [form, setForm] = useState<StockPurchaseForm>(EMPTY_STOCK_FORM)
   const [errors, setErrors] = useState<Partial<Record<keyof StockPurchaseForm, string>>>({})
-  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([])
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string; credit_days?: number | null }[]>([])
   const [catalogueParts, setCatalogueParts] = useState<{ id: string; name: string; part_number?: string | null; stock_qty: number }[]>([])
   const [showAddSupplier, setShowAddSupplier] = useState(false)
   const [newSupplier, setNewSupplier] = useState({ name: '', contact_person: '', phone: '', address: '' })
@@ -191,9 +209,16 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
 
   const loadSuppliers = useCallback(async () => {
     if (!tenantId) return
-    const { data } = await supabase.from('suppliers').select('id,name').eq('tenant_id', tenantId).eq('is_active', true).order('name')
+    const { data } = await supabase.from('suppliers').select('id,name,credit_days').eq('tenant_id', tenantId).eq('is_active', true).order('name')
     setSuppliers(data ?? [])
   }, [tenantId])
+
+  // Auto-calc invoice due date from the selected supplier's credit terms
+  useEffect(() => {
+    if (!form.supplier_id || !form.invoice_date) return
+    const sup = suppliers.find(s => s.id === form.supplier_id)
+    if (sup?.credit_days) setForm(f => ({ ...f, invoice_due_date: addDays(f.invoice_date, sup.credit_days!) }))
+  }, [form.supplier_id, form.invoice_date, suppliers])
 
   useEffect(() => {
     if (!tenantId) return
@@ -210,7 +235,7 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
     setSavingSupplier(false)
     if (error || !data) { toast('Failed to save supplier', 'error'); return }
     await loadSuppliers()
-    set('supplier', data.name)
+    setForm(f => ({ ...f, supplier: data.name, supplier_id: data.id }))
     setShowAddSupplier(false)
     setNewSupplier({ name: '', contact_person: '', phone: '', address: '' })
     toast(`"${data.name}" added and selected`)
@@ -225,6 +250,12 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
     const e: Partial<Record<keyof StockPurchaseForm, string>> = {}
     if (!form.part_name.trim()) e.part_name = 'Part name is required'
     if (!form.quantity || Number(form.quantity) < 1) e.quantity = 'Valid quantity required'
+    const hasInvoiceInfo = form.invoice_number.trim() !== '' || invoiceFile !== null
+    if (hasInvoiceInfo) {
+      if (!form.supplier_id) e.supplier_id = 'Select a supplier to record this invoice against'
+      if (!form.invoice_amount || Number(form.invoice_amount) <= 0) e.invoice_amount = 'Enter the invoice amount'
+      if (!form.invoice_due_date) e.invoice_due_date = 'Due date is required'
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -324,10 +355,19 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
                   {showAddSupplier ? '✕ Cancel' : '+ Add New'}
                 </button>
               </div>
-              <select value={form.supplier} onChange={e => set('supplier', e.target.value)} style={{ ...inputStyle, color: form.supplier ? '#F0F0F0' : '#6B7280' }}>
+              <select
+                value={form.supplier_id}
+                onChange={e => {
+                  const id = e.target.value
+                  const sup = suppliers.find(s => s.id === id)
+                  setForm(f => ({ ...f, supplier_id: id, supplier: sup?.name ?? '' }))
+                }}
+                style={{ ...inputStyle, borderColor: errors.supplier_id ? '#F15A22' : '#2A2A2A', color: form.supplier_id ? '#F0F0F0' : '#6B7280' }}
+              >
                 <option value="">— Select Supplier —</option>
-                {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
+              {errors.supplier_id && <p style={{ color: '#F15A22', fontSize: 11, margin: '4px 0 0' }}>{errors.supplier_id}</p>}
             </div>
             {showAddSupplier && (
               <div style={{ background: '#0E0E0E', border: '1px solid #F15A22', borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -382,6 +422,24 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
                 {invoiceFileError && <p style={{ color: '#F15A22', fontSize: 11, margin: 0 }}>{invoiceFileError}</p>}
               </div>
             </div>
+            {(form.invoice_number.trim() !== '' || invoiceFile !== null) && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={labelStyle}>Invoice Amount (RM) *</label>
+                  <input type="number" min="0" step="0.01" value={form.invoice_amount} onChange={e => set('invoice_amount', e.target.value)} placeholder="0.00" style={{ ...inputStyle, borderColor: errors.invoice_amount ? '#F15A22' : '#2A2A2A' }} />
+                  {errors.invoice_amount && <p style={{ color: '#F15A22', fontSize: 11, margin: 0 }}>{errors.invoice_amount}</p>}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={labelStyle}>Invoice Date</label>
+                  <input type="date" value={form.invoice_date} onChange={e => set('invoice_date', e.target.value)} style={inputStyle} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={labelStyle}>Due Date *</label>
+                  <input type="date" value={form.invoice_due_date} onChange={e => set('invoice_due_date', e.target.value)} style={{ ...inputStyle, borderColor: errors.invoice_due_date ? '#F15A22' : '#2A2A2A' }} />
+                  {errors.invoice_due_date && <p style={{ color: '#F15A22', fontSize: 11, margin: 0 }}>{errors.invoice_due_date}</p>}
+                </div>
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label style={labelStyle}>Notes</label>
               <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} placeholder="e.g. Bulk buy for Q3 stock-up" style={{ ...inputStyle, resize: 'none' }} />
@@ -828,6 +886,7 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
   const [linkReceiveModal, setLinkReceiveModal] = useState<{ open: boolean; part: PartRequest | null }>({ open: false, part: null })
   const [linkReceiveForm, setLinkReceiveForm] = useState({ catalogue_part_id: '', create_new: false, new_name: '', new_part_number: '' })
   const [linkReceiveSaving, setLinkReceiveSaving] = useState(false)
+  const [linkedInvoices, setLinkedInvoices] = useState<Record<string, { status: string }>>({})
 
   const isStockPurchase = (p: PartRequest) => !p.job_id && p.ordered_qty != null
 
@@ -838,7 +897,20 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
     try {
       const { data, error: dbErr } = await supabase.from('parts_requests').select('*').eq('branch_id', branchId).order('created_at', { ascending: false })
       if (dbErr) throw dbErr
-      setParts(((data as PartRequest[]) ?? []).filter(isStockPurchase))
+      const stockPurchases = ((data as PartRequest[]) ?? []).filter(isStockPurchase)
+      setParts(stockPurchases)
+
+      const ids = stockPurchases.map(p => p.id)
+      if (ids.length > 0) {
+        const { data: invoices } = await supabase.from('supplier_invoices').select('stock_purchase_id, status').in('stock_purchase_id', ids)
+        const map: Record<string, { status: string }> = {}
+        for (const inv of invoices ?? []) {
+          if (inv.stock_purchase_id) map[inv.stock_purchase_id] = { status: inv.status }
+        }
+        setLinkedInvoices(map)
+      } else {
+        setLinkedInvoices({})
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
     } finally {
@@ -993,14 +1065,33 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
       const { data: inserted, error: dbErr } = await supabase.from('parts_requests').insert(payload).select('id').single()
       if (dbErr) throw dbErr
 
-      if (invoiceFile && inserted) {
-        const ext = invoiceFile.name.split('.').pop()
-        const path = `${branchId}/${inserted.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-        const { error: uploadErr } = await supabase.storage.from('supplier-invoices').upload(path, invoiceFile, { contentType: invoiceFile.type, upsert: false })
-        if (uploadErr) {
-          toast(`Purchase created, but invoice upload failed: ${uploadErr.message}`, 'error')
-        } else {
-          await supabase.from('parts_requests').update({ invoice_url: path }).eq('id', inserted.id)
+      const hasInvoiceInfo = form.invoice_number.trim() !== '' || invoiceFile !== null
+      if (hasInvoiceInfo && inserted) {
+        const { data: invoiceRow, error: invErr } = await supabase.from('supplier_invoices').insert({
+          tenant_id: tenantId || null,
+          branch_id: branchId || null,
+          supplier_id: form.supplier_id,
+          stock_purchase_id: inserted.id,
+          invoice_number: form.invoice_number.trim() || null,
+          invoice_date: form.invoice_date,
+          due_date: form.invoice_due_date,
+          total_amount: parseFloat(form.invoice_amount),
+          amount_paid: 0,
+          status: 'unpaid',
+        }).select('id').single()
+
+        if (invErr) {
+          toast(`Purchase created, but couldn't add it to Accounts Payable: ${invErr.message}`, 'error')
+        } else if (invoiceFile && invoiceRow) {
+          const ext = invoiceFile.name.split('.').pop()
+          const path = `${invoiceRow.id}/${Date.now()}.${ext}`
+          const { error: uploadErr } = await supabase.storage.from('supplier-invoices').upload(path, invoiceFile, { contentType: invoiceFile.type, upsert: false })
+          if (uploadErr) {
+            toast(`Purchase created, but invoice upload failed: ${uploadErr.message}`, 'error')
+          } else {
+            await supabase.from('supplier_invoices').update({ file_url: path }).eq('id', invoiceRow.id)
+            await supabase.from('parts_requests').update({ invoice_url: path }).eq('id', inserted.id)
+          }
         }
       }
 
@@ -1144,9 +1235,15 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
                               </button>
                             )}
                             {part.status === 'ordered' && (
-                              <button onClick={() => updateStatus(part.id, 'paid')} title="Mark as Paid" style={{ background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: '#A855F7', padding: '0 12px', minHeight: 44 }}>
-                                <Wallet size={16} />
-                              </button>
+                              linkedInvoices[part.id] ? (
+                                <span title="Payment is tracked in Accounts Payable" style={{ fontSize: 11, color: '#A0A0A0', padding: '0 8px', whiteSpace: 'nowrap' }}>
+                                  Awaiting payment (AP)
+                                </span>
+                              ) : (
+                                <button onClick={() => updateStatus(part.id, 'paid')} title="Mark as Paid" style={{ background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: '#A855F7', padding: '0 12px', minHeight: 44 }}>
+                                  <Wallet size={16} />
+                                </button>
+                              )
                             )}
                             {part.status === 'paid' && (
                               <button onClick={() => handleMarkReceived(part)} title="Mark as Received" style={{ background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: '#22C55E', padding: '0 12px', minHeight: 44 }}>
