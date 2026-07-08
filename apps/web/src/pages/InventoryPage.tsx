@@ -16,6 +16,7 @@ import {
   Mail,
   Paperclip,
   FileText,
+  Wallet,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -38,14 +39,14 @@ interface PartRequest {
   selling_price?: number | null
   supplier?: string | null
   urgency: 'low' | 'normal' | 'urgent' | 'critical'
-  status: 'pending' | 'ordered' | 'received' | 'installed' | 'cancelled'
+  status: 'pending' | 'ordered' | 'paid' | 'received' | 'installed' | 'cancelled'
   notes?: string | null
   invoice_number?: string | null
   invoice_url?: string | null
   created_at: string
 }
 
-type StatusFilter = 'all' | 'pending' | 'ordered' | 'received' | 'cancelled'
+type StatusFilter = 'all' | 'pending' | 'ordered' | 'paid' | 'received' | 'cancelled'
 
 interface StockPurchaseForm {
   part_name: string
@@ -119,6 +120,7 @@ function formatDate(dateStr?: string | null): string {
 const STATUS_COLORS: Record<PartRequest['status'], string> = {
   pending: '#F59E0B',
   ordered: '#3B82F6',
+  paid: '#A855F7',
   received: '#22C55E',
   installed: '#10B981',
   cancelled: '#6B7280',
@@ -127,6 +129,7 @@ const STATUS_COLORS: Record<PartRequest['status'], string> = {
 const STATUS_BG: Record<PartRequest['status'], string> = {
   pending: 'rgba(245,158,11,0.12)',
   ordered: 'rgba(59,130,246,0.12)',
+  paid: 'rgba(168,85,247,0.12)',
   received: 'rgba(34,197,94,0.12)',
   installed: 'rgba(16,185,129,0.12)',
   cancelled: 'rgba(107,114,128,0.12)',
@@ -848,6 +851,7 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
   const counts = {
     pending: parts.filter(p => p.status === 'pending').length,
     ordered: parts.filter(p => p.status === 'ordered').length,
+    paid: parts.filter(p => p.status === 'paid').length,
     received: parts.filter(p => p.status === 'received').length,
   }
 
@@ -1002,6 +1006,7 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
     { key: 'all', label: 'All' },
     { key: 'pending', label: 'Pending' },
     { key: 'ordered', label: 'Ordered' },
+    { key: 'paid', label: 'Paid' },
     { key: 'received', label: 'Received' },
     { key: 'cancelled', label: 'Cancelled' },
   ]
@@ -1019,6 +1024,7 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
       <div style={{ display: 'flex', gap: 16, marginBottom: 24 }}>
         <SummaryCard label="Pending" count={counts.pending} icon={<Package size={20} />} color="#F59E0B" />
         <SummaryCard label="Ordered" count={counts.ordered} icon={<Truck size={20} />} color="#3B82F6" />
+        <SummaryCard label="Paid" count={counts.paid} icon={<Wallet size={20} />} color="#A855F7" />
         <SummaryCard label="Received" count={counts.received} icon={<PackageCheck size={20} />} color="#22C55E" />
       </div>
 
@@ -1119,6 +1125,11 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
                               </button>
                             )}
                             {part.status === 'ordered' && (
+                              <button onClick={() => updateStatus(part.id, 'paid')} title="Mark as Paid" style={{ background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: '#A855F7', padding: '0 12px', minHeight: 44 }}>
+                                <Wallet size={16} />
+                              </button>
+                            )}
+                            {part.status === 'paid' && (
                               <button onClick={() => handleMarkReceived(part)} title="Mark as Received" style={{ background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: '#22C55E', padding: '0 12px', minHeight: 44 }}>
                                 <CheckCircle size={16} />
                               </button>
