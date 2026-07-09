@@ -2,8 +2,11 @@ import { useState, useRef, useEffect } from 'react'
 import {
   Search, CheckCircle, Clock, Wrench, Car, Loader2, AlertCircle,
   FileText, Upload, ThumbsUp, MessageCircle, ChevronDown, ChevronUp, X,
+  CreditCard, QrCode, ExternalLink,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+
+const RAUDHAHPAY_CREATE_PAYMENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/raudhahpay-create-payment`
 
 const C = {
   bg: '#0E0E0E',
@@ -260,6 +263,81 @@ function PaymentUpload({ jobId, jobNumber }: { jobId: string; jobNumber: string 
   )
 }
 
+// ─── Pay Online ────────────────────────────────────────────────────────────────
+
+function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanceDue: number }) {
+  const [loading, setLoading] = useState<'fpx' | 'duitnow' | null>(null)
+  const [error, setError] = useState('')
+  const [qr, setQr] = useState<{ png_url: string } | null>(null)
+  const [paymentUrl, setPaymentUrl] = useState('')
+
+  async function startPayment(method: 'fpx' | 'duitnow') {
+    setLoading(method); setError(''); setQr(null); setPaymentUrl('')
+    try {
+      const res = await fetch(RAUDHAHPAY_CREATE_PAYMENT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ invoice_id: invoiceId, payment_method: method, redirect_url: window.location.href }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Failed to start payment. Please try again.'); setLoading(null); return }
+
+      if (method === 'fpx') {
+        window.location.href = data.payment_url
+        return
+      }
+      setQr(data.qr)
+      setPaymentUrl(data.payment_url)
+    } catch {
+      setError('Network error. Please check your connection and try again.')
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  return (
+    <div style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.textPrimary }}>Pay Online</div>
+        <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>Balance due: <strong style={{ color: C.orange }}>{formatRM(balanceDue)}</strong></div>
+      </div>
+
+      {error && <div style={{ fontSize: 12, color: C.red }}>{error}</div>}
+
+      {qr ? (
+        <div style={{ textAlign: 'center', padding: '4px 0' }}>
+          <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 10 }}>Scan with your banking app to pay via DuitNow QR</div>
+          <img src={qr.png_url} alt="DuitNow QR" style={{ width: 200, height: 200, borderRadius: 8, background: '#fff', padding: 8 }} />
+          <div style={{ marginTop: 10 }}>
+            <a href={paymentUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.blue, textDecoration: 'none' }}>
+              <ExternalLink size={12} /> Can't scan? Open payment page instead
+            </a>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => startPayment('fpx')}
+            disabled={loading !== null}
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'fpx' ? 0.6 : 1 }}
+          >
+            {loading === 'fpx' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CreditCard size={14} />}
+            Pay via FPX
+          </button>
+          <button
+            onClick={() => startPayment('duitnow')}
+            disabled={loading !== null}
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'duitnow' ? 0.6 : 1 }}
+          >
+            {loading === 'duitnow' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <QrCode size={14} />}
+            Pay via QR
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Job Card ─────────────────────────────────────────────────────────────────
 
 function JobCard({ job, plate, phoneLast4 }: { job: PortalJob; plate: string; phoneLast4: string }) {
@@ -276,7 +354,9 @@ function JobCard({ job, plate, phoneLast4 }: { job: PortalJob; plate: string; ph
     ['diagnosing', 'waiting_parts'].includes(job.status)
 
   const hasInvoice = !!job.invoice_id
+  const balanceDue = job.inv_total != null && job.inv_paid != null ? job.inv_total - job.inv_paid : 0
   const showPaymentUpload = ['ready', 'completed', 'collected'].includes(job.status) && hasInvoice
+  const showPayOnline = showPaymentUpload && balanceDue > 0
 
   const doApprove = async () => {
     setApproving(true); setApproveErr('')
@@ -388,6 +468,10 @@ function JobCard({ job, plate, phoneLast4 }: { job: PortalJob; plate: string; ph
               )}
             </div>
 
+            {showPayOnline && (
+              <PayOnlineSection invoiceId={job.invoice_id!} balanceDue={balanceDue} />
+            )}
+
             {showPaymentUpload && (
               <PaymentUpload jobId={job.id} jobNumber={job.job_number} />
             )}
@@ -417,17 +501,30 @@ export function CustomerPortalPage() {
     })
   }, [])
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault()
-    if (!plate.trim() || !phoneLast4.trim()) return
+  // Restore plate/phone from the URL on load — lets a customer land back on
+  // their status page automatically after completing an external payment
+  // (FPX requires leaving the app entirely; this is how they get back).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const p = params.get('plate')
+    const ph = params.get('phone')
+    if (p && ph) {
+      setPlate(p)
+      setPhoneLast4(ph)
+      runSearch(p, ph)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function runSearch(p: string, ph: string) {
     setError('')
     setLoading(true)
     setResult(null)
     setSearched(false)
 
     const { data, error: rpcErr } = await supabase.rpc('portal_lookup', {
-      p_plate: plate.trim(),
-      p_phone_last4: phoneLast4.trim(),
+      p_plate: p,
+      p_phone_last4: ph,
     })
 
     setLoading(false)
@@ -446,6 +543,18 @@ export function CustomerPortalPage() {
     }
 
     setResult(data as PortalResult)
+  }
+
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault()
+    if (!plate.trim() || !phoneLast4.trim()) return
+    const p = plate.trim()
+    const ph = phoneLast4.trim()
+    const url = new URL(window.location.href)
+    url.searchParams.set('plate', p)
+    url.searchParams.set('phone', ph)
+    window.history.replaceState({}, '', url.toString())
+    await runSearch(p, ph)
   }
 
   return (
