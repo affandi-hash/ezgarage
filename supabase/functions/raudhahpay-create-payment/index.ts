@@ -8,7 +8,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const RAUDHAHPAY_BASE_URL = 'https://jwfrkqnfjrorrygqhdbs.supabase.co/functions/v1/sandbox-merchant-api'
+// LIVE endpoint — real payments, real money. Sandbox testing is complete;
+// see raudhahpay-webhook/index.ts for the known sandbox signature-verification
+// bug that prompted the move to live directly.
+const RAUDHAHPAY_BASE_URL = 'https://jwfrkqnfjrorrygqhdbs.supabase.co/functions/v1/merchant-api'
 
 function toE164(phone: string | null): string | undefined {
   if (!phone) return undefined
