@@ -18,6 +18,7 @@ import {
   Globe,
   Eye,
   EyeOff,
+  Copy,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -1109,14 +1110,38 @@ function WorkingHoursSection({ branchId }: { branchId: string | null }) {
 // ─── Customer Portal Settings ──────────────────────────────────────────────────
 
 interface TenantPortalSettings {
+  slug: string | null
   google_review_link: string | null
   whatsapp_number: string | null
   wati_api_key: string | null
   sst_rate: number
 }
 
+function CopyableLink({ label, url }: { label: string; url: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div style={fieldStyle}>
+      <label style={labelStyle}>{label}</label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input style={{ ...inputStyle, flex: 1, color: '#A0A0A0' }} readOnly value={url} onFocus={e => e.target.select()} />
+        <button
+          onClick={() => { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', borderRadius: 8,
+            background: copied ? 'rgba(34,197,94,0.15)' : '#1A1A1A', border: '1px solid #2A2A2A',
+            color: copied ? '#22C55E' : '#A0A0A0', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+          }}
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
   const [form, setForm] = useState<TenantPortalSettings>({
+    slug: null,
     google_review_link: null,
     whatsapp_number: null,
     wati_api_key: null,
@@ -1131,7 +1156,7 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
     if (!tenantId) { setLoading(false); return }
     supabase
       .from('tenants')
-      .select('google_review_link, whatsapp_number, wati_api_key, sst_rate')
+      .select('slug, google_review_link, whatsapp_number, wati_api_key, sst_rate')
       .eq('id', tenantId)
       .single()
       .then(({ data }) => {
@@ -1167,6 +1192,22 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
         Customers will receive a WhatsApp message at every status change, and a Google Review
         link when their vehicle is collected.
       </div>
+
+      {/* Shareable links */}
+      <Card>
+        <SectionHeader title="Your Customer Links" />
+        {loading ? <Spinner /> : !form.slug ? (
+          <div style={{ padding: 24, fontSize: 12, color: '#6B7280' }}>No slug configured for this workshop yet — contact support.</div>
+        ) : (
+          <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <CopyableLink label="Vehicle Status / Pay Online" url={`${window.location.origin}/portal/${form.slug}`} />
+            <CopyableLink label="Book a Service Appointment" url={`${window.location.origin}/book/${form.slug}`} />
+            <span style={{ fontSize: 11, color: '#6B7280' }}>
+              Share these with customers via WhatsApp, SMS, or your website — each one is scoped to your workshop only.
+            </span>
+          </div>
+        )}
+      </Card>
 
       {/* Tax / SST */}
       <Card>

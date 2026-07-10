@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useParams } from 'react-router-dom'
 import { CalendarDays, CheckCircle, Loader2, Wrench } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { DatePickerInput, TimePickerInput } from '@/components/ui/DateTimePickers'
@@ -67,29 +68,36 @@ function todayStr() {
 }
 
 export function OnlineBookingPage() {
+  const { tenantSlug } = useParams()
   const [form, setForm] = useState<FormData>(EMPTY_FORM)
   const [branches, setBranches] = useState<Branch[]>([])
+  const [tenantId, setTenantId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
   const [refNumber, setRefNumber] = useState('')
   const [tenantName, setTenantName] = useState('Our Workshop')
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
-    supabase.rpc('get_portal_config').then(({ data }) => {
-      if (data?.name) setTenantName(data.name)
+    supabase.rpc('get_portal_config', { p_tenant_slug: tenantSlug || null }).then(({ data }) => {
+      if (!data) { setNotFound(true); return }
+      if (data.name) setTenantName(data.name)
+      if (data.id) setTenantId(data.id)
     })
-    supabase.from('branches').select('id, name, city').then(({ data }) => {
+    supabase.rpc('get_portal_branches', { p_tenant_slug: tenantSlug || null }).then(({ data }) => {
       const list = data || []
       setBranches(list)
       if (list.length === 1) setForm(f => ({ ...f, branch_id: list[0].id }))
     })
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantSlug])
 
   const set = (k: keyof FormData, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!tenantId) { setError('Unable to identify this workshop. Please try again or call us directly.'); return }
     if (!form.branch_id) { setError('Please select a service centre.'); return }
     if (!form.vehicle_plate.trim()) { setError('Please enter your vehicle plate number.'); return }
     if (!form.service_type) { setError('Please select a service type.'); return }
@@ -98,33 +106,37 @@ export function OnlineBookingPage() {
     setError('')
     setSubmitting(true)
 
-    // Combine date + time into datetime string
-    const scheduled_at = `${form.preferred_date}T${form.preferred_time}:00`
-
-    const { data, error: err } = await supabase.from('bookings').insert({
-      branch_id: form.branch_id,
-      customer_name: form.customer_name,
-      customer_phone: form.customer_phone,
-      customer_email: form.customer_email || null,
-      vehicle_plate: form.vehicle_plate.toUpperCase().replace(/\s/g, ''),
-      service_type: form.service_type,
-      scheduled_at,
-      arrival_mode: 'drop_off',
-      status: 'pending',
-      notes: form.notes || null,
-      source: 'online',
-    }).select('id, booking_number').single()
+    const { data, error: err } = await supabase.rpc('create_portal_booking', {
+      p_branch_id: form.branch_id,
+      p_customer_name: form.customer_name,
+      p_customer_phone: form.customer_phone,
+      p_customer_email: form.customer_email || null,
+      p_vehicle_plate: form.vehicle_plate,
+      p_service_type: form.service_type,
+      p_booking_date: form.preferred_date,
+      p_booking_time: form.preferred_time,
+      p_problem_description: form.notes || null,
+      p_tenant_slug: tenantSlug || null,
+    })
 
     setSubmitting(false)
 
-    if (err) {
+    if (err || data?.error) {
       setError('Booking failed. Please try again or call us directly.')
-      console.error(err)
+      console.error(err || data?.error)
       return
     }
 
     setRefNumber(data?.booking_number || data?.id?.slice(0, 8).toUpperCase() || 'N/A')
     setSubmitted(true)
+  }
+
+  if (notFound) {
+    return (
+      <div style={{ minHeight: '100vh', background: C.bg, color: C.textPrimary, fontFamily: 'Inter, system-ui, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <p style={{ color: C.textSecondary, fontSize: 15 }}>This booking link is invalid or no longer active.</p>
+      </div>
+    )
   }
 
   if (submitted) {

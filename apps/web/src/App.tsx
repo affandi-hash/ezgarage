@@ -79,7 +79,9 @@ export default function App() {
         <Route path="/signup" element={<SignUpPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/portal" element={<CustomerPortalPage />} />
+        <Route path="/portal/:tenantSlug" element={<CustomerPortalPage />} />
         <Route path="/book" element={<OnlineBookingPage />} />
+        <Route path="/book/:tenantSlug" element={<OnlineBookingPage />} />
         <Route path="/print/invoice/:id" element={<ProtectedRoute><PrintInvoicePage /></ProtectedRoute>} />
         <Route path="/print/receipt/:id" element={<ProtectedRoute><PrintReceiptPage /></ProtectedRoute>} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

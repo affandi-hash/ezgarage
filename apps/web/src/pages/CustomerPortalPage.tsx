@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useParams } from 'react-router-dom'
 import {
   Search, CheckCircle, Clock, Wrench, Car, Loader2, AlertCircle,
   FileText, Upload, ThumbsUp, MessageCircle, ChevronDown, ChevronUp, X,
@@ -323,7 +324,7 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
 
 // ─── Job Card ─────────────────────────────────────────────────────────────────
 
-function JobCard({ job, plate, phoneLast4 }: { job: PortalJob; plate: string; phoneLast4: string }) {
+function JobCard({ job, plate, phoneLast4, tenantSlug }: { job: PortalJob; plate: string; phoneLast4: string; tenantSlug?: string }) {
   const [expanded, setExpanded] = useState(true)
   const [invoiceOpen, setInvoiceOpen] = useState(false)
   const [approving, setApproving] = useState(false)
@@ -347,6 +348,7 @@ function JobCard({ job, plate, phoneLast4 }: { job: PortalJob; plate: string; ph
       p_job_id: job.id,
       p_plate: plate,
       p_phone_last4: phoneLast4,
+      p_tenant_slug: tenantSlug || null,
     })
     setApproving(false)
     if (error || data?.error) { setApproveErr(data?.error ?? error?.message ?? 'Failed'); return }
@@ -468,6 +470,7 @@ function JobCard({ job, plate, phoneLast4 }: { job: PortalJob; plate: string; ph
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export function CustomerPortalPage() {
+  const { tenantSlug } = useParams()
   const [plate, setPlate] = useState('')
   const [phoneLast4, setPhoneLast4] = useState('')
   const [loading, setLoading] = useState(false)
@@ -479,12 +482,13 @@ export function CustomerPortalPage() {
   const [whatsappNumber, setWhatsappNumber] = useState('')
 
   useEffect(() => {
-    supabase.rpc('get_portal_config').then(({ data }) => {
+    supabase.rpc('get_portal_config', { p_tenant_slug: tenantSlug || null }).then(({ data }) => {
       if (data?.name) setTenantName(data.name)
       if (data?.logo_url) setLogoUrl(data.logo_url)
       if (data?.whatsapp_number) setWhatsappNumber(data.whatsapp_number.replace(/\D/g, ''))
     })
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantSlug])
 
   // Restore plate/phone from the URL on load — lets a customer land back on
   // their status page automatically after completing an external payment
@@ -510,6 +514,7 @@ export function CustomerPortalPage() {
     const { data, error: rpcErr } = await supabase.rpc('portal_lookup', {
       p_plate: p,
       p_phone_last4: ph,
+      p_tenant_slug: tenantSlug || null,
     })
 
     setLoading(false)
@@ -522,6 +527,7 @@ export function CustomerPortalPage() {
         vehicle_not_found: 'Vehicle not found. Please check your plate number.',
         customer_not_found: 'No customer record found for this vehicle.',
         phone_mismatch: 'Phone number does not match records for this vehicle. Please verify and try again.',
+        tenant_not_found: 'This workshop link is invalid or no longer active.',
       }
       setError(msgs[data.error] ?? 'Lookup failed. Please contact the workshop.')
       return
@@ -635,7 +641,7 @@ export function CustomerPortalPage() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {result.jobs.map(job => (
-                  <JobCard key={job.id} job={job} plate={plate} phoneLast4={phoneLast4} />
+                  <JobCard key={job.id} job={job} plate={plate} phoneLast4={phoneLast4} tenantSlug={tenantSlug} />
                 ))}
               </div>
             )}
