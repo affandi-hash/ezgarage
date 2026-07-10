@@ -142,7 +142,39 @@ Deno.serve(async (req) => {
       ? Math.max(0, Number(invoice.amount_paid) - amount)
       : Number(invoice.amount_paid) + amount
     const newStatus = newPaid >= Number(invoice.total_amount) ? 'paid' : 'sent'
-    await supabase.from('invoices').update({ amount_paid: newPaid, status: newStatus }).eq('id', invoice.id)
+
+    // ReceiptsPage/PrintReceiptPage read payment_method/payment_date/
+    // payment_reference off the invoice row itself (not the receipts
+    // ledger), same as the staff "Record Payment" flow — without setting
+    // these here, online payments showed up with a blank method and the
+    // print template's null-fallback literally printed "CASH", which is
+    // wrong and useless for finance reconciling against RaudhahPay.
+    //
+    // invoices.payment_method is a Postgres ENUM (cash/card/online_transfer/
+    // cheque/other/qr/bank_transfer) — RaudhahPay's own method names
+    // (duitnow/credit_card/fpx) aren't valid values for it, and since this
+    // is a single UPDATE statement, an invalid enum value would fail the
+    // *whole* update, including amount_paid. Map to the closest existing
+    // enum label used by staff's own "Record Payment" flow instead.
+    const INVOICE_PAYMENT_METHOD_MAP: Record<string, string> = {
+      duitnow: 'qr',
+      credit_card: 'card',
+      fpx: 'bank_transfer',
+    }
+    const invoiceUpdate: Record<string, unknown> = { amount_paid: newPaid, status: newStatus }
+    if (!isRefund) {
+      invoiceUpdate.payment_method = INVOICE_PAYMENT_METHOD_MAP[data.payment_method as string] ?? 'other'
+      invoiceUpdate.payment_date = new Date().toISOString().slice(0, 10)
+      invoiceUpdate.payment_reference = billId
+    }
+    const { error: invoiceUpdateErr } = await supabase.from('invoices').update(invoiceUpdate).eq('id', invoice.id)
+    if (invoiceUpdateErr) {
+      // The receipts row above already recorded the payment — this is a
+      // secondary denormalization step, so log loudly but don't fail the
+      // whole webhook (would cause RaudhahPay to retry and double-insert
+      // a receipt, were it not for the gateway_ref unique index).
+      console.error(`Failed to update invoice ${invoice.id} after ${event.event}`, invoiceUpdateErr)
+    }
 
     return new Response('ok', { status: 200 })
   } catch (e) {
