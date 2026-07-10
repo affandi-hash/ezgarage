@@ -36,29 +36,19 @@ Deno.serve(async (req) => {
     console.error('debug log insert failed', e)
   }
 
-  // TEMPORARY, SANDBOX-ONLY: RaudhahPay's real checkout-completion webhooks
-  // don't match the secret shown in their dashboard (confirmed via multiple
-  // byte-exact self-tests — our implementation matches their documented spec;
-  // this looks like a bug on their side). Bypassing verification here so we
-  // can keep building against the rest of the flow. MUST be removed / set to
-  // "false" before any live/production RaudhahPay key is used.
-  const skipVerification = Deno.env.get('RAUDHAHPAY_SKIP_SIGNATURE_CHECK') === 'true'
+  // Per Zarul (RaudhahPay), there is no separate webhook signing secret —
+  // webhooks are signed with the same live secret key used to call their API.
+  const timestamp = req.headers.get('x-webhook-timestamp') ?? ''
+  const signature = req.headers.get('x-webhook-signature') ?? ''
 
-  if (!skipVerification) {
-    const timestamp = req.headers.get('x-webhook-timestamp') ?? ''
-    const signature = req.headers.get('x-webhook-signature') ?? ''
+  if (!timestamp || !signature) return new Response('Missing signature headers', { status: 401 })
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > MAX_CLOCK_SKEW_SECONDS) {
+    return new Response('Timestamp too old', { status: 401 })
+  }
 
-    if (!timestamp || !signature) return new Response('Missing signature headers', { status: 401 })
-    if (Math.abs(Date.now() / 1000 - Number(timestamp)) > MAX_CLOCK_SKEW_SECONDS) {
-      return new Response('Timestamp too old', { status: 401 })
-    }
-
-    const expected = await hmacSha256Hex(Deno.env.get('RAUDHAHPAY_WEBHOOK_SECRET')!, `${timestamp}.${rawBody}`)
-    if (!constantTimeEqual(expected, signature)) {
-      return new Response('Invalid signature', { status: 401 })
-    }
-  } else {
-    console.warn('RAUDHAHPAY_SKIP_SIGNATURE_CHECK is enabled — webhook signature was NOT verified')
+  const expected = await hmacSha256Hex(Deno.env.get('RAUDHAHPAY_API_KEY')!, `${timestamp}.${rawBody}`)
+  if (!constantTimeEqual(expected, signature)) {
+    return new Response('Invalid signature', { status: 401 })
   }
 
   let event: { event: string; data?: Record<string, unknown>; [key: string]: unknown }
