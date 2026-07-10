@@ -27,8 +27,8 @@ Deno.serve(async (req) => {
   try {
     const { invoice_id, payment_method, amount: requestedAmount, redirect_url } = await req.json()
 
-    if (!invoice_id || !['fpx', 'duitnow', 'credit_card'].includes(payment_method)) {
-      return new Response(JSON.stringify({ error: 'invoice_id and payment_method ("fpx", "duitnow", or "credit_card") are required' }), { status: 400, headers: corsHeaders })
+    if (!invoice_id || !['duitnow', 'credit_card'].includes(payment_method)) {
+      return new Response(JSON.stringify({ error: 'invoice_id and payment_method ("duitnow" or "credit_card") are required' }), { status: 400, headers: corsHeaders })
     }
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
