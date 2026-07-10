@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import {
   Search, CheckCircle, Clock, Wrench, Car, Loader2, AlertCircle,
   FileText, Upload, ThumbsUp, MessageCircle, ChevronDown, ChevronUp, X,
-  CreditCard, QrCode, ExternalLink,
+  CreditCard, QrCode,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -268,11 +268,9 @@ function PaymentUpload({ jobId, jobNumber }: { jobId: string; jobNumber: string 
 function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanceDue: number }) {
   const [loading, setLoading] = useState<'fpx' | 'duitnow' | null>(null)
   const [error, setError] = useState('')
-  const [qr, setQr] = useState<{ png_url: string } | null>(null)
-  const [paymentUrl, setPaymentUrl] = useState('')
 
   async function startPayment(method: 'fpx' | 'duitnow') {
-    setLoading(method); setError(''); setQr(null); setPaymentUrl('')
+    setLoading(method); setError('')
     try {
       const res = await fetch(RAUDHAHPAY_CREATE_PAYMENT_URL, {
         method: 'POST',
@@ -282,15 +280,12 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to start payment. Please try again.'); setLoading(null); return }
 
-      if (method === 'fpx') {
-        window.location.href = data.payment_url
-        return
-      }
-      setQr(data.qr)
-      setPaymentUrl(data.payment_url)
+      // RaudhahPay's hosted checkout page renders the FPX bank list or DuitNow
+      // QR itself based on the payment_method the bill was created with —
+      // there's no separate inline QR asset for us to render.
+      window.location.href = data.payment_url
     } catch {
       setError('Network error. Please check your connection and try again.')
-    } finally {
       setLoading(null)
     }
   }
@@ -304,36 +299,24 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
 
       {error && <div style={{ fontSize: 12, color: C.red }}>{error}</div>}
 
-      {qr ? (
-        <div style={{ textAlign: 'center', padding: '4px 0' }}>
-          <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 10 }}>Scan with your banking app to pay via DuitNow QR</div>
-          <img src={qr.png_url} alt="DuitNow QR" style={{ width: 200, height: 200, borderRadius: 8, background: '#fff', padding: 8 }} />
-          <div style={{ marginTop: 10 }}>
-            <a href={paymentUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.blue, textDecoration: 'none' }}>
-              <ExternalLink size={12} /> Can't scan? Open payment page instead
-            </a>
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={() => startPayment('fpx')}
-            disabled={loading !== null}
-            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'fpx' ? 0.6 : 1 }}
-          >
-            {loading === 'fpx' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CreditCard size={14} />}
-            Pay via FPX
-          </button>
-          <button
-            onClick={() => startPayment('duitnow')}
-            disabled={loading !== null}
-            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'duitnow' ? 0.6 : 1 }}
-          >
-            {loading === 'duitnow' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <QrCode size={14} />}
-            Pay via QR
-          </button>
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={() => startPayment('fpx')}
+          disabled={loading !== null}
+          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'fpx' ? 0.6 : 1 }}
+        >
+          {loading === 'fpx' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CreditCard size={14} />}
+          Pay via FPX
+        </button>
+        <button
+          onClick={() => startPayment('duitnow')}
+          disabled={loading !== null}
+          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'duitnow' ? 0.6 : 1 }}
+        >
+          {loading === 'duitnow' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <QrCode size={14} />}
+          Pay via QR
+        </button>
+      </div>
     </div>
   )
 }

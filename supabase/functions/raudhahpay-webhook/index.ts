@@ -36,8 +36,8 @@ Deno.serve(async (req) => {
     console.error('debug log insert failed', e)
   }
 
-  // Per Zarul (RaudhahPay), there is no separate webhook signing secret —
-  // webhooks are signed with the same live secret key used to call their API.
+  // RaudhahPay signs webhooks with a dedicated webhook secret, not the API
+  // key — confirmed against a real live delivery's signature.
   const timestamp = req.headers.get('x-webhook-timestamp') ?? ''
   const signature = req.headers.get('x-webhook-signature') ?? ''
 
@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     return new Response('Timestamp too old', { status: 401 })
   }
 
-  const expected = await hmacSha256Hex(Deno.env.get('RAUDHAHPAY_API_KEY')!, `${timestamp}.${rawBody}`)
+  const expected = await hmacSha256Hex(Deno.env.get('RAUDHAHPAY_WEBHOOK_SECRET')!, `${timestamp}.${rawBody}`)
   if (!constantTimeEqual(expected, signature)) {
     return new Response('Invalid signature', { status: 401 })
   }

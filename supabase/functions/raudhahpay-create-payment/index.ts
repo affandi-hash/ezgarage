@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/raudhahpay-webhook`
 
     const payload: Record<string, unknown> = {
-      action: 'create-payment',
+      action: 'create-bill',
       title: `Invoice ${invoice.invoice_number}`,
       amount,
       payment_method,
