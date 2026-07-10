@@ -324,7 +324,7 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
 
 // ─── Job Card ─────────────────────────────────────────────────────────────────
 
-function JobCard({ job, plate, phoneLast4, tenantSlug }: { job: PortalJob; plate: string; phoneLast4: string; tenantSlug?: string }) {
+function JobCard({ job, plate, phone, icFirst6, tenantSlug }: { job: PortalJob; plate: string; phone: string; icFirst6: string; tenantSlug?: string }) {
   const [expanded, setExpanded] = useState(true)
   const [invoiceOpen, setInvoiceOpen] = useState(false)
   const [approving, setApproving] = useState(false)
@@ -347,7 +347,8 @@ function JobCard({ job, plate, phoneLast4, tenantSlug }: { job: PortalJob; plate
     const { data, error } = await supabase.rpc('portal_approve_estimate', {
       p_job_id: job.id,
       p_plate: plate,
-      p_phone_last4: phoneLast4,
+      p_phone: phone,
+      p_ic_first6: icFirst6,
       p_tenant_slug: tenantSlug || null,
     })
     setApproving(false)
@@ -472,7 +473,8 @@ function JobCard({ job, plate, phoneLast4, tenantSlug }: { job: PortalJob; plate
 export function CustomerPortalPage() {
   const { tenantSlug } = useParams()
   const [plate, setPlate] = useState('')
-  const [phoneLast4, setPhoneLast4] = useState('')
+  const [phone, setPhone] = useState('')
+  const [icFirst6, setIcFirst6] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<PortalResult | null>(null)
@@ -490,22 +492,30 @@ export function CustomerPortalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantSlug])
 
-  // Restore plate/phone from the URL on load — lets a customer land back on
-  // their status page automatically after completing an external payment
-  // (FPX requires leaving the app entirely; this is how they get back).
+  // Restore the session after returning from an external payment (FPX
+  // requires leaving the app entirely). Plate is kept in the URL (harmless),
+  // but phone/IC are more sensitive now that phone is full and IC is
+  // semi-sensitive government ID data — those are kept in sessionStorage
+  // instead of the URL, so they never end up in browser history or logs.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const p = params.get('plate')
-    const ph = params.get('phone')
-    if (p && ph) {
-      setPlate(p)
-      setPhoneLast4(ph)
-      runSearch(p, ph)
+    const cached = sessionStorage.getItem('portal_session')
+    if (p && cached) {
+      try {
+        const { phone: ph, icFirst6: ic } = JSON.parse(cached)
+        if (ph && ic) {
+          setPlate(p)
+          setPhone(ph)
+          setIcFirst6(ic)
+          runSearch(p, ph, ic)
+        }
+      } catch { /* ignore malformed cache */ }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function runSearch(p: string, ph: string) {
+  async function runSearch(p: string, ph: string, ic: string) {
     setError('')
     setLoading(true)
     setResult(null)
@@ -513,7 +523,8 @@ export function CustomerPortalPage() {
 
     const { data, error: rpcErr } = await supabase.rpc('portal_lookup', {
       p_plate: p,
-      p_phone_last4: ph,
+      p_phone: ph,
+      p_ic_first6: ic,
       p_tenant_slug: tenantSlug || null,
     })
 
@@ -527,6 +538,8 @@ export function CustomerPortalPage() {
         vehicle_not_found: 'Vehicle not found. Please check your plate number.',
         customer_not_found: 'No customer record found for this vehicle.',
         phone_mismatch: 'Phone number does not match records for this vehicle. Please verify and try again.',
+        ic_not_on_file: "We don't have an IC number on file for this vehicle yet. Please contact the workshop so our team can add it to your record.",
+        ic_mismatch: 'IC number does not match records for this vehicle. Please verify and try again.',
         tenant_not_found: 'This workshop link is invalid or no longer active.',
       }
       setError(msgs[data.error] ?? 'Lookup failed. Please contact the workshop.')
@@ -538,14 +551,15 @@ export function CustomerPortalPage() {
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault()
-    if (!plate.trim() || !phoneLast4.trim()) return
+    if (!plate.trim() || !phone.trim() || icFirst6.length !== 6) return
     const p = plate.trim()
-    const ph = phoneLast4.trim()
+    const ph = phone.trim()
+    const ic = icFirst6.trim()
     const url = new URL(window.location.href)
     url.searchParams.set('plate', p)
-    url.searchParams.set('phone', ph)
     window.history.replaceState({}, '', url.toString())
-    await runSearch(p, ph)
+    sessionStorage.setItem('portal_session', JSON.stringify({ phone: ph, icFirst6: ic }))
+    await runSearch(p, ph, ic)
   }
 
   return (
@@ -572,7 +586,7 @@ export function CustomerPortalPage() {
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 28, marginBottom: 28 }}>
           <div style={{ marginBottom: 22 }}>
             <h1 style={{ fontSize: 20, fontWeight: 800, color: C.textPrimary, margin: '0 0 6px' }}>Track Your Vehicle Service</h1>
-            <p style={{ color: C.textSecondary, fontSize: 13, margin: 0 }}>Enter your vehicle plate number and the last 4 digits of your registered phone number.</p>
+            <p style={{ color: C.textSecondary, fontSize: 13, margin: 0 }}>Enter your vehicle plate number, phone number, and the first 6 digits of your IC.</p>
           </div>
           <form onSubmit={handleSearch}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
@@ -587,12 +601,22 @@ export function CustomerPortalPage() {
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 11, color: C.textSecondary, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Last 4 Digits of Phone</label>
+                <label style={{ display: 'block', fontSize: 11, color: C.textSecondary, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Phone Number</label>
                 <input
-                  value={phoneLast4}
-                  onChange={e => setPhoneLast4(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                  placeholder="e.g. 2121"
-                  maxLength={4}
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  placeholder="e.g. 012-3456789"
+                  style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.textPrimary, padding: '10px 14px', fontSize: 15, boxSizing: 'border-box', outline: 'none' }}
+                  required
+                />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: 11, color: C.textSecondary, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>First 6 Digits of IC</label>
+                <input
+                  value={icFirst6}
+                  onChange={e => setIcFirst6(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="e.g. 900101"
+                  maxLength={6}
                   style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.textPrimary, padding: '10px 14px', fontSize: 16, letterSpacing: 4, boxSizing: 'border-box', outline: 'none' }}
                   required
                 />
@@ -641,7 +665,7 @@ export function CustomerPortalPage() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {result.jobs.map(job => (
-                  <JobCard key={job.id} job={job} plate={plate} phoneLast4={phoneLast4} tenantSlug={tenantSlug} />
+                  <JobCard key={job.id} job={job} plate={plate} phone={phone} icFirst6={icFirst6} tenantSlug={tenantSlug} />
                 ))}
               </div>
             )}
