@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import {
   Search, CheckCircle, Clock, Wrench, Car, Loader2, AlertCircle,
   FileText, Upload, ThumbsUp, MessageCircle, ChevronDown, ChevronUp, X,
-  CreditCard, QrCode,
+  CreditCard, QrCode, Landmark,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -266,11 +266,22 @@ function PaymentUpload({ jobId, jobNumber }: { jobId: string; jobNumber: string 
 
 // ─── Pay Online ────────────────────────────────────────────────────────────────
 
+// FPX is temporarily disabled — RaudhahPay confirmed bugs on their side
+// with the FPX/MEPS handoff (transactions never reach the bank's login
+// page). Flip back to true once they've fixed it.
+const FPX_ENABLED = false
+
+// Credit/debit card isn't live yet either — RaudhahPay's own API rejects
+// it with "This merchant does not have credit_card configured", meaning
+// it needs to be provisioned on their side for this merchant account
+// first. Flip to true once that's done and a real test succeeds.
+const CARD_ENABLED = false
+
 function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanceDue: number }) {
-  const [loading, setLoading] = useState<'fpx' | 'duitnow' | null>(null)
+  const [loading, setLoading] = useState<'fpx' | 'duitnow' | 'credit_card' | null>(null)
   const [error, setError] = useState('')
 
-  async function startPayment(method: 'fpx' | 'duitnow') {
+  async function startPayment(method: 'fpx' | 'duitnow' | 'credit_card') {
     setLoading(method); setError('')
     try {
       const res = await fetch(RAUDHAHPAY_CREATE_PAYMENT_URL, {
@@ -300,23 +311,51 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
 
       {error && <div style={{ fontSize: 12, color: C.red }}>{error}</div>}
 
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button
-          onClick={() => startPayment('fpx')}
-          disabled={loading !== null}
-          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'fpx' ? 0.6 : 1 }}
-        >
-          {loading === 'fpx' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CreditCard size={14} />}
-          Pay via FPX
-        </button>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {FPX_ENABLED ? (
+          <button
+            onClick={() => startPayment('fpx')}
+            disabled={loading !== null}
+            style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'fpx' ? 0.6 : 1 }}
+          >
+            {loading === 'fpx' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Landmark size={14} />}
+            Pay via FPX
+          </button>
+        ) : (
+          <div
+            title="FPX is temporarily unavailable — please use QR or Card instead."
+            style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 13, fontWeight: 700, opacity: 0.5, cursor: 'not-allowed' }}
+          >
+            <Landmark size={14} />
+            FPX Unavailable
+          </div>
+        )}
         <button
           onClick={() => startPayment('duitnow')}
           disabled={loading !== null}
-          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'duitnow' ? 0.6 : 1 }}
+          style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'duitnow' ? 0.6 : 1 }}
         >
           {loading === 'duitnow' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <QrCode size={14} />}
           Pay via QR
         </button>
+        {CARD_ENABLED ? (
+          <button
+            onClick={() => startPayment('credit_card')}
+            disabled={loading !== null}
+            style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'credit_card' ? 0.6 : 1 }}
+          >
+            {loading === 'credit_card' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CreditCard size={14} />}
+            Debit/Credit Card
+          </button>
+        ) : (
+          <div
+            title="Card payments are coming soon."
+            style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 13, fontWeight: 700, opacity: 0.5, cursor: 'not-allowed' }}
+          >
+            <CreditCard size={14} />
+            Card (Coming Soon)
+          </div>
+        )}
       </div>
     </div>
   )
