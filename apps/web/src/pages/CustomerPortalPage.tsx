@@ -475,11 +475,13 @@ export function CustomerPortalPage() {
   const [result, setResult] = useState<PortalResult | null>(null)
   const [searched, setSearched] = useState(false)
   const [tenantName, setTenantName] = useState('Our Workshop')
+  const [logoUrl, setLogoUrl] = useState('')
   const [whatsappNumber, setWhatsappNumber] = useState('')
 
   useEffect(() => {
     supabase.rpc('get_portal_config').then(({ data }) => {
       if (data?.name) setTenantName(data.name)
+      if (data?.logo_url) setLogoUrl(data.logo_url)
       if (data?.whatsapp_number) setWhatsappNumber(data.whatsapp_number.replace(/\D/g, ''))
     })
   }, [])
@@ -545,9 +547,13 @@ export function CustomerPortalPage() {
       {/* Header */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: '16px 24px' }}>
         <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 34, height: 34, background: C.orange, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Wrench size={17} color="#fff" />
-          </div>
+          {logoUrl ? (
+            <img src={logoUrl} alt={tenantName} style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'contain', background: '#fff' }} />
+          ) : (
+            <div style={{ width: 34, height: 34, background: C.orange, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Wrench size={17} color="#fff" />
+            </div>
+          )}
           <div>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.textPrimary, letterSpacing: -0.3 }}>{tenantName}</div>
             <div style={{ fontSize: 11, color: C.textSecondary }}>Customer Service Portal</div>
