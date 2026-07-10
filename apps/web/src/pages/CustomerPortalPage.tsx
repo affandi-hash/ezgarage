@@ -493,18 +493,22 @@ export function CustomerPortalPage() {
   }, [tenantSlug])
 
   // Restore the session after returning from an external payment (FPX
-  // requires leaving the app entirely). Plate is kept in the URL (harmless),
-  // but phone/IC are more sensitive now that phone is full and IC is
-  // semi-sensitive government ID data — those are kept in sessionStorage
-  // instead of the URL, so they never end up in browser history or logs.
+  // requires leaving the app entirely). Everything needed lives in
+  // sessionStorage, not the URL — RaudhahPay's own redirect back to us
+  // appends its own callback query params onto whatever redirect_url we
+  // gave it, and has been observed doing so by blindly concatenating a
+  // second "?" instead of "&" (e.g. "...?plate=ABC?amount=2.00&bill_id=...").
+  // That corrupts anything read from window.location.search — including a
+  // plate param — since everything after the first "?" until the next "&"
+  // becomes part of that field's value. Keeping the redirect_url itself
+  // free of any query string and restoring purely from sessionStorage
+  // makes us immune to that regardless of what RaudhahPay appends.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const p = params.get('plate')
     const cached = sessionStorage.getItem('portal_session')
-    if (p && cached) {
+    if (cached) {
       try {
-        const { phone: ph, icFirst6: ic } = JSON.parse(cached)
-        if (ph && ic) {
+        const { plate: p, phone: ph, icFirst6: ic } = JSON.parse(cached)
+        if (p && ph && ic) {
           setPlate(p)
           setPhone(ph)
           setIcFirst6(ic)
@@ -555,10 +559,7 @@ export function CustomerPortalPage() {
     const p = plate.trim()
     const ph = phone.trim()
     const ic = icFirst6.trim()
-    const url = new URL(window.location.href)
-    url.searchParams.set('plate', p)
-    window.history.replaceState({}, '', url.toString())
-    sessionStorage.setItem('portal_session', JSON.stringify({ phone: ph, icFirst6: ic }))
+    sessionStorage.setItem('portal_session', JSON.stringify({ plate: p, phone: ph, icFirst6: ic }))
     await runSearch(p, ph, ic)
   }
 
