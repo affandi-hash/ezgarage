@@ -266,11 +266,9 @@ function PaymentUpload({ jobId, jobNumber }: { jobId: string; jobNumber: string 
 
 // ─── Pay Online ────────────────────────────────────────────────────────────────
 
-// Credit/debit card isn't live yet — RaudhahPay's own API rejects it with
-// "This merchant does not have credit_card configured", meaning it needs
-// to be provisioned on their side for this merchant account first. Flip
-// to true once that's done and a real test succeeds.
-const CARD_ENABLED = false
+// Confirmed live and working — RaudhahPay enabled credit_card for this
+// merchant account and a real bill creation call succeeded.
+const CARD_ENABLED = true
 
 function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanceDue: number }) {
   const [loading, setLoading] = useState<'duitnow' | 'credit_card' | null>(null)
