@@ -73,9 +73,19 @@ Deno.serve(async (req) => {
   // top-level event object instead. Support both shapes defensively.
   const data = event.data ?? event
 
-  // Always ack quickly — RaudhahPay retries non-2xx responses for hours.
-  if (event.event !== 'payment.success') {
-    console.log(`Ignoring event ${event.event} for bill ${data?.bill_id}`)
+  const REFUND_EVENTS = new Set(['payment.refunded', 'payment.partial_refunded'])
+
+  // These never created a receipt in the first place (the checkout never
+  // completed), so there's nothing in the ledger to reconcile — just ack
+  // with a clear, distinguishable log line per event type.
+  if (['payment.failed', 'payment.expired', 'payment.rejected', 'payment.cancelled'].includes(event.event)) {
+    const invoiceId = (data.order_no as string) || (data.metadata as { invoice_id?: string })?.invoice_id
+    console.log(`RaudhahPay ${event.event}: bill ${data?.bill_id}, invoice ${invoiceId} — no receipt was recorded, no action needed`)
+    return new Response('ok', { status: 200 })
+  }
+
+  if (!REFUND_EVENTS.has(event.event) && event.event !== 'payment.success') {
+    console.log(`Ignoring unrecognized event ${event.event} for bill ${data?.bill_id}`)
     return new Response('ok', { status: 200 })
   }
 
@@ -85,7 +95,7 @@ Deno.serve(async (req) => {
     const billId = data.bill_id as string
 
     if (!invoiceId || !amount || !billId) {
-      console.error('payment.success webhook missing invoice_id/amount/bill_id', data)
+      console.error(`${event.event} webhook missing invoice_id/amount/bill_id`, data)
       return new Response('ok', { status: 200 })
     }
 
@@ -98,38 +108,55 @@ Deno.serve(async (req) => {
       .single()
 
     if (invErr || !invoice) {
-      console.error(`payment.success webhook: invoice ${invoiceId} not found`, invErr)
+      console.error(`${event.event} webhook: invoice ${invoiceId} not found`, invErr)
       return new Response('ok', { status: 200 })
     }
+
+    const isRefund = REFUND_EVENTS.has(event.event)
+    // Refunds reverse a prior payment.success receipt, so they need a
+    // gateway_ref distinct from the original charge (which already owns
+    // `billId`). A single bill can be partially refunded more than once, so
+    // `billId` alone isn't unique enough either — key off the per-delivery
+    // X-Webhook-Id instead, which RaudhahPay keeps stable across retries of
+    // the *same* refund event but distinct across separate refund events.
+    const webhookId = req.headers.get('x-webhook-id')
+    const signedAmount = isRefund ? -amount : amount
+    const gatewayRef = isRefund ? `refund:${webhookId || billId}` : billId
+    const notes = isRefund
+      ? `RaudhahPay refund (${event.event}) for bill ${billId}`
+      : `RaudhahPay online payment (${data.payment_method})`
 
     const { error: receiptErr } = await supabase.from('receipts').insert({
       tenant_id: invoice.tenant_id,
       branch_id: invoice.branch_id,
       invoice_id: invoice.id,
-      amount,
+      amount: signedAmount,
       payment_method: data.payment_method as string,
       payment_date: new Date().toISOString().slice(0, 10),
       reference_number: data.reference_number as string,
-      gateway_ref: billId,
-      notes: `RaudhahPay online payment (${data.payment_method})`,
+      gateway_ref: gatewayRef,
+      notes,
     })
 
     if (receiptErr) {
-      // Unique violation on gateway_ref = this bill was already processed
-      // (retried delivery). Idempotent no-op — don't double-credit the invoice.
+      // Unique violation on gateway_ref = this bill/refund was already
+      // processed (retried delivery). Idempotent no-op either way — don't
+      // double-credit or double-reverse the invoice.
       if (receiptErr.code === '23505') {
         return new Response('ok', { status: 200 })
       }
       throw receiptErr
     }
 
-    const newPaid = Number(invoice.amount_paid) + amount
+    const newPaid = isRefund
+      ? Math.max(0, Number(invoice.amount_paid) - amount)
+      : Number(invoice.amount_paid) + amount
     const newStatus = newPaid >= Number(invoice.total_amount) ? 'paid' : 'sent'
     await supabase.from('invoices').update({ amount_paid: newPaid, status: newStatus }).eq('id', invoice.id)
 
     return new Response('ok', { status: 200 })
   } catch (e) {
-    console.error('Error processing payment.success webhook', e)
+    console.error(`Error processing ${event.event} webhook`, e)
     // 500 so RaudhahPay retries — this path only hits on unexpected DB errors.
     return new Response('error', { status: 500 })
   }
