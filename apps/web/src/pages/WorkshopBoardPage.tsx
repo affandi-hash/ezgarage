@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
 import { logAudit } from '@/lib/audit'
+import { formatPlate } from '@/lib/formatters'
 import { PhotoUploader, QuickPhotoUpload } from '@/components/ui/PhotoUploader'
 import type { Job, JobStatus, ServiceType, ArrivalMode, PaymentStatus } from '@/types'
 
@@ -1037,7 +1038,7 @@ function NewJobModal({ branchId, onClose, onCreated }: NewJobModalProps) {
     if (!selectedCustomer) { setVehicleError('Select a customer first.'); return }
     setSavingVehicle(true); setVehicleError('')
     const { data, error } = await supabase.from('vehicles').insert({
-      plate_number: newVehicle.plate_number.trim().toUpperCase(),
+      plate_number: formatPlate(newVehicle.plate_number),
       make: newVehicle.make.trim() || null, model: newVehicle.model.trim() || null,
       vehicle_type: newVehicle.vehicle_type,
       year: newVehicle.year ? parseInt(newVehicle.year) : null,
@@ -1176,7 +1177,7 @@ function NewJobModal({ branchId, onClose, onCreated }: NewJobModalProps) {
               {showNewVehicle ? (
                 <div style={{ background: '#1A1A1A', border: '1px solid #F15A22', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div><label style={inputLabelStyle}>Plate Number *</label><input type="text" value={newVehicle.plate_number} onChange={e => setNewVehicle(p => ({ ...p, plate_number: e.target.value.toUpperCase() }))} placeholder="e.g. WXY1234" style={inputStyle} /></div>
+                    <div><label style={inputLabelStyle}>Plate Number *</label><input type="text" value={newVehicle.plate_number} onChange={e => setNewVehicle(p => ({ ...p, plate_number: e.target.value.toUpperCase() }))} onBlur={e => setNewVehicle(p => ({ ...p, plate_number: formatPlate(e.target.value) }))} placeholder="e.g. WXY1234" style={inputStyle} /></div>
                     <div><label style={inputLabelStyle}>Type</label><select value={newVehicle.vehicle_type} onChange={e => setNewVehicle(p => ({ ...p, vehicle_type: e.target.value }))} style={inputStyle}><option value="car">Car</option><option value="bike">Bike</option></select></div>
                     <div><label style={inputLabelStyle}>Make</label><input type="text" value={newVehicle.make} onChange={e => setNewVehicle(p => ({ ...p, make: e.target.value }))} placeholder="e.g. Toyota" style={inputStyle} /></div>
                     <div><label style={inputLabelStyle}>Model</label><input type="text" value={newVehicle.model} onChange={e => setNewVehicle(p => ({ ...p, model: e.target.value }))} placeholder="e.g. Vios" style={inputStyle} /></div>
