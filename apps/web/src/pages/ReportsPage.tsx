@@ -247,35 +247,38 @@ export function ReportsPage() {
         }
       })
 
-      // Fetch revenue + parts/labour from invoices — single source of truth
-      const jobIds = (jobs ?? []).map((j: { id: string }) => j.id)
+      // Fetch revenue + parts/labour from invoices — single source of truth.
+      // Scoped by the invoice's own issue_date, not the linked job's
+      // created_at — a job opened days earlier but invoiced within this
+      // range should still count, and one invoiced outside this range
+      // shouldn't just because its job happened to start inside it.
       let revenue = 0
       let paidJobCount = 0
       let totalParts = 0
       let totalLabour = 0
-      if (jobIds.length > 0) {
-        // Accrual basis: paid + sent + overdue all count as revenue
-        const { data: invRows } = await supabase
-          .from('invoices')
-          .select('job_id, line_items, status, total_amount, subtotal')
-          .in('job_id', jobIds)
-          .in('status', ['paid', 'sent', 'overdue'])
-        type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number; cost_price?: number }
-        invRows?.forEach((inv: { job_id: string; line_items: LineItem[] | null; status: string; total_amount: number | null; subtotal: number | null }) => {
-          const invTotal = inv.total_amount ?? inv.subtotal ?? 0
-          revenue += invTotal
-          paidJobCount++
-          ;(inv.line_items ?? []).forEach((li) => {
-            const qty = li.qty ?? 1
-            if (li.item_type === 'part') {
-              // Use purchasing cost_price for COGS; fall back to selling unit_price for old records
-              totalParts += li.cost_price != null ? li.cost_price * qty : (li.amount ?? qty * (li.unit_price ?? 0))
-            } else if (li.item_type === 'labour') {
-              totalLabour += li.amount ?? qty * (li.unit_price ?? 0)
-            }
-          })
+      let invQ = supabase
+        .from('invoices')
+        .select('job_id, line_items, status, total_amount, subtotal')
+        .gte('issue_date', bounds.start)
+        .lte('issue_date', bounds.end)
+        .in('status', ['paid', 'sent', 'overdue']) // accrual basis
+      if (branchFilter) invQ = invQ.eq('branch_id', branchFilter)
+      const { data: invRows } = await invQ
+      type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number; cost_price?: number }
+      invRows?.forEach((inv: { job_id: string; line_items: LineItem[] | null; status: string; total_amount: number | null; subtotal: number | null }) => {
+        const invTotal = inv.total_amount ?? inv.subtotal ?? 0
+        revenue += invTotal
+        paidJobCount++
+        ;(inv.line_items ?? []).forEach((li) => {
+          const qty = li.qty ?? 1
+          if (li.item_type === 'part') {
+            // Use purchasing cost_price for COGS; fall back to selling unit_price for old records
+            totalParts += li.cost_price != null ? li.cost_price * qty : (li.amount ?? qty * (li.unit_price ?? 0))
+          } else if (li.item_type === 'labour') {
+            totalLabour += li.amount ?? qty * (li.unit_price ?? 0)
+          }
         })
-      }
+      })
 
       // COGS = Total Parts + Total Labour
       const cogs = totalParts + totalLabour
