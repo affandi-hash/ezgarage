@@ -41,6 +41,8 @@ interface Receipt {
   reference_number: string | null
   proof_url: string | null
   notes: string | null
+  voided_at: string | null
+  void_reason: string | null
 }
 
 const MAX_PROOF_FILE_BYTES = 10 * 1024 * 1024
@@ -136,6 +138,9 @@ function DetailPanel({
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [proofFileError, setProofFileError] = useState<string | null>(null)
   const [viewingProofId, setViewingProofId] = useState<string | null>(null)
+  const [voidingId, setVoidingId] = useState<string | null>(null)
+  const { user } = useAuthStore()
+  const canVoidPayments = ['super_admin', 'ops_manager', 'foreman'].includes(user?.role ?? '')
 
   function handleProofFileChange(file: File | null) {
     setProofFileError(null)
@@ -165,6 +170,18 @@ function DetailPanel({
   }, [invoice.id])
 
   useEffect(() => { loadReceipts() }, [loadReceipts])
+
+  async function handleVoidReceipt(receiptId: string) {
+    const reason = window.prompt('Reason for voiding this payment (optional):') ?? undefined
+    if (!window.confirm('Void this payment? The invoice balance will be reopened. This cannot be undone — you can re-record the payment afterward.')) return
+    setVoidingId(receiptId)
+    const { data, error } = await supabase.rpc('void_receipt', { p_receipt_id: receiptId, p_reason: reason || null })
+    setVoidingId(null)
+    if (error || data?.error) { toast(data?.error === 'forbidden' ? 'You do not have permission to void payments' : 'Failed to void payment', 'error'); return }
+    toast('Payment voided')
+    loadReceipts()
+    onRefresh()
+  }
 
   const status = derivedStatus(invoice)
   const customer = invoice.customers
@@ -343,20 +360,28 @@ function DetailPanel({
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {receipts.map(r => (
-                <div key={r.id} style={{ background: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 8, padding: '12px 14px' }}>
+                <div key={r.id} style={{ background: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 8, padding: '12px 14px', opacity: r.voided_at ? 0.6 : 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#F0F0F0', fontWeight: 700, fontSize: 14 }}>{fmtAmt(r.amount)}</span>
+                    <span style={{ color: '#F0F0F0', fontWeight: 700, fontSize: 14, textDecoration: r.voided_at ? 'line-through' : 'none' }}>{fmtAmt(r.amount)}</span>
                     <span style={{ color: '#22C55E', fontSize: 12 }}>{fmtDate(r.payment_date)}</span>
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center' }}>
                     <span style={{ fontSize: 11, color: '#A0A0A0', textTransform: 'capitalize' }}>{r.payment_method.replace('_', ' ')}</span>
                     {r.reference_number && <span style={{ fontSize: 11, color: '#6A6A6A' }}>Ref: {r.reference_number}</span>}
                     {r.proof_url && (
-                      <button onClick={() => handleViewProof(r)} disabled={viewingProofId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: '#F15A22', cursor: 'pointer', fontSize: 11, marginLeft: 'auto' }}>
+                      <button onClick={() => handleViewProof(r)} disabled={viewingProofId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: '#F15A22', cursor: 'pointer', fontSize: 11, marginLeft: r.reference_number ? 0 : 'auto' }}>
                         {viewingProofId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} Proof
                       </button>
                     )}
+                    {!r.voided_at && canVoidPayments && (
+                      <button onClick={() => handleVoidReceipt(r.id)} disabled={voidingId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: '#EF4444', cursor: 'pointer', fontSize: 11, marginLeft: 'auto' }}>
+                        {voidingId === r.id ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />} Void
+                      </button>
+                    )}
                   </div>
+                  {r.voided_at && (
+                    <div style={{ color: '#EF4444', fontSize: 11, marginTop: 4 }}>VOIDED{r.void_reason ? ` — ${r.void_reason}` : ''}</div>
+                  )}
                 </div>
               ))}
             </div>

@@ -443,8 +443,10 @@ export function InvoicesPage() {
   const [payment, setPayment] = useState({ payment_method: 'cash', amount_paid: 0, payment_date: todayStr(), payment_reference: '' })
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [proofFileError, setProofFileError] = useState<string | null>(null)
-  const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; payment_method: string; payment_date: string; proof_url: string | null }[]>([])
+  const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; payment_method: string; payment_date: string; proof_url: string | null; voided_at: string | null; void_reason: string | null }[]>([])
   const [viewingProofId, setViewingProofId] = useState<string | null>(null)
+  const [voidingId, setVoidingId] = useState<string | null>(null)
+  const canVoidPayments = ['super_admin', 'ops_manager', 'foreman'].includes(user?.role ?? '')
 
   function handleProofFileChange(file: File | null) {
     setProofFileError(null)
@@ -455,8 +457,24 @@ export function InvoicesPage() {
   }
 
   async function loadPaymentHistory(invoiceId: string) {
-    const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
+    const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url, voided_at, void_reason').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
     setPaymentHistory(data ?? [])
+  }
+
+  async function handleVoidReceipt(receiptId: string) {
+    const reason = window.prompt('Reason for voiding this payment (optional):') ?? undefined
+    if (!window.confirm('Void this payment? The invoice balance will be reopened. This cannot be undone — you can re-record the payment afterward.')) return
+    setVoidingId(receiptId)
+    const { data, error } = await supabase.rpc('void_receipt', { p_receipt_id: receiptId, p_reason: reason || null })
+    setVoidingId(null)
+    if (error || data?.error) { toast.error(data?.error === 'forbidden' ? 'You do not have permission to void payments' : 'Failed to void payment'); return }
+    toast.success('Payment voided')
+    if (editInvoice) {
+      await loadPaymentHistory(editInvoice.id)
+      await loadInvoices()
+      const { data: inv } = await supabase.from('invoices').select('*').eq('id', editInvoice.id).single()
+      if (inv) { setSelected(inv as Invoice); setEditInvoice(inv as Invoice) }
+    }
   }
 
   async function handleViewProof(proofUrl: string, id: string) {
@@ -1016,6 +1034,14 @@ export function InvoicesPage() {
                       <CreditCard size={15} /> Record Payment
                     </button>
                   )}
+                  {editInvoice.status !== 'sent' && editInvoice.amount_paid > 0 && (
+                    <button style={btnOutline} onClick={() => {
+                      loadPaymentHistory(editInvoice.id)
+                      setShowPaymentModal(true)
+                    }}>
+                      <CreditCard size={15} /> Payment History
+                    </button>
+                  )}
                   <button style={btnOutline} onClick={() => openPrintTab(buildInvoiceHtml(editInvoice, branchInfo))}><Printer size={15} /> Print Invoice</button>
                   {editInvoice.status === 'paid' && (
                     <button style={btnOutline} onClick={() => openPrintTab(buildReceiptHtml(editInvoice, branchInfo))}><Printer size={15} /> Print Receipt</button>
@@ -1504,10 +1530,11 @@ export function InvoicesPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, width: '90%', maxWidth: 440, overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 24px', borderBottom: `1px solid ${C.border}` }}>
-              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Record Payment</h3>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>{editInvoice.total_amount - editInvoice.amount_paid > 0 ? 'Record Payment' : 'Payment History'}</h3>
               <button onClick={() => setShowPaymentModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.text2 }}><X size={20} /></button>
             </div>
             <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {editInvoice.total_amount - editInvoice.amount_paid > 0 && (<>
               {/* Payment method tiles */}
               <div>
                 <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 8 }}>Payment Method</label>
@@ -1569,17 +1596,32 @@ export function InvoicesPage() {
                   <span>{formatRM(Math.max(0, editInvoice.total_amount - editInvoice.amount_paid - payment.amount_paid))}</span>
                 </div>
               </div>
+              </>)}
               {paymentHistory.length > 0 && (
                 <div>
                   <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Payment History</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
                     {paymentHistory.map(r => (
-                      <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.bg, borderRadius: 6, padding: '8px 10px', fontSize: 12 }}>
-                        <span>{formatRM(r.amount)} · {r.payment_method.replace('_', ' ')} · {new Date(r.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                        {r.proof_url && (
-                          <button onClick={() => handleViewProof(r.proof_url!, r.id)} disabled={viewingProofId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: C.orange, cursor: 'pointer', fontSize: 12 }}>
-                            {viewingProofId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} Proof
-                          </button>
+                      <div key={r.id} style={{ display: 'flex', flexDirection: 'column', gap: 2, background: C.bg, borderRadius: 6, padding: '8px 10px', fontSize: 12, opacity: r.voided_at ? 0.6 : 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ textDecoration: r.voided_at ? 'line-through' : 'none' }}>
+                            {formatRM(r.amount)} · {r.payment_method.replace('_', ' ')} · {new Date(r.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            {r.proof_url && (
+                              <button onClick={() => handleViewProof(r.proof_url!, r.id)} disabled={viewingProofId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: C.orange, cursor: 'pointer', fontSize: 12 }}>
+                                {viewingProofId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} Proof
+                              </button>
+                            )}
+                            {!r.voided_at && canVoidPayments && (
+                              <button onClick={() => handleVoidReceipt(r.id)} disabled={voidingId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: '#EF4444', cursor: 'pointer', fontSize: 12 }}>
+                                {voidingId === r.id ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />} Void
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {r.voided_at && (
+                          <span style={{ color: '#EF4444', fontSize: 11 }}>VOIDED{r.void_reason ? ` — ${r.void_reason}` : ''}</span>
                         )}
                       </div>
                     ))}
@@ -1587,8 +1629,12 @@ export function InvoicesPage() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button style={btnOutline} onClick={() => setShowPaymentModal(false)}>Cancel</button>
-                <button style={btnGreen} onClick={recordPayment} disabled={saving}>{saving ? 'Saving...' : 'Confirm Payment'}</button>
+                {editInvoice.total_amount - editInvoice.amount_paid > 0 ? (<>
+                  <button style={btnOutline} onClick={() => setShowPaymentModal(false)}>Cancel</button>
+                  <button style={btnGreen} onClick={recordPayment} disabled={saving}>{saving ? 'Saving...' : 'Confirm Payment'}</button>
+                </>) : (
+                  <button style={btnOutline} onClick={() => setShowPaymentModal(false)}>Close</button>
+                )}
               </div>
             </div>
           </div>
