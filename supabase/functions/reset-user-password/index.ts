@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
     const { data: { user: caller } } = await anonClient.auth.getUser()
     if (!caller) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
 
-    const { data: callerProfile } = await anonClient.from('users').select('role').eq('id', caller.id).single()
+    const { data: callerProfile } = await anonClient.from('users').select('role, tenant_id').eq('id', caller.id).single()
     if (!callerProfile || !['super_admin', 'ops_manager'].includes(callerProfile.role)) {
       return new Response(JSON.stringify({ error: 'Insufficient permissions' }), { status: 403, headers: corsHeaders })
     }
@@ -36,6 +36,15 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
+
+    // Verify target user is in the same tenant (unless super_admin)
+    if (callerProfile.role !== 'super_admin') {
+      const { data: target } = await adminClient.from('users').select('tenant_id').eq('id', user_id).single()
+      if (!target || target.tenant_id !== callerProfile.tenant_id) {
+        return new Response(JSON.stringify({ error: 'Cannot reset password for user in another tenant' }), { status: 403, headers: corsHeaders })
+      }
+    }
+
     const { error } = await adminClient.auth.admin.updateUserById(user_id, { password: new_password })
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders })
 

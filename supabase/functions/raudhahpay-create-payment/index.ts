@@ -42,6 +42,16 @@ Deno.serve(async (req) => {
     if (invErr || !invoice) {
       return new Response(JSON.stringify({ error: 'Invoice not found' }), { status: 404, headers: corsHeaders })
     }
+
+    // Each tenant can plug in their own RaudhahPay merchant account so their
+    // customers' payments settle to them, not to Motoverse's own account.
+    // Falls back to the project-wide key for tenants who haven't set one.
+    const { data: tenantRow } = await supabase
+      .from('tenants')
+      .select('raudhahpay_api_key')
+      .eq('id', invoice.tenant_id)
+      .single()
+    const raudhahpayApiKey = tenantRow?.raudhahpay_api_key || Deno.env.get('RAUDHAHPAY_API_KEY')
     if (invoice.status === 'void') {
       return new Response(JSON.stringify({ error: 'Invoice has been voided' }), { status: 400, headers: corsHeaders })
     }
@@ -75,7 +85,7 @@ Deno.serve(async (req) => {
     const rpRes = await fetch(RAUDHAHPAY_BASE_URL, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${Deno.env.get('RAUDHAHPAY_API_KEY')}`,
+        Authorization: `Bearer ${raudhahpayApiKey}`,
         'Content-Type': 'application/json',
         'Idempotency-Key': crypto.randomUUID(),
       },

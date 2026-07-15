@@ -1115,6 +1115,8 @@ interface TenantPortalSettings {
   whatsapp_number: string | null
   wati_api_key: string | null
   sst_rate: number
+  raudhahpay_api_key: string | null
+  raudhahpay_webhook_secret: string | null
 }
 
 function CopyableLink({ label, url }: { label: string; url: string }) {
@@ -1146,17 +1148,21 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
     whatsapp_number: null,
     wati_api_key: null,
     sst_rate: 0,
+    raudhahpay_api_key: null,
+    raudhahpay_webhook_secret: null,
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showKey, setShowKey] = useState(false)
+  const [showRpKey, setShowRpKey] = useState(false)
+  const [showRpSecret, setShowRpSecret] = useState(false)
 
   useEffect(() => {
     if (!tenantId) { setLoading(false); return }
     supabase
       .from('tenants')
-      .select('slug, google_review_link, whatsapp_number, wati_api_key, sst_rate')
+      .select('slug, google_review_link, whatsapp_number, wati_api_key, sst_rate, raudhahpay_api_key, raudhahpay_webhook_secret')
       .eq('id', tenantId)
       .single()
       .then(({ data }) => {
@@ -1173,6 +1179,8 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
       whatsapp_number: form.whatsapp_number?.trim() || null,
       wati_api_key: form.wati_api_key?.trim() || null,
       sst_rate: form.sst_rate,
+      raudhahpay_api_key: form.raudhahpay_api_key?.trim() || null,
+      raudhahpay_webhook_secret: form.raudhahpay_webhook_secret?.trim() || null,
     }).eq('id', tenantId)
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000)
   }
@@ -1318,6 +1326,62 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
               3. Create message templates for job status updates<br />
               4. Copy your API key from WATI → Settings → API Access<br />
               5. Paste it above and save
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* RaudhahPay */}
+      <Card>
+        <SectionHeader title="Payment Gateway (RaudhahPay)" />
+        {loading ? <Spinner /> : (
+          <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{
+              padding: '12px 16px', borderRadius: 8,
+              backgroundColor: '#1A1A1A', border: '1px solid #2A2A2A',
+              fontSize: 12, color: '#6B7280', lineHeight: 1.6,
+            }}>
+              Optional. Leave blank to use the shared default account — customer payments made
+              through your portal will settle to your own RaudhahPay merchant account instead once set.
+            </div>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>RaudhahPay API Key</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showRpKey ? 'text' : 'password'}
+                  style={{ ...inputStyle, paddingRight: 40 }}
+                  placeholder="rp_live_sk_…"
+                  value={form.raudhahpay_api_key ?? ''}
+                  onChange={e => set('raudhahpay_api_key', e.target.value)}
+                />
+                <button
+                  onClick={() => setShowRpKey(v => !v)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#666', padding: 4 }}
+                >
+                  {showRpKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>RaudhahPay Webhook Secret</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showRpSecret ? 'text' : 'password'}
+                  style={{ ...inputStyle, paddingRight: 40 }}
+                  placeholder="whsec_…"
+                  value={form.raudhahpay_webhook_secret ?? ''}
+                  onChange={e => set('raudhahpay_webhook_secret', e.target.value)}
+                />
+                <button
+                  onClick={() => setShowRpSecret(v => !v)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#666', padding: 4 }}
+                >
+                  {showRpSecret ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+              <span style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
+                Used to verify that incoming payment webhooks really came from RaudhahPay.
+              </span>
             </div>
           </div>
         )}

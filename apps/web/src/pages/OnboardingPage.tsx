@@ -20,6 +20,7 @@ export function OnboardingPage() {
 
   // Step 1 state
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
   const [address, setAddress] = useState('')
   const [state, setState] = useState('')
   const [postcode, setPostcode] = useState('')
@@ -27,6 +28,7 @@ export function OnboardingPage() {
 
   // Step 2 state
   const [branchName, setBranchName] = useState('Main Branch')
+  const [branchCode, setBranchCode] = useState('')
   const [branchAddress, setBranchAddress] = useState('')
   const [branchPhone, setBranchPhone] = useState('')
   const [openTime, setOpenTime] = useState('08:00')
@@ -37,6 +39,7 @@ export function OnboardingPage() {
   function handleLogoChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    setLogoFile(file)
     const reader = new FileReader()
     reader.onload = (ev) => setLogoPreview(ev.target?.result as string)
     reader.readAsDataURL(file)
@@ -53,16 +56,30 @@ export function OnboardingPage() {
       // Update tenant with address + state
       const { data: userData } = await supabase
         .from('users')
-        .select('tenant_id')
+        .select('tenant_id, branch_id')
         .eq('id', user?.id ?? '')
         .single()
+
+      let logoUrl: string | null = null
+      if (logoFile && userData?.branch_id) {
+        const ext = logoFile.name.split('.').pop()
+        const path = `${userData.branch_id}/logo.${ext}`
+        const { error: uploadError } = await supabase.storage.from('branch-logos').upload(path, logoFile, { upsert: true })
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage.from('branch-logos').getPublicUrl(path)
+          logoUrl = urlData.publicUrl + '?t=' + Date.now()
+        }
+      }
 
       if (userData?.tenant_id) {
         const { error: updateError } = await supabase
           .from('tenants')
-          .update({ address, state, postcode })
+          .update({ address, state, postcode, ...(logoUrl ? { logo_url: logoUrl } : {}) })
           .eq('id', userData.tenant_id)
         if (updateError) throw new Error(updateError.message)
+      }
+      if (logoUrl && userData?.branch_id) {
+        await supabase.from('branches').update({ logo_url: logoUrl }).eq('id', userData.branch_id)
       }
       setStep(2)
     } catch (err: unknown) {
@@ -87,6 +104,7 @@ export function OnboardingPage() {
           .from('branches')
           .update({
             name: branchName,
+            code: branchCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || null,
             address: branchAddress,
             phone: branchPhone,
             work_start_time: openTime,
@@ -348,6 +366,23 @@ export function OnboardingPage() {
                 onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
                 onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
               />
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Document Prefix</label>
+              <input
+                type="text"
+                value={branchCode}
+                onChange={(e) => setBranchCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5))}
+                placeholder="e.g. ABC"
+                maxLength={5}
+                style={inputStyle}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
+              />
+              <p style={{ fontSize: '11px', color: '#4B5563', marginTop: '4px' }}>
+                Used on your invoices and job numbers — e.g. <strong style={{ color: '#F15A22' }}>{branchCode || 'MV'}-INV-2026-0001</strong>. You can change this later in Settings.
+              </p>
             </div>
 
             <div style={fieldStyle}>

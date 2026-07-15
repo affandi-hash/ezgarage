@@ -10,6 +10,15 @@ import {
   DollarSign
 } from 'lucide-react'
 
+// expense-docs is a private bucket; older rows still hold the full
+// (now-dead) public URL from before it was locked down — extract just the
+// storage path so both old and new rows resolve to a signed URL the same way.
+function toExpenseDocPath(value: string): string {
+  const marker = '/object/public/expense-docs/'
+  const idx = value.indexOf(marker)
+  return idx >= 0 ? value.slice(idx + marker.length) : value
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Expense {
@@ -219,8 +228,7 @@ function ExpenseModal({
       const path = `${tenantId}/${Date.now()}.${ext}`
       const { error: upErr } = await supabase.storage.from('expense-docs').upload(path, file, { upsert: true })
       if (!upErr) {
-        const { data } = supabase.storage.from('expense-docs').getPublicUrl(path)
-        fileUrl = data.publicUrl
+        fileUrl = path
       }
       setUploading(false)
     }
@@ -615,7 +623,17 @@ export function ExpensesPage() {
                       <td style={{ padding: '12px 16px', color: '#F0F0F0', fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtAmt(exp.amount)}</td>
                       <td style={{ padding: '12px 16px' }}>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          {exp.file_url && <a href={exp.file_url} target="_blank" rel="noreferrer" style={{ color: '#A0A0A0' }} title="View receipt"><FileText size={14} /></a>}
+                          {exp.file_url && (
+                            <button
+                              onClick={async () => {
+                                const { data, error } = await supabase.storage.from('expense-docs').createSignedUrl(toExpenseDocPath(exp.file_url!), 3600)
+                                if (error || !data) { toast('Could not open receipt', 'error'); return }
+                                window.open(data.signedUrl, '_blank')
+                              }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A0A0A0', padding: 4 }}
+                              title="View receipt"
+                            ><FileText size={14} /></button>
+                          )}
                           <button onClick={() => { setEditing(exp); setShowModal(true) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A0A0A0', padding: 4 }} title="Edit"><Pencil size={13} /></button>
                           <button onClick={() => deleteExpense(exp)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', padding: 4 }} title="Delete"><Trash2 size={13} /></button>
                         </div>

@@ -2,8 +2,10 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Building2, User, Mail, Lock, Phone, MapPin, Eye, EyeOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/store/authStore'
 
 export function SignUpPage() {
+  const { setUser } = useAuthStore()
   const [workshopName, setWorkshopName] = useState('')
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -59,6 +61,19 @@ export function SignUpPage() {
       })
 
       if (rpcError) throw new Error(rpcError.message)
+
+      // App.tsx's onAuthStateChange listener fetches the users profile as
+      // soon as the SIGNED_IN event fires — which can race ahead of the
+      // create_tenant_signup RPC above finishing the users insert, leaving
+      // useAuthStore().user permanently null (no retry) and silently
+      // breaking every onboarding save that depends on it. Fetch and set
+      // it explicitly here, now that the row is guaranteed to exist.
+      const { data: profile } = await supabase
+        .from('users')
+        .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password')
+        .eq('id', authUser.id)
+        .single()
+      setUser(profile ?? null)
 
       navigate('/onboarding')
     } catch (err: unknown) {

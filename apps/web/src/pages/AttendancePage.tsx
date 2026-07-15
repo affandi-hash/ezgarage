@@ -23,6 +23,37 @@ import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
 import { logAudit } from '@/lib/audit'
 
+// attendance-selfies is a private bucket; older rows still hold the full
+// (now-dead) public URL from before it was locked down — extract just the
+// storage path so both old and new rows resolve to a signed URL the same way.
+function toSelfiePath(value: string): string {
+  const marker = '/object/public/attendance-selfies/'
+  const idx = value.indexOf(marker)
+  return idx >= 0 ? value.slice(idx + marker.length) : value
+}
+
+function SelfieThumbnail({ value, alt, size }: { value: string; alt: string; size: number }) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    supabase.storage.from('attendance-selfies').createSignedUrl(toSelfiePath(value), 3600).then(({ data }) => {
+      if (!cancelled && data) setSignedUrl(data.signedUrl)
+    })
+    return () => { cancelled = true }
+  }, [value])
+
+  if (!signedUrl) return <span style={{ color: '#444', fontSize: 11 }}>…</span>
+  return (
+    <img
+      src={signedUrl}
+      alt={alt}
+      style={{ width: size, height: size, borderRadius: 6, objectFit: 'cover', border: '1px solid #2A2A2A', cursor: 'pointer' }}
+      onClick={() => window.open(signedUrl, '_blank')}
+    />
+  )
+}
+
 // â"€â"€â"€ Types â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 interface AttendanceRecord {
@@ -468,22 +499,12 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
                     </td>
                     <td style={{ padding: '10px 14px' }}>
                       {(r as any).clock_in_selfie_url ? (
-                        <img
-                          src={(r as any).clock_in_selfie_url}
-                          alt="clock-in selfie"
-                          style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', border: '1px solid #2A2A2A', cursor: 'pointer' }}
-                          onClick={() => window.open((r as any).clock_in_selfie_url, '_blank')}
-                        />
+                        <SelfieThumbnail value={(r as any).clock_in_selfie_url} alt="clock-in selfie" size={36} />
                       ) : <span style={{ color: '#444', fontSize: 11 }}>{'—'}</span>}
                     </td>
                     <td style={{ padding: '10px 14px' }}>
                       {(r as any).clock_out_selfie_url ? (
-                        <img
-                          src={(r as any).clock_out_selfie_url}
-                          alt="clock-out selfie"
-                          style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', border: '1px solid #2A2A2A', cursor: 'pointer' }}
-                          onClick={() => window.open((r as any).clock_out_selfie_url, '_blank')}
-                        />
+                        <SelfieThumbnail value={(r as any).clock_out_selfie_url} alt="clock-out selfie" size={36} />
                       ) : <span style={{ color: '#444', fontSize: 11 }}>{'—'}</span>}
                     </td>
                     <td style={{ padding: '10px 14px' }}>
@@ -999,16 +1020,12 @@ function MyAttendanceTab({ staffId }: { staffId: string }) {
                   </td>
                   <td style={{ padding: '10px 14px' }}>
                     {(r as any).clock_in_selfie_url ? (
-                      <img src={(r as any).clock_in_selfie_url} alt="clock-in selfie"
-                        style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', border: '1px solid #2A2A2A', cursor: 'pointer' }}
-                        onClick={() => window.open((r as any).clock_in_selfie_url, '_blank')} />
+                      <SelfieThumbnail value={(r as any).clock_in_selfie_url} alt="clock-in selfie" size={32} />
                     ) : <span style={{ color: '#444', fontSize: 11 }}>{'—'}</span>}
                   </td>
                   <td style={{ padding: '10px 14px' }}>
                     {(r as any).clock_out_selfie_url ? (
-                      <img src={(r as any).clock_out_selfie_url} alt="clock-out selfie"
-                        style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', border: '1px solid #2A2A2A', cursor: 'pointer' }}
-                        onClick={() => window.open((r as any).clock_out_selfie_url, '_blank')} />
+                      <SelfieThumbnail value={(r as any).clock_out_selfie_url} alt="clock-out selfie" size={32} />
                     ) : <span style={{ color: '#444', fontSize: 11 }}>{'—'}</span>}
                   </td>
                 </tr>
@@ -1373,8 +1390,7 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
       const { error: upErr } = await supabase.storage
         .from('attendance-selfies').upload(fileName, blob, { contentType: 'image/jpeg' })
       if (upErr) throw upErr
-      const { data: urlData } = supabase.storage.from('attendance-selfies').getPublicUrl(fileName)
-      const photoUrl = urlData.publicUrl
+      const photoUrl = fileName
 
       const now = new Date()
       const today = now.toLocaleDateString('en-CA')

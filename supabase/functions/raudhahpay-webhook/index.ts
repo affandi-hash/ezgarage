@@ -46,11 +46,6 @@ Deno.serve(async (req) => {
     return new Response('Timestamp too old', { status: 401 })
   }
 
-  const expected = await hmacSha256Hex(Deno.env.get('RAUDHAHPAY_WEBHOOK_SECRET')!, `${timestamp}.${rawBody}`)
-  if (!constantTimeEqual(expected, signature)) {
-    return new Response('Invalid signature', { status: 401 })
-  }
-
   let event: { event: string; data?: Record<string, unknown>; [key: string]: unknown }
   try {
     event = JSON.parse(rawBody)
@@ -62,6 +57,32 @@ Deno.serve(async (req) => {
   // (confirmed via the dashboard's "Test" button) send them flat on the
   // top-level event object instead. Support both shapes defensively.
   const data = event.data ?? event
+
+  // Each tenant can have their own RaudhahPay merchant account (and
+  // therefore their own webhook secret) — look up which one this delivery
+  // belongs to via the invoice referenced in the payload BEFORE trusting
+  // anything in it, then verify the signature with that tenant's secret
+  // (falling back to the project-wide default for tenants without their
+  // own). This can only be done after parsing the body, so the signature
+  // check happens here instead of before parsing, unlike a single-secret
+  // setup would allow.
+  const supabaseForLookup = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  const lookupInvoiceId = (data.order_no as string) || (data.metadata as { invoice_id?: string })?.invoice_id
+  let webhookSecret = Deno.env.get('RAUDHAHPAY_WEBHOOK_SECRET')!
+  if (lookupInvoiceId) {
+    const { data: invoiceForSecret } = await supabaseForLookup
+      .from('invoices')
+      .select('tenant_id, tenants(raudhahpay_webhook_secret)')
+      .eq('id', lookupInvoiceId)
+      .single()
+    const tenantSecret = (invoiceForSecret as { tenants?: { raudhahpay_webhook_secret?: string | null } } | null)?.tenants?.raudhahpay_webhook_secret
+    if (tenantSecret) webhookSecret = tenantSecret
+  }
+
+  const expected = await hmacSha256Hex(webhookSecret, `${timestamp}.${rawBody}`)
+  if (!constantTimeEqual(expected, signature)) {
+    return new Response('Invalid signature', { status: 401 })
+  }
 
   const REFUND_EVENTS = new Set(['payment.refunded', 'payment.partial_refunded'])
 
