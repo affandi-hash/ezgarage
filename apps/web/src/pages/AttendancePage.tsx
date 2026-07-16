@@ -976,7 +976,7 @@ function MyAttendanceTab({ staffId }: { staffId: string }) {
           { label: 'Present', value: totalPresent, color: '#22C55E' },
           { label: 'Late',    value: totalLate,    color: '#F59E0B' },
           { label: 'Absent',  value: totalAbsent,  color: '#EF4444' },
-          { label: 'OT hrs',  value: totalOT,      color: '#F15A22' },
+          { label: 'OT hrs',  value: totalOT.toFixed(1), color: '#F15A22' },
         ].map(s => (
           <div key={s.label} style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 10, padding: '12px 16px', textAlign: 'center' }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: s.color }}>{s.value}</div>
