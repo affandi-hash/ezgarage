@@ -207,14 +207,26 @@ function StatusUpdateModal({ job, userRole, onClose, onConfirmDirect, onRequestA
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [checklistAnswer, setChecklistAnswer] = useState<boolean | null>(null)
+  const [estimateInput, setEstimateInput] = useState(job.estimated_cost != null ? String(job.estimated_cost) : '')
 
   const gated = isGatedTransition(job.status, selectedStatus)
   const isForemanUser = canApprove(userRole)
   const question = gated ? getChecklistQuestion(job.status, selectedStatus) : ''
   const isSubmitForApproval = gated && !isForemanUser
 
+  // Submitting for customer approval without a cost attached means asking
+  // the customer to approve nothing — this is the one place in the job
+  // lifecycle that guarantees an estimate gets set before the portal (and
+  // eventually Pay Online) ever needs it.
+  const needsEstimate = job.status === 'diagnosing' && selectedStatus === 'waiting_approval'
+  const estimateValue = parseFloat(estimateInput)
+  const estimateInvalid = needsEstimate && (!estimateInput.trim() || isNaN(estimateValue) || estimateValue <= 0)
+
   const handleConfirm = async () => {
     setSaving(true)
+    if (needsEstimate) {
+      await supabase.from('jobs').update({ estimated_cost: estimateValue }).eq('id', job.id)
+    }
     if (isSubmitForApproval) {
       await onRequestApproval(job.id, selectedStatus, job.status, question, nextAction, notes)
     } else {
@@ -224,7 +236,7 @@ function StatusUpdateModal({ job, userRole, onClose, onConfirmDirect, onRequestA
     onClose()
   }
 
-  const confirmDisabled = saving || (!isSubmitForApproval && gated && checklistAnswer === null)
+  const confirmDisabled = saving || estimateInvalid || (!isSubmitForApproval && gated && checklistAnswer === null)
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 50, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
@@ -260,6 +272,21 @@ function StatusUpdateModal({ job, userRole, onClose, onConfirmDirect, onRequestA
             </div>
           )}
         </div>
+
+        {/* Estimated cost — required before submitting for customer approval */}
+        {needsEstimate && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ color: '#A0A0A0', fontSize: 12, display: 'block', marginBottom: 6 }}>ESTIMATED COST (RM) — REQUIRED</label>
+            <input
+              type="number" min="0" step="0.01" value={estimateInput}
+              onChange={(e) => setEstimateInput(e.target.value)}
+              placeholder="0.00" style={inputStyle}
+            />
+            <p style={{ color: '#6B7280', fontSize: 11, marginTop: 6 }}>
+              The customer will be asked to approve this amount before work continues.
+            </p>
+          </div>
+        )}
 
         {/* Foreman sign-off checklist */}
         {gated && isForemanUser && (
