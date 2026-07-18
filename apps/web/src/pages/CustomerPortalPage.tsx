@@ -52,31 +52,47 @@ interface PortalResult {
   jobs: PortalJob[]
 }
 
+// Mirrors jobs.status as WorkshopBoardPage actually uses it (STATUS_CONFIG /
+// BOARD_COLUMNS there) — this used to be a different, aspirational set of
+// labels (quality_check/completed/collected) that were never real statuses,
+// so 'delivered' — the terminal state for the vast majority of real jobs —
+// fell through every one of these maps: empty timeline, unstyled badge, and
+// (see showPaymentUpload below) no Pay Online button at all.
 const STATUS_LABELS: Record<string, string> = {
   checked_in: 'Checked In',
   diagnosing: 'Diagnosing',
+  waiting_approval: 'Waiting Approval',
   waiting_parts: 'Waiting for Parts',
   in_progress: 'In Progress',
-  quality_check: 'Quality Check',
   ready: 'Ready for Collection',
-  completed: 'Completed',
-  collected: 'Collected',
+  long_due: 'Ready — Please Collect Soon',
+  delivered: 'Delivered',
+  closed: 'Closed',
   cancelled: 'Cancelled',
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  checked_in: '#3B82F6',
-  diagnosing: '#8B5CF6',
-  waiting_parts: '#EAB308',
+  checked_in: '#8B5CF6',
+  diagnosing: '#F59E0B',
+  waiting_approval: '#EF4444',
+  waiting_parts: '#F97316',
   in_progress: C.orange,
-  quality_check: '#06B6D4',
   ready: '#22C55E',
-  completed: '#6B7280',
-  collected: '#6B7280',
+  long_due: '#DC2626',
+  delivered: '#0EA5E9',
+  closed: '#6B7280',
   cancelled: C.red,
 }
 
-const STATUS_ORDER = ['checked_in', 'diagnosing', 'waiting_parts', 'in_progress', 'quality_check', 'ready', 'completed']
+// long_due doesn't belong in the timeline as its own forward stage — it
+// means "still ready, customer just hasn't collected yet," not "further
+// along than ready." Map it onto 'ready' for timeline position only; the
+// badge above still shows its own distinct (red) label so the customer
+// sees the nudge to come collect.
+const STATUS_ORDER = ['checked_in', 'diagnosing', 'waiting_approval', 'waiting_parts', 'in_progress', 'ready', 'delivered']
+function timelinePosition(status: string) {
+  return status === 'long_due' ? 'ready' : status
+}
 
 function formatDate(s: string | null) {
   if (!s) return '—'
@@ -89,14 +105,14 @@ function formatRM(v: number | null) {
 }
 
 function StatusTimeline({ currentStatus }: { currentStatus: string }) {
-  const idx = STATUS_ORDER.indexOf(currentStatus)
+  const idx = STATUS_ORDER.indexOf(timelinePosition(currentStatus))
   if (currentStatus === 'cancelled') return null
   return (
     <div style={{ marginTop: 20, marginBottom: 8, overflowX: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0, minWidth: 480 }}>
         {STATUS_ORDER.map((s, i) => {
           const done = i <= idx
-          const active = s === currentStatus
+          const active = s === timelinePosition(currentStatus)
           const color = active ? (STATUS_COLORS[s] || C.orange) : done ? C.green : C.border
           return (
             <div key={s} style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
@@ -360,7 +376,10 @@ function JobCard({ job, plate, phone, icFirst6, tenantSlug }: { job: PortalJob; 
 
   const hasInvoice = !!job.invoice_id
   const balanceDue = job.inv_total != null && job.inv_paid != null ? job.inv_total - job.inv_paid : 0
-  const showPaymentUpload = ['ready', 'completed', 'collected'].includes(job.status) && hasInvoice
+  // 'delivered' is the real terminal status for the vast majority of jobs
+  // (WorkshopBoardPage's actual vocabulary) — 'completed'/'collected' were
+  // never real values, so this silently hid Pay Online for nearly every job.
+  const showPaymentUpload = ['ready', 'long_due', 'delivered', 'closed'].includes(job.status) && hasInvoice
   const showPayOnline = showPaymentUpload && balanceDue > 0
 
   const doApprove = async () => {
