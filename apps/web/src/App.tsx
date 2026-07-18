@@ -20,6 +20,7 @@ import { InvoicesPage } from '@/pages/InvoicesPage'
 import { ReportsPage } from '@/pages/ReportsPage'
 import { FleetPage } from '@/pages/FleetPage'
 import { AuditLogPage } from '@/pages/AuditLogPage'
+import { PlatformSettingsPage } from '@/pages/PlatformSettingsPage'
 import { UsersPage } from '@/pages/UsersPage'
 import { SignUpPage } from '@/pages/SignUpPage'
 import { OnboardingPage } from '@/pages/OnboardingPage'
@@ -269,6 +270,15 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
                 <AuditLogPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Platform Settings — cross-tenant, super_admin (platform operator) only */}
+          <Route
+            path="/platform-settings"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin']}>
+                <PlatformSettingsPage />
               </ProtectedRoute>
             }
           />

@@ -1117,6 +1117,11 @@ interface TenantPortalSettings {
   sst_rate: number
   raudhahpay_api_key: string | null
   raudhahpay_webhook_secret: string | null
+  legal_business_name: string | null
+  ssm_registration_number: string | null
+  settlement_bank_name: string | null
+  settlement_bank_account_number: string | null
+  settlement_bank_account_name: string | null
 }
 
 function CopyableLink({ label, url }: { label: string; url: string }) {
@@ -1150,6 +1155,11 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
     sst_rate: 0,
     raudhahpay_api_key: null,
     raudhahpay_webhook_secret: null,
+    legal_business_name: null,
+    ssm_registration_number: null,
+    settlement_bank_name: null,
+    settlement_bank_account_number: null,
+    settlement_bank_account_name: null,
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1162,7 +1172,7 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
     if (!tenantId) { setLoading(false); return }
     supabase
       .from('tenants')
-      .select('slug, google_review_link, whatsapp_number, wati_api_key, sst_rate, raudhahpay_api_key, raudhahpay_webhook_secret')
+      .select('slug, google_review_link, whatsapp_number, wati_api_key, sst_rate, raudhahpay_api_key, raudhahpay_webhook_secret, legal_business_name, ssm_registration_number, settlement_bank_name, settlement_bank_account_number, settlement_bank_account_name')
       .eq('id', tenantId)
       .single()
       .then(({ data }) => {
@@ -1179,6 +1189,11 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
       whatsapp_number: form.whatsapp_number?.trim() || null,
       wati_api_key: form.wati_api_key?.trim() || null,
       sst_rate: form.sst_rate,
+      legal_business_name: form.legal_business_name?.trim() || null,
+      ssm_registration_number: form.ssm_registration_number?.trim() || null,
+      settlement_bank_name: form.settlement_bank_name?.trim() || null,
+      settlement_bank_account_number: form.settlement_bank_account_number?.trim() || null,
+      settlement_bank_account_name: form.settlement_bank_account_name?.trim() || null,
       raudhahpay_api_key: form.raudhahpay_api_key?.trim() || null,
       raudhahpay_webhook_secret: form.raudhahpay_webhook_secret?.trim() || null,
     }).eq('id', tenantId)
@@ -1326,6 +1341,44 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
               3. Create message templates for job status updates<br />
               4. Copy your API key from WATI → Settings → API Access<br />
               5. Paste it above and save
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Business & Compliance (KYC for RaudhahPay disbursement) */}
+      <Card>
+        <SectionHeader title="Business & Payout Details" />
+        {loading ? <Spinner /> : (
+          <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{
+              padding: '12px 16px', borderRadius: 8,
+              backgroundColor: '#1A1A1A', border: '1px solid #2A2A2A',
+              fontSize: 12, color: '#6B7280', lineHeight: 1.6,
+            }}>
+              RaudhahPay (Chip In Sdn Bhd) uses these to disburse your customers' online payments to your own bank account.
+            </div>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Legal Business Name</label>
+              <input style={inputStyle} value={form.legal_business_name ?? ''} onChange={e => set('legal_business_name', e.target.value)} placeholder="e.g. Motoverse Garage Sdn Bhd" />
+            </div>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>SSM Registration Number</label>
+              <input style={inputStyle} value={form.ssm_registration_number ?? ''} onChange={e => set('ssm_registration_number', e.target.value)} placeholder="e.g. 202301012345" />
+            </div>
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Bank Name</label>
+              <input style={inputStyle} value={form.settlement_bank_name ?? ''} onChange={e => set('settlement_bank_name', e.target.value)} placeholder="e.g. CIMB Bank Berhad" />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div style={fieldStyle}>
+                <label style={labelStyle}>Account Number</label>
+                <input style={inputStyle} value={form.settlement_bank_account_number ?? ''} onChange={e => set('settlement_bank_account_number', e.target.value)} placeholder="e.g. 8004123456" />
+              </div>
+              <div style={fieldStyle}>
+                <label style={labelStyle}>Account Holder Name</label>
+                <input style={inputStyle} value={form.settlement_bank_account_name ?? ''} onChange={e => set('settlement_bank_account_name', e.target.value)} placeholder="Must match legal business name" />
+              </div>
             </div>
           </div>
         )}

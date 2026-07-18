@@ -34,6 +34,14 @@ export function OnboardingPage() {
   const [openTime, setOpenTime] = useState('08:00')
   const [closeTime, setCloseTime] = useState('18:00')
 
+  // Step 3 state — business/compliance details RaudhahPay needs to
+  // disburse settled funds to this tenant's own bank account.
+  const [legalBusinessName, setLegalBusinessName] = useState('')
+  const [ssmNumber, setSsmNumber] = useState('')
+  const [settlementBankName, setSettlementBankName] = useState('')
+  const [settlementBankAccountNumber, setSettlementBankAccountNumber] = useState('')
+  const [settlementBankAccountName, setSettlementBankAccountName] = useState('')
+
   const workshopName = user?.full_name ?? 'Your Workshop'
 
   function handleLogoChange(e: ChangeEvent<HTMLInputElement>) {
@@ -121,6 +129,46 @@ export function OnboardingPage() {
     }
   }
 
+  async function handleStep3Next() {
+    setError('')
+    if (!legalBusinessName.trim() || !ssmNumber.trim() || !settlementBankName.trim() || !settlementBankAccountNumber.trim() || !settlementBankAccountName.trim()) {
+      setError('All fields are required — RaudhahPay needs these to disburse your payments.')
+      return
+    }
+    setLoading(true)
+    try {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('tenant_id')
+        .eq('id', user?.id ?? '')
+        .single()
+
+      if (userData?.tenant_id) {
+        const { error: updateError } = await supabase
+          .from('tenants')
+          .update({
+            legal_business_name: legalBusinessName.trim(),
+            ssm_registration_number: ssmNumber.trim(),
+            settlement_bank_name: settlementBankName.trim(),
+            settlement_bank_account_number: settlementBankAccountNumber.trim(),
+            settlement_bank_account_name: settlementBankAccountName.trim(),
+          })
+          .eq('id', userData.tenant_id)
+        if (updateError) throw new Error(updateError.message)
+
+        // Best-effort — RaudhahPay needs a copy of these KYC details to
+        // set up disbursement, but a delivery hiccup here shouldn't block
+        // onboarding.
+        supabase.functions.invoke('notify-tenant-kyc', { body: { tenant_id: userData.tenant_id } }).catch(() => {})
+      }
+      setStep(4)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const inputStyle: React.CSSProperties = {
     width: '100%',
     backgroundColor: '#1E1E1E',
@@ -148,7 +196,7 @@ export function OnboardingPage() {
   function StepIndicator() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '32px' }}>
-        {[1, 2, 3].map((n, i) => (
+        {[1, 2, 3, 4].map((n, i) => (
           <div key={n} style={{ display: 'flex', alignItems: 'center' }}>
             {/* Circle */}
             <div
@@ -171,7 +219,7 @@ export function OnboardingPage() {
               {n < step ? <Check size={14} /> : n}
             </div>
             {/* Connector line */}
-            {i < 2 && (
+            {i < 3 && (
               <div
                 style={{
                   width: '64px',
@@ -211,7 +259,7 @@ export function OnboardingPage() {
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '8px' }}>
           <p style={{ fontSize: '12px', color: '#A0A0A0', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-            Step {step} of 3
+            Step {step} of 4
           </p>
         </div>
 
@@ -466,6 +514,112 @@ export function OnboardingPage() {
 
         {/* ─── STEP 3 ─── */}
         {step === 3 && (
+          <div>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#F0F0F0', marginBottom: '6px' }}>
+              Business & payout details
+            </h2>
+            <p style={{ fontSize: '13px', color: '#A0A0A0', marginBottom: '28px' }}>
+              RaudhahPay (Chip In Sdn Bhd) needs these to disburse your customers' online payments to your own account.
+            </p>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Legal Business Name</label>
+              <input
+                type="text"
+                value={legalBusinessName}
+                onChange={(e) => setLegalBusinessName(e.target.value)}
+                placeholder="e.g. Motoverse Garage Sdn Bhd"
+                style={inputStyle}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
+              />
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>SSM Registration Number</label>
+              <input
+                type="text"
+                value={ssmNumber}
+                onChange={(e) => setSsmNumber(e.target.value)}
+                placeholder="e.g. 202301012345 (123456-A)"
+                style={inputStyle}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
+              />
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Bank Name</label>
+              <input
+                type="text"
+                value={settlementBankName}
+                onChange={(e) => setSettlementBankName(e.target.value)}
+                placeholder="e.g. CIMB Bank Berhad"
+                style={inputStyle}
+                onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+              <div>
+                <label style={labelStyle}>Account Number</label>
+                <input
+                  type="text"
+                  value={settlementBankAccountNumber}
+                  onChange={(e) => setSettlementBankAccountNumber(e.target.value)}
+                  placeholder="e.g. 8004123456"
+                  style={inputStyle}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Account Holder Name</label>
+                <input
+                  type="text"
+                  value={settlementBankAccountName}
+                  onChange={(e) => setSettlementBankAccountName(e.target.value)}
+                  placeholder="Must match legal business name"
+                  style={inputStyle}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = '#F15A22')}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
+                />
+              </div>
+            </div>
+
+            {error && <ErrorBox message={error} />}
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                style={{
+                  flex: 1,
+                  backgroundColor: 'transparent',
+                  border: '1px solid #2A2A2A',
+                  color: '#A0A0A0',
+                  borderRadius: '8px',
+                  padding: '11px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'border-color 0.15s',
+                }}
+                onMouseOver={(e) => (e.currentTarget.style.borderColor = '#A0A0A0')}
+                onMouseOut={(e) => (e.currentTarget.style.borderColor = '#2A2A2A')}
+              >
+                Back
+              </button>
+              <div style={{ flex: 2 }}>
+                <NextButton onClick={handleStep3Next} loading={loading} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── STEP 4 ─── */}
+        {step === 4 && (
           <div style={{ textAlign: 'center' }}>
             {/* Animated checkmark */}
             <div

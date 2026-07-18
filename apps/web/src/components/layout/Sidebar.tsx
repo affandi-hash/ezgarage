@@ -24,6 +24,7 @@ import {
   Receipt,
   Landmark,
   TrendingUp,
+  Globe2,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
@@ -91,6 +92,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/users', label: 'Users', icon: UserCog, roles: ['super_admin', 'ops_manager'] },
       { to: '/settings', label: 'Settings', icon: Settings, roles: ['super_admin', 'ops_manager'] },
       { to: '/audit', label: 'Audit Log', icon: FileSearch, roles: ['super_admin', 'ops_manager'] },
+      { to: '/platform-settings', label: 'Platform Settings', icon: Globe2, roles: ['super_admin'] },
     ],
   },
 ]
