@@ -21,6 +21,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/settings': 'Settings',
   '/audit': 'Audit Log',
   '/platform-settings': 'Platform Settings',
+  '/platform-settings': 'Platform Settings',
   '/users': 'Users',
   '/invoices': 'Invoices',
 }

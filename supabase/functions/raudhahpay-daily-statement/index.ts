@@ -44,8 +44,11 @@ Deno.serve(async (req) => {
   try {
     // This aggregates every tenant's financial data in one call — restrict
     // it to the trusted cron job (calling with the service role key
-    // directly) or a real super_admin user. Not just any authenticated
-    // caller, unlike the default JWT-verification gate would otherwise allow.
+    // directly) or a real platform admin. Gated on is_platform_admin
+    // specifically, NOT the tenant-scoped `role` column — a tenant's own
+    // super_admin has no legitimate reason to see every other tenant's
+    // revenue, and coupling this to `role` would silently grant it to
+    // them the moment anyone ever holds that role in a second tenant.
     const authHeader = req.headers.get('Authorization') ?? ''
     const providedToken = authHeader.replace('Bearer ', '')
     let isServiceRole = false
@@ -64,8 +67,8 @@ Deno.serve(async (req) => {
       )
       const { data: { user } } = await anonClient.auth.getUser()
       if (!user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
-      const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single()
-      if (profile?.role !== 'super_admin') {
+      const { data: profile } = await supabase.from('users').select('is_platform_admin').eq('id', user.id).single()
+      if (!profile?.is_platform_admin) {
         return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
       }
     }

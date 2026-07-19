@@ -5,9 +5,14 @@ import type { Role } from '@/types'
 interface ProtectedRouteProps {
   children: React.ReactNode
   allowedRoles?: Role[]
+  // Gates on the separate is_platform_admin flag instead of `role` — for
+  // EZGarage-wide admin tooling that must stay independent of any tenant's
+  // own role hierarchy. Independent of allowedRoles; if both are given,
+  // requirePlatformAdmin takes precedence.
+  requirePlatformAdmin?: boolean
 }
 
-export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, allowedRoles, requirePlatformAdmin }: ProtectedRouteProps) {
   const { user, loading } = useAuthStore()
 
   if (loading) {
@@ -47,7 +52,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/change-password" replace />
   }
 
-  if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
+  if (requirePlatformAdmin ? !user.is_platform_admin : (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(user.role))) {
     return (
       <div
         style={{

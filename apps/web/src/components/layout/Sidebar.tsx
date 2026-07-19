@@ -35,6 +35,10 @@ interface NavItem {
   label: string
   icon: React.ElementType
   roles: Role[]
+  // Gates on the separate is_platform_admin flag instead of `roles` — see
+  // ProtectedRoute's requirePlatformAdmin for why this is kept independent
+  // of the tenant role hierarchy.
+  requirePlatformAdmin?: boolean
 }
 
 interface NavGroup {
@@ -92,7 +96,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/users', label: 'Users', icon: UserCog, roles: ['super_admin', 'ops_manager'] },
       { to: '/settings', label: 'Settings', icon: Settings, roles: ['super_admin', 'ops_manager'] },
       { to: '/audit', label: 'Audit Log', icon: FileSearch, roles: ['super_admin', 'ops_manager'] },
-      { to: '/platform-settings', label: 'Platform Settings', icon: Globe2, roles: ['super_admin'] },
+      { to: '/platform-settings', label: 'Platform Settings', icon: Globe2, roles: [], requirePlatformAdmin: true },
     ],
   },
 ]
@@ -238,7 +242,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
   if (!user) return null
 
   const visibleGroups = NAV_GROUPS
-    .map(group => ({ ...group, items: group.items.filter(item => item.roles.includes(user.role)) }))
+    .map(group => ({ ...group, items: group.items.filter(item => item.requirePlatformAdmin ? user.is_platform_admin : item.roles.includes(user.role)) }))
     .filter(group => group.items.length > 0)
 
   const contentProps: ContentProps = {

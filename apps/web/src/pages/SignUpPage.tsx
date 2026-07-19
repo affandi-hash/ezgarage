@@ -70,7 +70,7 @@ export function SignUpPage() {
       // it explicitly here, now that the row is guaranteed to exist.
       const { data: profile } = await supabase
         .from('users')
-        .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password')
+        .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password, is_platform_admin')
         .eq('id', authUser.id)
         .single()
       setUser(profile ?? null)

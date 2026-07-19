@@ -44,6 +44,10 @@ export interface UserProfile {
   is_active: boolean
   tenant_id: string
   must_change_password: boolean
+  // Platform-operator flag — completely separate from `role`/tenant scope.
+  // Gates EZGarage-wide admin tooling (Platform Settings) only; grants no
+  // access to any tenant's operational data.
+  is_platform_admin: boolean
 }
 
 export interface Tenant {

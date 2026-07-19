@@ -44,7 +44,7 @@ export default function App() {
       if (session?.user) {
         const { data: profile } = await supabase
           .from('users')
-          .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password')
+          .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password, is_platform_admin')
           .eq('id', session.user.id)
           .single()
         setUser(profile ?? null)
@@ -61,7 +61,7 @@ export default function App() {
       } else if (event === 'SIGNED_IN' && session?.user) {
         const { data: profile } = await supabase
           .from('users')
-          .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password')
+          .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password, is_platform_admin')
           .eq('id', session.user.id)
           .single()
         setUser(profile ?? null)
@@ -273,11 +273,12 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          {/* Platform Settings — cross-tenant, super_admin (platform operator) only */}
+          {/* Platform Settings — cross-tenant, platform-operator only. Gated
+              by is_platform_admin, completely independent of tenant role. */}
           <Route
             path="/platform-settings"
             element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
+              <ProtectedRoute requirePlatformAdmin>
                 <PlatformSettingsPage />
               </ProtectedRoute>
             }
