@@ -41,13 +41,16 @@ export function InviteStaffModal({ onClose, onSuccess }: Props) {
   const isCeo = (user?.role as string) === 'ceo' || user?.role === 'super_admin'
 
   useEffect(() => {
-    if (!isCeo) return
+    if (!isCeo || !user?.tenant_id) return
+    // super_admin's RLS bypass is project-wide, not tenant-scoped — without
+    // this filter, another tenant's branches would be selectable here.
     supabase
       .from('branches')
       .select('id, name')
+      .eq('tenant_id', user.tenant_id)
       .order('name')
       .then(({ data }) => setBranches((data as Branch[]) ?? []))
-  }, [isCeo])
+  }, [isCeo, user?.tenant_id])
 
   const setField = <K extends keyof InviteStaffPayload>(field: K, value: InviteStaffPayload[K]) =>
     setForm((prev) => ({ ...prev, [field]: value }))

@@ -417,9 +417,12 @@ export function UsersPage() {
   }, [isSuperAdmin, currentUser?.branch_id]);
 
   const fetchBranches = useCallback(async () => {
-    const { data } = await supabase.from('branches').select('id, name, city').order('name');
+    if (!currentUser?.tenant_id) return;
+    // super_admin's RLS bypass is project-wide, not tenant-scoped — without
+    // this filter, another tenant's branches would list here by name.
+    const { data } = await supabase.from('branches').select('id, name, city').eq('tenant_id', currentUser.tenant_id).order('name');
     setBranches((data as Branch[]) ?? []);
-  }, []);
+  }, [currentUser?.tenant_id]);
 
   useEffect(() => {
     fetchUsers();

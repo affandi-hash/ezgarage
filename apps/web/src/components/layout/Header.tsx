@@ -45,15 +45,19 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange, onM
   const isSuperAdmin = user?.role === 'super_admin'
 
   useEffect(() => {
-    if (isSuperAdmin) {
+    // super_admin's RLS bypass is project-wide, not tenant-scoped (see the
+    // 115-policy audit) — without this explicit filter, a second tenant's
+    // branch would show up here by name, indistinguishable from your own.
+    if (isSuperAdmin && user?.tenant_id) {
       supabase
         .from('branches')
         .select('id, name, address, phone')
+        .eq('tenant_id', user.tenant_id)
         .then(({ data }) => {
           if (data) setBranches(data as Branch[])
         })
     }
-  }, [isSuperAdmin])
+  }, [isSuperAdmin, user?.tenant_id])
 
   const initials = user?.full_name
     ? user.full_name

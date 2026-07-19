@@ -62,13 +62,18 @@ export function TransferRequestModal({ onClose, onSuccess }: TransferRequestModa
   const [closeHover, setCloseHover] = useState(false)
 
   useEffect(() => {
+    if (!user?.tenant_id) return
+    // super_admin's RLS bypass is project-wide, not tenant-scoped — without
+    // this filter, another tenant's branch could be picked as a transfer
+    // destination.
     supabase
       .from('branches')
       .select('id, name')
+      .eq('tenant_id', user.tenant_id)
       .neq('id', user?.branch_id ?? '')
       .order('name')
       .then(({ data }) => setBranches((data as Branch[]) ?? []))
-  }, [user?.branch_id])
+  }, [user?.branch_id, user?.tenant_id])
 
   const setField = (key: keyof typeof form, val: string) =>
     setForm((prev) => ({ ...prev, [key]: val }))
