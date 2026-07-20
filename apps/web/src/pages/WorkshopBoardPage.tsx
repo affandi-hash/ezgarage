@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Wrench, RefreshCw, Plus, X, ChevronDown, Search, MessageCircle, Camera, CheckCircle, XCircle, Clock, AlertTriangle, Trash2 } from 'lucide-react'
+import { Wrench, RefreshCw, Plus, X, ChevronDown, Search, MessageCircle, Camera, CheckCircle, XCircle, Clock, AlertTriangle, Trash2, Archive, ArchiveRestore } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -29,6 +29,14 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; d
 const BOARD_COLUMNS: JobStatus[] = [
   'checked_in', 'diagnosing', 'waiting_approval',
   'waiting_parts', 'in_progress', 'ready', 'long_due', 'delivered',
+]
+
+// Cancel stops at delivered/closed — a job that's already handed back to the
+// customer (or fully closed out) is treated as done, not cancellable. Use
+// Archive instead to get a finished job off the active board.
+const CANCELLABLE_STATUSES: JobStatus[] = [
+  'new', 'booked', 'checked_in', 'diagnosing', 'waiting_approval',
+  'waiting_parts', 'in_progress', 'ready', 'long_due',
 ]
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
@@ -599,6 +607,9 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
   const [deleteReason, setDeleteReason] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [deleteBlockedReason, setDeleteBlockedReason] = useState<string | null>(null)
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
+  const [archiveReason, setArchiveReason] = useState('')
+  const [archiving, setArchiving] = useState(false)
   const initMechanicIds = job.mechanic_ids?.length
     ? job.mechanic_ids
     : job.assigned_mechanic_id ? [job.assigned_mechanic_id] : []
@@ -687,6 +698,29 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
     setCancelling(false)
     if (error) { toast('Failed to cancel job: ' + error.message); return }
     toast('Job cancelled')
+    onClose()
+    onRefresh()
+  }
+
+  // Archive is distinct from Cancel: it just takes a job off the active
+  // board (any status, including delivered/closed) without claiming the
+  // job was cancelled. Reversible — Restore in the Archive tab just clears
+  // archived_at.
+  async function handleArchiveJob() {
+    if (!archiveReason.trim()) return
+    setArchiving(true)
+    const { error } = await supabase.from('jobs').update({
+      archived_at: new Date().toISOString(),
+      archived_by: user?.id ?? null,
+    }).eq('id', job.id)
+    setArchiving(false)
+    if (error) { toast('Failed to archive job: ' + error.message); return }
+    logAudit({
+      action: 'archive', module: 'Job', record_id: job.id, record_type: 'job',
+      details: { job_number: job.job_number, plate: job.vehicles?.plate_number ?? null, customer: job.customer_name ?? null, status: job.status, reason: archiveReason.trim() },
+      branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id,
+    })
+    toast('Job archived')
     onClose()
     onRefresh()
   }
@@ -1025,6 +1059,27 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
             </div>
           )}
 
+          {/* Archive confirm panel */}
+          {showArchiveConfirm && (
+            <div style={{ marginBottom: 12, padding: '12px 14px', background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.35)', borderRadius: 8 }}>
+              <p style={{ color: '#D1D5DB', fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Archive this job?</p>
+              <p style={{ color: '#9CA3AF', fontSize: 12, margin: '0 0 8px' }}>Takes it off the active board without marking it cancelled. Find it again in the Archive tab — Restore brings it back.</p>
+              <textarea
+                rows={2}
+                placeholder="Reason for archiving (required)"
+                value={archiveReason}
+                onChange={e => setArchiveReason(e.target.value)}
+                style={{ width: '100%', background: '#1E1E1E', border: '1px solid #3A3A3A', borderRadius: 6, color: '#F0F0F0', fontSize: 13, padding: '7px 10px', resize: 'none', boxSizing: 'border-box', outline: 'none' }}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={() => { setShowArchiveConfirm(false); setArchiveReason('') }} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid #2A2A2A', background: 'transparent', color: '#A0A0A0', fontSize: 13, cursor: 'pointer' }}>Back</button>
+                <button onClick={handleArchiveJob} disabled={!archiveReason.trim() || archiving} style={{ flex: 2, padding: '8px 0', borderRadius: 6, border: 'none', background: '#4B5563', color: '#fff', fontSize: 13, fontWeight: 700, cursor: (!archiveReason.trim() || archiving) ? 'not-allowed' : 'pointer', opacity: (!archiveReason.trim() || archiving) ? 0.6 : 1 }}>
+                  {archiving ? 'Archiving…' : 'Confirm Archive'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {editMode ? (
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => { setEditMode(false); setSaveError(null) }} disabled={saving} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
@@ -1043,9 +1098,16 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
                 </button>
               )}
               {['ops_manager', 'foreman', 'super_admin'].includes(user?.role ?? '') &&
-               ['new', 'booked', 'checked_in', 'diagnosing', 'waiting_approval'].includes(job.status) && (
+               CANCELLABLE_STATUSES.includes(job.status) && (
                 <button onClick={() => { setShowCancelConfirm(v => !v); setCancelReason('') }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1px solid #DC2626', backgroundColor: showCancelConfirm ? 'rgba(220,38,38,0.15)' : 'transparent', color: '#FCA5A5', fontSize: 13, cursor: 'pointer' }}>
                   <X size={14} /> Cancel Job
+                </button>
+              )}
+              {/* Archive is available regardless of status (including delivered/closed)
+                  — it's just visibility, not a claim the job was cancelled. */}
+              {['ops_manager', 'foreman', 'super_admin'].includes(user?.role ?? '') && !job.archived_at && (
+                <button onClick={() => { setShowArchiveConfirm(v => !v); setArchiveReason('') }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1px solid #4B5563', backgroundColor: showArchiveConfirm ? 'rgba(107,114,128,0.2)' : 'transparent', color: '#D1D5DB', fontSize: 13, cursor: 'pointer' }}>
+                  <Archive size={14} /> Archive Job
                 </button>
               )}
               {/* Delete is a distinct, more destructive action than Cancel — restricted
@@ -1613,6 +1675,47 @@ function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap,
 }
 
 // ---------------------------------------------------------------------------
+// Archive row
+// ---------------------------------------------------------------------------
+function ArchiveRow({ job, onView, onRestore }: {
+  job: JobRow
+  onView: (job: JobRow) => void
+  onRestore: (job: JobRow) => void
+}) {
+  const cfg = STATUS_CONFIG[job.status] ?? STATUS_CONFIG.new
+  const plate = job.vehicles?.plate_number ?? job.plate_number ?? '—'
+  const customer = job.customers?.full_name ?? job.customer_name ?? '—'
+  const dateLabel = job.archived_at
+    ? new Date(job.archived_at).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
+    : (job.status_updated_at ? new Date(job.status_updated_at).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' }) : '—')
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', flex: '1 1 320px', minWidth: 0 }}>
+        <div style={{ flex: '0 0 auto', color: '#F0F0F0', fontWeight: 700, fontSize: 13 }}>{formatPlate(plate)}</div>
+        <div style={{ flex: '0 0 auto', color: '#A0A0A0', fontSize: 12 }}>{job.job_number}</div>
+        <div style={{ flex: '1 1 100px', minWidth: 60, color: '#D1D5DB', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{customer}</div>
+        <span style={{ backgroundColor: cfg.bg, color: cfg.text, padding: '2px 8px', borderRadius: 9999, fontSize: 11, fontWeight: 600, flexShrink: 0 }}>{cfg.label}</span>
+        {job.archived_at && (
+          <span style={{ backgroundColor: 'rgba(107,114,128,0.2)', color: '#D1D5DB', padding: '2px 8px', borderRadius: 9999, fontSize: 11, fontWeight: 600, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Archive size={10} /> Archived
+          </span>
+        )}
+        <div style={{ flex: '0 0 auto', color: '#6B7280', fontSize: 12 }}>{dateLabel}</div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 'auto' }}>
+        <button onClick={() => onView(job)} style={{ padding: '5px 12px', border: '1px solid #2A2A2A', borderRadius: 6, backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 12, cursor: 'pointer' }}>View</button>
+        {job.archived_at && (
+          <button onClick={() => onRestore(job)} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 12px', border: '1px solid #22C55E', borderRadius: 6, backgroundColor: 'rgba(34,197,94,0.1)', color: '#86EFAC', fontSize: 12, cursor: 'pointer' }}>
+            <ArchiveRestore size={12} /> Restore
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 export function WorkshopBoardPage() {
@@ -1628,6 +1731,10 @@ export function WorkshopBoardPage() {
   const [viewJob, setViewJob] = useState<JobRow | null>(null)
   const [showNewJobModal, setShowNewJobModal] = useState(false)
   const [showApprovalQueue, setShowApprovalQueue] = useState(false)
+  const [viewMode, setViewMode] = useState<'board' | 'archive'>('board')
+  const [archivedJobs, setArchivedJobs] = useState<JobRow[]>([])
+  const [archiveLoading, setArchiveLoading] = useState(false)
+  const [archiveError, setArchiveError] = useState<string | null>(null)
 
   const branchId = user?.branch_id
   const isSuperAdmin = user?.role === 'super_admin'
@@ -1665,11 +1772,14 @@ export function WorkshopBoardPage() {
           internal_notes, next_action, checked_in_at, estimated_cost, status_updated_at,
           customer_complaint, diagnosis_summary, branch_id, tenant_id, customer_id, vehicle_id,
           assigned_foreman_id, assigned_mechanic_id, mechanic_ids, source, arrival_mode, payment_status,
+          archived_at, archived_by,
           customers!customer_id(full_name, phone),
           vehicles!vehicle_id(plate_number, make, model, year, vehicle_type, is_internal_fleet),
           assigned_foreman:users!assigned_foreman_id(full_name),
           assigned_mechanic:users!assigned_mechanic_id(full_name)`)
         .not('status', 'eq', 'closed')
+        .not('status', 'eq', 'cancelled')
+        .is('archived_at', null)
       if (branchId) query = query.eq('branch_id', branchId)
       query = query.order('checked_in_at', { ascending: true })
       const { data, error: err } = await query
@@ -1695,6 +1805,50 @@ export function WorkshopBoardPage() {
       setLoading(false)
     }
   }, [branchId, isSuperAdmin])
+
+  // Archive tab: anything cancelled OR explicitly archived, regardless of
+  // status — this is the one place those jobs remain visible/searchable.
+  const fetchArchivedJobs = useCallback(async () => {
+    if (!branchId && !isSuperAdmin) return
+    setArchiveLoading(true); setArchiveError(null)
+    try {
+      let query = supabase
+        .from('jobs')
+        .select(`id, job_number, status, service_type, vehicle_type,
+          internal_notes, checked_in_at, estimated_cost, status_updated_at,
+          branch_id, tenant_id, customer_id, vehicle_id, payment_status,
+          archived_at, archived_by,
+          customers!customer_id(full_name, phone),
+          vehicles!vehicle_id(plate_number, make, model, year, vehicle_type, is_internal_fleet),
+          assigned_foreman:users!assigned_foreman_id(full_name),
+          assigned_mechanic:users!assigned_mechanic_id(full_name)`)
+        .or('status.eq.cancelled,archived_at.not.is.null')
+      if (branchId) query = query.eq('branch_id', branchId)
+      query = query.order('archived_at', { ascending: false, nullsFirst: false }).order('status_updated_at', { ascending: false })
+      const { data, error: err } = await query
+      if (err) throw err
+      setArchivedJobs((data as unknown as JobRow[]) ?? [])
+    } catch (e: unknown) {
+      setArchiveError(e instanceof Error ? e.message : 'Failed to load archive')
+    } finally {
+      setArchiveLoading(false)
+    }
+  }, [branchId, isSuperAdmin])
+
+  const handleRestoreJob = useCallback(async (job: JobRow) => {
+    const { error } = await supabase.from('jobs').update({ archived_at: null, archived_by: null }).eq('id', job.id)
+    if (error) { toast('Failed to restore job: ' + error.message); return }
+    logAudit({
+      action: 'restore', module: 'Job', record_id: job.id, record_type: 'job',
+      details: { job_number: job.job_number, plate: job.vehicles?.plate_number ?? null, status: job.status },
+      branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id,
+    })
+    toast('Job restored')
+    fetchArchivedJobs()
+    fetchJobs()
+  }, [user, fetchArchivedJobs, fetchJobs])
+
+  useEffect(() => { if (viewMode === 'archive') fetchArchivedJobs() }, [viewMode, fetchArchivedJobs])
 
   const fetchPendingRequests = useCallback(async () => {
     if (!branchId && !isSuperAdmin) return
@@ -1886,20 +2040,28 @@ export function WorkshopBoardPage() {
           <span style={{ color: '#F0F0F0', fontWeight: 700, fontSize: 18 }}>Workshop Board</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {(['all', 'car', 'bike'] as const).map((v) => (
+          {(['board', 'archive'] as const).map((v) => (
+            <button key={v} onClick={() => setViewMode(v)}
+              style={{ padding: '6px 14px', borderRadius: 20, border: '1px solid', borderColor: viewMode === v ? '#F15A22' : '#2A2A2A', backgroundColor: viewMode === v ? 'rgba(241,90,34,0.15)' : 'transparent', color: viewMode === v ? '#F15A22' : '#A0A0A0', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+              {v === 'archive' && <Archive size={12} />} {v === 'board' ? 'Board' : 'Archive'}
+            </button>
+          ))}
+          {viewMode === 'board' && (['all', 'car', 'bike'] as const).map((v) => (
             <button key={v} onClick={() => setVehicleFilter(v)}
               style={{ padding: '6px 14px', borderRadius: 20, border: '1px solid', borderColor: vehicleFilter === v ? '#F15A22' : '#2A2A2A', backgroundColor: vehicleFilter === v ? 'rgba(241,90,34,0.15)' : 'transparent', color: vehicleFilter === v ? '#F15A22' : '#A0A0A0', fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize' as const }}>
               {v === 'all' ? 'All' : v === 'car' ? 'Cars' : 'Bikes'}
             </button>
           ))}
-          <button onClick={() => { fetchJobs(); fetchPendingRequests() }} disabled={loading}
+          <button onClick={() => { if (viewMode === 'board') { fetchJobs(); fetchPendingRequests() } else { fetchArchivedJobs() } }} disabled={viewMode === 'board' ? loading : archiveLoading}
             style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-            <RefreshCw size={14} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+            <RefreshCw size={14} style={{ animation: (viewMode === 'board' ? loading : archiveLoading) ? 'spin 1s linear infinite' : 'none' }} />
           </button>
-          <button onClick={() => setShowNewJobModal(true)}
-            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Plus size={14} /> New Job
-          </button>
+          {viewMode === 'board' && (
+            <button onClick={() => setShowNewJobModal(true)}
+              style={{ padding: '7px 16px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Plus size={14} /> New Job
+            </button>
+          )}
         </div>
       </div>
 
@@ -1914,32 +2076,56 @@ export function WorkshopBoardPage() {
         </button>
       )}
 
-      {/* Board */}
-      <div style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', padding: '16px 20px' }}>
-        {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ width: 36, height: 36, border: '3px solid #2A2A2A', borderTopColor: '#F15A22', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-              <p style={{ color: '#A0A0A0', fontSize: 13 }}>Loading jobs…</p>
+      {/* Board / Archive */}
+      <div style={{ flex: 1, overflowX: 'auto', overflowY: viewMode === 'archive' ? 'auto' : 'hidden', padding: '16px 20px' }}>
+        {viewMode === 'board' ? (
+          loading ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ width: 36, height: 36, border: '3px solid #2A2A2A', borderTopColor: '#F15A22', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+                <p style={{ color: '#A0A0A0', fontSize: 13 }}>Loading jobs…</p>
+              </div>
             </div>
-          </div>
-        ) : error ? (
-          <div style={{ textAlign: 'center', padding: 40 }}>
-            <p style={{ color: '#FCA5A5', fontSize: 14 }}>{error}</p>
-            <button onClick={fetchJobs} style={{ marginTop: 12, padding: '8px 20px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', cursor: 'pointer' }}>Retry</button>
-          </div>
+          ) : error ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <p style={{ color: '#FCA5A5', fontSize: 14 }}>{error}</p>
+              <button onClick={fetchJobs} style={{ marginTop: 12, padding: '8px 20px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', cursor: 'pointer' }}>Retry</button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 12, minWidth: 'max-content', height: '100%' }}>
+              {BOARD_COLUMNS.map((col) => (
+                <KanbanColumn key={col} status={col} jobs={grouped[col] ?? []} userId={userId} userRole={userRole}
+                  pendingMap={pendingMap} rejectedMap={rejectedMap}
+                  onUpdateStatus={setStatusModal}
+                  onAddNote={setNoteModal}
+                  onView={handleViewJob}
+                  onDeliver={handleDeliver}
+                />
+              ))}
+            </div>
+          )
         ) : (
-          <div style={{ display: 'flex', gap: 12, minWidth: 'max-content', height: '100%' }}>
-            {BOARD_COLUMNS.map((col) => (
-              <KanbanColumn key={col} status={col} jobs={grouped[col] ?? []} userId={userId} userRole={userRole}
-                pendingMap={pendingMap} rejectedMap={rejectedMap}
-                onUpdateStatus={setStatusModal}
-                onAddNote={setNoteModal}
-                onView={handleViewJob}
-                onDeliver={handleDeliver}
-              />
-            ))}
-          </div>
+          archiveLoading ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ width: 36, height: 36, border: '3px solid #2A2A2A', borderTopColor: '#F15A22', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+                <p style={{ color: '#A0A0A0', fontSize: 13 }}>Loading archive…</p>
+              </div>
+            </div>
+          ) : archiveError ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <p style={{ color: '#FCA5A5', fontSize: 14 }}>{archiveError}</p>
+              <button onClick={fetchArchivedJobs} style={{ marginTop: 12, padding: '8px 20px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', cursor: 'pointer' }}>Retry</button>
+            </div>
+          ) : archivedJobs.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#A0A0A0', fontSize: 13 }}>No cancelled or archived jobs.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 900 }}>
+              {archivedJobs.map((job) => (
+                <ArchiveRow key={job.id} job={job} onView={handleViewJob} onRestore={handleRestoreJob} />
+              ))}
+            </div>
+          )
         )}
       </div>
 
@@ -1966,7 +2152,7 @@ export function WorkshopBoardPage() {
           job={viewJob}
           approvalHistory={jobHistory[viewJob.id] ?? []}
           onClose={() => setViewJob(null)}
-          onRefresh={fetchJobs}
+          onRefresh={viewMode === 'archive' ? fetchArchivedJobs : fetchJobs}
         />
       )}
       {showNewJobModal && branchId && (

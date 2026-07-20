@@ -119,6 +119,8 @@ export interface Job {
   payment_status: PaymentStatus
   customer_complaint: string | null
   internal_notes: string | null
+  archived_at: string | null
+  archived_by: string | null
   // joined fields
   customer?: Pick<Customer, 'id' | 'full_name' | 'phone'>
   vehicle?: Pick<Vehicle, 'id' | 'plate_number' | 'make' | 'model' | 'vehicle_type'>
