@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Wrench, RefreshCw, Plus, X, ChevronDown, Search, MessageCircle, Camera, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react'
+import { Wrench, RefreshCw, Plus, X, ChevronDown, Search, MessageCircle, Camera, CheckCircle, XCircle, Clock, AlertTriangle, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -595,6 +595,10 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteBlockedReason, setDeleteBlockedReason] = useState<string | null>(null)
   const initMechanicIds = job.mechanic_ids?.length
     ? job.mechanic_ids
     : job.assigned_mechanic_id ? [job.assigned_mechanic_id] : []
@@ -683,6 +687,49 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
     setCancelling(false)
     if (error) { toast('Failed to cancel job: ' + error.message); return }
     toast('Job cancelled')
+    onClose()
+    onRefresh()
+  }
+
+  // Permanently removes a job — unlike Cancel, this can't be undone, so it's
+  // only offered once we've confirmed nothing financial or inventory-related
+  // is riding on this job. invoices.job_id is ON DELETE SET NULL and
+  // parts_requests.job_id is ON DELETE CASCADE — silently allowing either to
+  // vanish (or orphan an invoice) would be exactly the kind of data loss the
+  // rest of this app goes out of its way to avoid (see: void-not-delete on
+  // receipts).
+  async function handleDeleteJob() {
+    if (!deleteReason.trim()) return
+    setDeleting(true)
+    setDeleteBlockedReason(null)
+
+    const [{ count: invoiceCount }, { count: partsCount }] = await Promise.all([
+      supabase.from('invoices').select('id', { count: 'exact', head: true }).eq('job_id', job.id),
+      supabase.from('parts_requests').select('id', { count: 'exact', head: true }).eq('job_id', job.id),
+    ])
+
+    if ((invoiceCount ?? 0) > 0) {
+      setDeleting(false)
+      setDeleteBlockedReason('This job has an invoice attached — deleting it would orphan that financial record. Cancel the job instead to keep the record but stop it appearing as active.')
+      return
+    }
+    if ((partsCount ?? 0) > 0) {
+      setDeleting(false)
+      setDeleteBlockedReason('This job has parts/stock requests recorded against it — deleting it would remove that inventory history. Cancel the job instead.')
+      return
+    }
+
+    // Log before deleting — record_id would point at nothing afterward.
+    logAudit({
+      action: 'delete', module: 'Job', record_id: job.id, record_type: 'job',
+      details: { job_number: job.job_number, plate: job.vehicles?.plate_number ?? null, customer: job.customer_name ?? null, status: job.status, reason: deleteReason.trim() },
+      branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id,
+    })
+
+    const { error } = await supabase.from('jobs').delete().eq('id', job.id)
+    setDeleting(false)
+    if (error) { toast('Failed to delete job: ' + error.message); return }
+    toast('Job deleted')
     onClose()
     onRefresh()
   }
@@ -951,6 +998,33 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
             </div>
           )}
 
+          {/* Delete confirm panel */}
+          {showDeleteConfirm && (
+            <div style={{ marginBottom: 12, padding: '12px 14px', background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.3)', borderRadius: 8 }}>
+              <p style={{ color: '#FCA5A5', fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Permanently delete this job?</p>
+              <p style={{ color: '#F87171', fontSize: 12, margin: '0 0 8px' }}>This can't be undone. If this job has real history, use Cancel Job instead.</p>
+              {deleteBlockedReason ? (
+                <p style={{ color: '#FCA5A5', fontSize: 12, margin: '0 0 8px', lineHeight: 1.5 }}>{deleteBlockedReason}</p>
+              ) : (
+                <textarea
+                  rows={2}
+                  placeholder="Reason for deletion (required)"
+                  value={deleteReason}
+                  onChange={e => setDeleteReason(e.target.value)}
+                  style={{ width: '100%', background: '#1E1E1E', border: '1px solid #3A3A3A', borderRadius: 6, color: '#F0F0F0', fontSize: 13, padding: '7px 10px', resize: 'none', boxSizing: 'border-box', outline: 'none' }}
+                />
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={() => { setShowDeleteConfirm(false); setDeleteReason(''); setDeleteBlockedReason(null) }} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid #2A2A2A', background: 'transparent', color: '#A0A0A0', fontSize: 13, cursor: 'pointer' }}>Back</button>
+                {!deleteBlockedReason && (
+                  <button onClick={handleDeleteJob} disabled={!deleteReason.trim() || deleting} style={{ flex: 2, padding: '8px 0', borderRadius: 6, border: 'none', background: '#DC2626', color: '#fff', fontSize: 13, fontWeight: 700, cursor: (!deleteReason.trim() || deleting) ? 'not-allowed' : 'pointer', opacity: (!deleteReason.trim() || deleting) ? 0.6 : 1 }}>
+                    {deleting ? 'Deleting…' : 'Permanently Delete'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {editMode ? (
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => { setEditMode(false); setSaveError(null) }} disabled={saving} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
@@ -972,6 +1046,14 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
                ['new', 'booked', 'checked_in', 'diagnosing', 'waiting_approval'].includes(job.status) && (
                 <button onClick={() => { setShowCancelConfirm(v => !v); setCancelReason('') }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1px solid #DC2626', backgroundColor: showCancelConfirm ? 'rgba(220,38,38,0.15)' : 'transparent', color: '#FCA5A5', fontSize: 13, cursor: 'pointer' }}>
                   <X size={14} /> Cancel Job
+                </button>
+              )}
+              {/* Delete is a distinct, more destructive action than Cancel — restricted
+                  to the two roles jobs_delete's RLS already allows (not foreman), and
+                  gated further by the invoice/parts-request guard in handleDeleteJob. */}
+              {['ops_manager', 'super_admin'].includes(user?.role ?? '') && (
+                <button onClick={() => { setShowDeleteConfirm(v => !v); setDeleteReason(''); setDeleteBlockedReason(null) }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1px solid #DC2626', backgroundColor: showDeleteConfirm ? 'rgba(220,38,38,0.15)' : 'transparent', color: '#FCA5A5', fontSize: 13, cursor: 'pointer' }}>
+                  <Trash2 size={14} /> Delete Job
                 </button>
               )}
               <button onClick={onClose} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 13, cursor: 'pointer' }}>Close</button>
