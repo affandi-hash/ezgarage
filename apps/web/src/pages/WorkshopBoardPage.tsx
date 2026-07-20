@@ -225,7 +225,8 @@ function StatusUpdateModal({ job, userRole, onClose, onConfirmDirect, onRequestA
   const handleConfirm = async () => {
     setSaving(true)
     if (needsEstimate) {
-      await supabase.from('jobs').update({ estimated_cost: estimateValue }).eq('id', job.id)
+      const { error } = await supabase.from('jobs').update({ estimated_cost: estimateValue }).eq('id', job.id)
+      if (error) { toast(error.message, 'error'); setSaving(false); return }
     }
     if (isSubmitForApproval) {
       await onRequestApproval(job.id, selectedStatus, job.status, question, nextAction, notes)
@@ -285,6 +286,11 @@ function StatusUpdateModal({ job, userRole, onClose, onConfirmDirect, onRequestA
             <p style={{ color: '#6B7280', fontSize: 11, marginTop: 6 }}>
               The customer will be asked to approve this amount before work continues.
             </p>
+            {estimateInvalid && (
+              <p style={{ color: '#FCA5A5', fontSize: 12, marginTop: 6 }}>
+                Enter an amount greater than RM0.00 to continue.
+              </p>
+            )}
           </div>
         )}
 
