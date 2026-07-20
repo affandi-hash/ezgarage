@@ -77,6 +77,10 @@ const ALLOWED_TRANSITIONS: Partial<Record<string, JobStatus[]>> = {
   waiting_approval: ['waiting_parts'],
   waiting_parts:    ['in_progress'],
   in_progress:      ['ready', 'waiting_approval'],
+  // long_due is just an in_progress job that's sat too long (see the
+  // auto-flag in fetchJobs) — it needs the exact same way forward, or it's
+  // stuck on the board with no path to Ready/Delivered.
+  long_due:         ['ready', 'waiting_approval'],
 }
 
 // Transitions that require Foreman sign-off via approval flow
@@ -85,6 +89,8 @@ const GATED_SET = new Set([
   'waiting_approval→waiting_parts',
   'in_progress→ready',
   'in_progress→waiting_approval',
+  'long_due→ready',
+  'long_due→waiting_approval',
 ])
 
 function isGatedTransition(from: string, to: string): boolean {
@@ -94,8 +100,8 @@ function isGatedTransition(from: string, to: string): boolean {
 function getChecklistQuestion(from: string, to: string): string {
   if (from === 'diagnosing')       return "Is the diagnosis confirmed and ready to present to the customer?"
   if (from === 'waiting_approval') return "Has the customer approved the repair estimate?"
-  if (from === 'in_progress' && to === 'ready')            return "Is the repair completed to standard?"
-  if (from === 'in_progress' && to === 'waiting_approval') return "Does this repair require customer re-approval?"
+  if ((from === 'in_progress' || from === 'long_due') && to === 'ready')            return "Is the repair completed to standard?"
+  if ((from === 'in_progress' || from === 'long_due') && to === 'waiting_approval') return "Does this repair require customer re-approval?"
   return ''
 }
 
