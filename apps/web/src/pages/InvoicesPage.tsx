@@ -656,47 +656,45 @@ export function InvoicesPage() {
     if (payment.amount_paid > outstanding + 0.001) { toast.error('Amount exceeds balance'); return }
     setSaving(true)
     try {
-      // Each payment is its own receipt — supports installments (deposit + balance, etc.)
-      const { data: inserted, error: insErr } = await supabase.from('receipts').insert({
-        tenant_id: editInvoice.tenant_id || null,
-        branch_id: editInvoice.branch_id,
-        invoice_id: editInvoice.id,
-        amount: payment.amount_paid,
-        payment_method: payment.payment_method,
-        payment_date: payment.payment_date,
-        reference_number: payment.payment_reference || null,
-      }).select('id').single()
-      if (insErr) throw insErr
+      // Receipt insert + invoice update happen atomically in one RPC —
+      // doing them as two separate client calls let a silently-0-rows
+      // invoice UPDATE (RLS just filters it out, no error) leave a receipt
+      // recorded with the invoice never actually marked paid.
+      const { data: result, error: rpcErr } = await supabase.rpc('record_payment', {
+        p_invoice_id: editInvoice.id,
+        p_amount: payment.amount_paid,
+        p_payment_method: payment.payment_method,
+        p_payment_date: payment.payment_date,
+        p_reference: payment.payment_reference || null,
+      })
+      if (rpcErr) throw rpcErr
+      if (result?.error) {
+        const messages: Record<string, string> = {
+          forbidden: 'You do not have permission to record payments for this invoice',
+          invoice_not_found: 'Invoice not found',
+          invalid_amount: 'Enter a valid amount',
+          amount_exceeds_balance: 'Amount exceeds balance',
+        }
+        throw new Error(messages[result.error] ?? 'Failed to record payment')
+      }
 
-      if (proofFile && inserted) {
+      if (proofFile && result?.receipt_id) {
         const ext = proofFile.name.split('.').pop()
-        const path = `${inserted.id}/${Date.now()}.${ext}`
+        const path = `${result.receipt_id}/${Date.now()}.${ext}`
         const { error: uploadErr } = await supabase.storage.from('payment-proofs').upload(path, proofFile, { contentType: proofFile.type, upsert: false })
         if (uploadErr) {
           toast.error(`Payment recorded, but proof upload failed: ${uploadErr.message}`)
         } else {
-          await supabase.from('receipts').update({ proof_url: path }).eq('id', inserted.id)
+          await supabase.from('receipts').update({ proof_url: path }).eq('id', result.receipt_id)
         }
       }
 
-      const newPaid = editInvoice.amount_paid + payment.amount_paid
-      const newBalance = editInvoice.total_amount - newPaid
-      const status: Invoice['status'] = newBalance <= 0 ? 'paid' : 'sent'
-      const { error } = await supabase.from('invoices').update({
-        payment_method: payment.payment_method,
-        amount_paid: newPaid,
-        payment_date: payment.payment_date,
-        payment_reference: payment.payment_reference,
-        status,
-        updated_at: new Date().toISOString(),
-      }).eq('id', editInvoice.id)
-      if (error) throw error
       await loadInvoices()
       const { data } = await supabase.from('invoices').select('*').eq('id', editInvoice.id).single()
       if (data) setSelected(data as Invoice)
       setShowPaymentModal(false)
       setProofFile(null)
-      toast.success(status === 'paid' ? 'Payment recorded — invoice marked as Paid' : 'Partial payment recorded')
+      toast.success(result?.new_status === 'paid' ? 'Payment recorded — invoice marked as Paid' : 'Partial payment recorded')
     } catch (e: any) {
       toast.error('Payment failed: ' + e.message)
     } finally {
