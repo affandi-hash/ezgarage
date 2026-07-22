@@ -3,6 +3,7 @@
 // ledger used by staff-recorded payments (Invoices "Record Payment" and
 // Accounts Receivable "Add Payment"), so all three sources stay consistent.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1'
 
 const MAX_CLOCK_SKEW_SECONDS = 300
 
@@ -18,6 +19,58 @@ function constantTimeEqual(a: string, b: string): boolean {
   let diff = 0
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
   return diff === 0
+}
+
+// Auto-generated proof of payment for a RaudhahPay charge — replaces the
+// screenshot-then-staff-upload dance for online payments. The customer
+// already gets RaudhahPay's own receipt, so this is purely for staff to
+// have something on file without asking the customer for anything.
+interface ReceiptPdfInput {
+  invoiceNumber: string
+  customerName: string | null
+  amount: number
+  paymentMethod: string
+  paymentDate: string
+  gatewayRef: string
+  branch: { name: string; address: string | null; phone: string | null } | null
+}
+
+async function buildReceiptPdf(input: ReceiptPdfInput): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create()
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
+  const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const pageWidth = 420, pageHeight = 560, margin = 36
+  const page = pdf.addPage([pageWidth, pageHeight])
+  let y = pageHeight - margin
+
+  function text(str: string, x: number, size: number, bold = false, color = rgb(0, 0, 0)) {
+    page.drawText(str, { x, y, size, font: bold ? fontBold : font, color })
+  }
+
+  text(input.branch?.name || 'EZGarage', margin, 16, true)
+  y -= 18
+  if (input.branch?.address) { text(input.branch.address, margin, 9, false, rgb(0.4, 0.4, 0.4)); y -= 12 }
+  if (input.branch?.phone) { text(`Tel: ${input.branch.phone}`, margin, 9, false, rgb(0.4, 0.4, 0.4)); y -= 12 }
+  y -= 12
+  text('PAYMENT RECEIPT', margin, 14, true)
+  y -= 24
+
+  const row = (label: string, value: string) => {
+    text(label, margin, 10, false, rgb(0.4, 0.4, 0.4))
+    text(value, margin + 140, 10, true)
+    y -= 18
+  }
+  row('Invoice No.', input.invoiceNumber)
+  row('Customer', input.customerName || '—')
+  row('Payment Method', input.paymentMethod.replace('_', ' ').toUpperCase())
+  row('Payment Date', input.paymentDate)
+  row('Gateway Ref', input.gatewayRef)
+  y -= 8
+  text(`Amount Paid: RM ${input.amount.toFixed(2)}`, margin, 13, true)
+  y -= 28
+  text('Paid online via RaudhahPay.', margin, 9, false, rgb(0.4, 0.4, 0.4))
+
+  return pdf.save()
 }
 
 Deno.serve(async (req) => {
@@ -114,7 +167,7 @@ Deno.serve(async (req) => {
 
     const { data: invoice, error: invErr } = await supabase
       .from('invoices')
-      .select('id, tenant_id, branch_id, total_amount, amount_paid')
+      .select('id, tenant_id, branch_id, total_amount, amount_paid, invoice_number, customer_name')
       .eq('id', invoiceId)
       .single()
 
@@ -136,17 +189,55 @@ Deno.serve(async (req) => {
     const notes = isRefund
       ? `RaudhahPay refund (${event.event}) for bill ${billId}`
       : `RaudhahPay online payment (${data.payment_method})`
+    const paymentDate = new Date().toISOString().slice(0, 10)
+
+    // Generate the proof-of-payment PDF up front (only for actual charges,
+    // not refunds) and pick the receipt's id ourselves so the upload path
+    // and the receipts insert can both use it — one atomic insert with
+    // proof_url already set, instead of insert-then-update-with-the-url
+    // (the same two-step pattern that silently left staff-recorded
+    // payments without their proof before 092 fixed that flow).
+    const receiptId = crypto.randomUUID()
+    let proofUrl: string | null = null
+    if (!isRefund) {
+      try {
+        const { data: branch } = await supabase
+          .from('branches')
+          .select('name, address, phone')
+          .eq('id', invoice.branch_id)
+          .single()
+        const pdfBytes = await buildReceiptPdf({
+          invoiceNumber: invoice.invoice_number,
+          customerName: invoice.customer_name,
+          amount,
+          paymentMethod: data.payment_method as string,
+          paymentDate,
+          gatewayRef,
+          branch: branch ?? null,
+        })
+        const path = `${receiptId}/${Date.now()}.pdf`
+        const { error: uploadErr } = await supabase.storage.from('payment-proofs').upload(path, pdfBytes, { contentType: 'application/pdf', upsert: false })
+        if (uploadErr) throw uploadErr
+        proofUrl = path
+      } catch (e) {
+        // Don't let a PDF/storage hiccup block recording the payment itself
+        // — staff can always attach proof manually as a fallback.
+        console.error(`Failed to generate/upload receipt PDF for invoice ${invoice.id}`, e)
+      }
+    }
 
     const { error: receiptErr } = await supabase.from('receipts').insert({
+      id: receiptId,
       tenant_id: invoice.tenant_id,
       branch_id: invoice.branch_id,
       invoice_id: invoice.id,
       amount: signedAmount,
       payment_method: data.payment_method as string,
-      payment_date: new Date().toISOString().slice(0, 10),
+      payment_date: paymentDate,
       reference_number: data.reference_number as string,
       gateway_ref: gatewayRef,
       notes,
+      proof_url: proofUrl,
     })
 
     if (receiptErr) {
@@ -185,7 +276,7 @@ Deno.serve(async (req) => {
     const invoiceUpdate: Record<string, unknown> = { amount_paid: newPaid, status: newStatus }
     if (!isRefund) {
       invoiceUpdate.payment_method = INVOICE_PAYMENT_METHOD_MAP[data.payment_method as string] ?? 'other'
-      invoiceUpdate.payment_date = new Date().toISOString().slice(0, 10)
+      invoiceUpdate.payment_date = paymentDate
       invoiceUpdate.payment_reference = billId
     }
     const { error: invoiceUpdateErr } = await supabase.from('invoices').update(invoiceUpdate).eq('id', invoice.id)
