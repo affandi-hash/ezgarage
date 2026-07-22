@@ -1507,7 +1507,7 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
 
 export function AttendancePage() {
   const user = useAuthStore(s => s.user)
-  const branchId = (user?.role === 'super_admin' || user?.role === 'ops_manager') ? null : (user?.branch_id ?? null)
+  const branchId = (user?.role === 'super_admin' || user?.role === 'ops_manager' || user?.role === 'foreman') ? null : (user?.branch_id ?? null)
 
   const [activeTab, setActiveTab]       = useState<'daily' | 'leave' | 'ot' | 'monthly'>('daily')
   const [staffTab, setStaffTab]         = useState<'attendance' | 'leave' | 'ot'>('attendance')
@@ -1572,7 +1572,7 @@ export function AttendancePage() {
     })
   }, [branchId])
 
-  const isManager = user?.role === 'super_admin' || user?.role === 'ops_manager'
+  const isManager = user?.role === 'super_admin' || user?.role === 'ops_manager' || user?.role === 'foreman'
 
   const tabs = [
     { key: 'daily', label: 'Daily Board' },
