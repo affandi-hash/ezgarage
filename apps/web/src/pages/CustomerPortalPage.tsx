@@ -286,11 +286,15 @@ function PaymentUpload({ jobId, jobNumber }: { jobId: string; jobNumber: string 
 // merchant account and a real bill creation call succeeded.
 const CARD_ENABLED = true
 
+// Confirmed live and working — FPX tested successfully against the live
+// RaudhahPay merchant account.
+const FPX_ENABLED = true
+
 function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanceDue: number }) {
-  const [loading, setLoading] = useState<'duitnow' | 'credit_card' | null>(null)
+  const [loading, setLoading] = useState<'duitnow' | 'credit_card' | 'fpx' | null>(null)
   const [error, setError] = useState('')
 
-  async function startPayment(method: 'duitnow' | 'credit_card') {
+  async function startPayment(method: 'duitnow' | 'credit_card' | 'fpx') {
     setLoading(method); setError('')
     try {
       const res = await fetch(RAUDHAHPAY_CREATE_PAYMENT_URL, {
@@ -321,13 +325,24 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
       {error && <div style={{ fontSize: 12, color: C.red }}>{error}</div>}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <div
-          title="FPX is currently unavailable — please use QR or Card instead."
-          style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 13, fontWeight: 700, opacity: 0.5, cursor: 'not-allowed' }}
-        >
-          <Landmark size={14} />
-          FPX Unavailable
-        </div>
+        {FPX_ENABLED ? (
+          <button
+            onClick={() => startPayment('fpx')}
+            disabled={loading !== null}
+            style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'fpx' ? 0.6 : 1 }}
+          >
+            {loading === 'fpx' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Landmark size={14} />}
+            FPX
+          </button>
+        ) : (
+          <div
+            title="FPX is currently unavailable — please use QR or Card instead."
+            style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 13, fontWeight: 700, opacity: 0.5, cursor: 'not-allowed' }}
+          >
+            <Landmark size={14} />
+            FPX Unavailable
+          </div>
+        )}
         <button
           onClick={() => startPayment('duitnow')}
           disabled={loading !== null}
