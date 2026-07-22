@@ -84,6 +84,9 @@ Deno.serve(async (req) => {
     if (!settings?.raudhahpay_pic_email) {
       return new Response(JSON.stringify({ error: 'RaudhahPay PIC email not configured in Platform Settings' }), { status: 200, headers: corsHeaders })
     }
+    // Supports multiple recipients as a comma-separated list in the one
+    // settings field, e.g. "ops@chipin.com.my, finance@chipin.com.my".
+    const recipients = settings.raudhahpay_pic_email.split(',').map((e: string) => e.trim()).filter(Boolean)
 
     const { data: receipts, error: receiptsErr } = await supabase
       .from('receipts')
@@ -200,7 +203,7 @@ Deno.serve(async (req) => {
       headers: { Authorization: `Bearer ${Deno.env.get('RESEND_API_KEY')}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: 'EZGarage <onboarding@resend.dev>',
-        to: [settings.raudhahpay_pic_email],
+        to: recipients,
         subject: `EZGarage RaudhahPay Statement — ${targetDate}`,
         html: `<p>Attached is the RaudhahPay reconciliation statement for <strong>${targetDate}</strong>.</p>
                <p>${rows.length} transaction(s) across ${byTenant.size} tenant(s), grand total RM ${grandTotal.toFixed(2)}.</p>`,

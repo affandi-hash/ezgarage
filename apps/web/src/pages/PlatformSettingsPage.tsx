@@ -281,19 +281,20 @@ export function PlatformSettingsPage() {
               padding: '12px 16px', borderRadius: 8, backgroundColor: '#1A1A1A', border: '1px solid #2A2A2A',
               fontSize: 12, color: '#6B7280', lineHeight: 1.6,
             }}>
-              Every night at midnight (MYT), EZGarage emails Chip In Sdn Bhd a PDF statement of the previous day's
+              Every night at 7pm (MYT), EZGarage emails Chip In Sdn Bhd a PDF statement of the previous day's
               RaudhahPay transactions across every tenant, so they know what to disburse and to whom.
             </div>
 
             <div style={{ marginBottom: 4 }}>
-              <label style={labelStyle}>RaudhahPay PIC Email</label>
+              <label style={labelStyle}>RaudhahPay PIC Email(s)</label>
               <input
                 style={inputStyle}
-                type="email"
+                type="text"
                 value={form.raudhahpay_pic_email ?? ''}
                 onChange={e => setForm(f => ({ ...f, raudhahpay_pic_email: e.target.value }))}
-                placeholder="ops@chipin.com.my"
+                placeholder="ops@chipin.com.my, finance@chipin.com.my"
               />
+              <p style={{ fontSize: 11, color: '#6B7280', margin: '4px 0 0' }}>Separate multiple addresses with a comma.</p>
             </div>
 
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
