@@ -4,7 +4,7 @@ import { useAuthStore } from '@/store/authStore'
 import { useOutletContext } from 'react-router-dom'
 import { toast } from '@/components/ui/Toast'
 import {
-  Plus, X, Loader2, Search, Upload, FileText,
+  Plus, X, Loader2, Search, Upload, FileText, Receipt,
   Zap, Wrench, TrendingDown, TrendingUp, Building,
   Megaphone, Users, Package, MoreHorizontal, Pencil, Trash2,
   DollarSign
@@ -39,6 +39,9 @@ interface Expense {
   created_at: string
   supplier_invoice_id: string | null
   supplier_invoices?: { status: 'unpaid' | 'partial' | 'paid' | 'overdue'; amount_paid: number; total_amount: number } | null
+  payment_status: 'unpaid' | 'paid'
+  paid_date: string | null
+  pop_file_url: string | null
 }
 
 // Same source of truth as Accounts Payable's own status — this just reads
@@ -50,12 +53,14 @@ const AP_STATUS_BG: Record<string, string> = {
   unpaid: 'rgba(160,160,160,0.12)', partial: 'rgba(245,158,11,0.12)', paid: 'rgba(34,197,94,0.12)', overdue: 'rgba(239,68,68,0.12)',
 }
 
+// Prefer a linked Accounts Payable invoice's live status (richer — unpaid/
+// partial/paid/overdue). Otherwise fall back to the plain Paid/Unpaid flag
+// Finance sets directly on the expense itself.
 function PaymentStatusBadge({ expense }: { expense: Expense }) {
-  const inv = expense.supplier_invoices
-  if (!inv) return <span style={{ fontSize: 12, color: '#4A4A4A' }}>—</span>
+  const status = expense.supplier_invoices?.status ?? expense.payment_status
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 9999, fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: AP_STATUS_COLOR[inv.status], background: AP_STATUS_BG[inv.status], whiteSpace: 'nowrap' }}>
-      {inv.status}
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 9999, fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: AP_STATUS_COLOR[status], background: AP_STATUS_BG[status], whiteSpace: 'nowrap' }}>
+      {status}
     </span>
   )
 }
@@ -196,6 +201,8 @@ interface ExpenseForm {
   lifespan_years: string
   notes: string
   supplier_invoice_id: string
+  payment_status: 'unpaid' | 'paid'
+  paid_date: string
 }
 
 const EMPTY: ExpenseForm = {
@@ -204,6 +211,7 @@ const EMPTY: ExpenseForm = {
   payment_method: 'Cash', reference: '', vendor: '',
   is_recurring: false, recurring_period: 'monthly',
   lifespan_years: '', notes: '', supplier_invoice_id: '',
+  payment_status: 'unpaid', paid_date: new Date().toISOString().slice(0, 10),
 }
 
 function ExpenseModal({
@@ -230,9 +238,11 @@ function ExpenseModal({
       is_recurring: editing.is_recurring, recurring_period: editing.recurring_period ?? 'monthly',
       lifespan_years: editing.lifespan_years != null ? String(editing.lifespan_years) : '',
       notes: editing.notes ?? '', supplier_invoice_id: editing.supplier_invoice_id ?? '',
+      payment_status: editing.payment_status, paid_date: editing.paid_date ?? new Date().toISOString().slice(0, 10),
     } : EMPTY
   )
   const [file, setFile] = useState<File | null>(null)
+  const [popFile, setPopFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [invoiceOptions, setInvoiceOptions] = useState<SupplierInvoiceOption[]>([])
@@ -263,6 +273,7 @@ function ExpenseModal({
 
     setSaving(true)
     let fileUrl = editing?.file_url ?? null
+    let popFileUrl = editing?.pop_file_url ?? null
 
     if (file) {
       setUploading(true)
@@ -271,6 +282,17 @@ function ExpenseModal({
       const { error: upErr } = await supabase.storage.from('expense-docs').upload(path, file, { upsert: true })
       if (!upErr) {
         fileUrl = path
+      }
+      setUploading(false)
+    }
+
+    if (popFile) {
+      setUploading(true)
+      const ext = popFile.name.split('.').pop()
+      const path = `${tenantId}/pop-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('expense-docs').upload(path, popFile, { upsert: true })
+      if (!upErr) {
+        popFileUrl = path
       }
       setUploading(false)
     }
@@ -284,7 +306,9 @@ function ExpenseModal({
       is_recurring: form.is_recurring,
       recurring_period: form.is_recurring ? form.recurring_period : null,
       lifespan_years: form.type === 'capex' && form.lifespan_years ? parseInt(form.lifespan_years) : null,
-      notes: form.notes || null, file_url: fileUrl,
+      notes: form.notes || null, file_url: fileUrl, pop_file_url: popFileUrl,
+      payment_status: form.payment_status,
+      paid_date: form.payment_status === 'paid' ? form.paid_date : null,
       created_by: userId || null,
       supplier_invoice_id: form.supplier_invoice_id || null,
     }
@@ -371,6 +395,22 @@ function ExpenseModal({
             </div>
           )}
 
+          <div style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 8, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p style={{ color: '#F0F0F0', fontSize: 13, fontWeight: 600, margin: 0 }}>Payment Status</p>
+              <p style={{ color: '#A0A0A0', fontSize: 12, margin: '2px 0 0' }}>Has this been paid yet?</p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {form.payment_status === 'paid' && (
+                <input type="date" value={form.paid_date} onChange={e => setForm(f => ({ ...f, paid_date: e.target.value }))} style={{ ...inp, width: 'auto', padding: '6px 10px', fontSize: 12 }} />
+              )}
+              <button onClick={() => setForm(f => ({ ...f, payment_status: f.payment_status === 'paid' ? 'unpaid' : 'paid' }))}
+                style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid', fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em', borderColor: form.payment_status === 'paid' ? '#22C55E' : '#2A2A2A', background: form.payment_status === 'paid' ? 'rgba(34,197,94,0.12)' : '#0E0E0E', color: form.payment_status === 'paid' ? '#22C55E' : '#A0A0A0' }}>
+                {form.payment_status}
+              </button>
+            </div>
+          </div>
+
           <div>
             <label style={lbl}>Link to Supplier Invoice (optional)</label>
             <select value={form.supplier_invoice_id} onChange={e => setForm(f => ({ ...f, supplier_invoice_id: e.target.value }))} style={inp}>
@@ -411,9 +451,9 @@ function ExpenseModal({
             <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...inp, resize: 'none' }} />
           </div>
 
-          {/* File upload */}
+          {/* File uploads */}
           <div>
-            <label style={lbl}>Receipt / Document (optional)</label>
+            <label style={lbl}>Bill / Document (optional)</label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#161616', border: '1px dashed #3A3A3A', borderRadius: 8, padding: '10px 14px', cursor: 'pointer' }}>
               {uploading ? <Loader2 size={15} className="animate-spin" color="#A0A0A0" /> : <Upload size={15} color={file || editing?.file_url ? '#22C55E' : '#A0A0A0'} />}
               <span style={{ fontSize: 13, color: file ? '#22C55E' : editing?.file_url ? '#22C55E' : '#A0A0A0', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
@@ -421,6 +461,18 @@ function ExpenseModal({
               </span>
               {file && <span onClick={e => { e.preventDefault(); setFile(null) }} style={{ color: '#EF4444', fontSize: 11, cursor: 'pointer' }}>Remove</span>}
               <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] ?? null)} />
+            </label>
+          </div>
+
+          <div>
+            <label style={lbl}>Proof of Payment (optional)</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#161616', border: '1px dashed #3A3A3A', borderRadius: 8, padding: '10px 14px', cursor: 'pointer' }}>
+              {uploading ? <Loader2 size={15} className="animate-spin" color="#A0A0A0" /> : <Upload size={15} color={popFile || editing?.pop_file_url ? '#22C55E' : '#A0A0A0'} />}
+              <span style={{ fontSize: 13, color: popFile ? '#22C55E' : editing?.pop_file_url ? '#22C55E' : '#A0A0A0', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                {popFile ? popFile.name : editing?.pop_file_url ? 'File attached — click to replace' : 'Click to upload'}
+              </span>
+              {popFile && <span onClick={e => { e.preventDefault(); setPopFile(null) }} style={{ color: '#EF4444', fontSize: 11, cursor: 'pointer' }}>Remove</span>}
+              <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={e => setPopFile(e.target.files?.[0] ?? null)} />
             </label>
           </div>
         </div>
@@ -684,12 +736,23 @@ export function ExpensesPage() {
                             <button
                               onClick={async () => {
                                 const { data, error } = await supabase.storage.from('expense-docs').createSignedUrl(toExpenseDocPath(exp.file_url!), 3600)
-                                if (error || !data) { toast('Could not open receipt', 'error'); return }
+                                if (error || !data) { toast('Could not open the bill', 'error'); return }
                                 window.open(data.signedUrl, '_blank')
                               }}
                               style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A0A0A0', padding: 4 }}
-                              title="View receipt"
+                              title="View bill"
                             ><FileText size={14} /></button>
+                          )}
+                          {exp.pop_file_url && (
+                            <button
+                              onClick={async () => {
+                                const { data, error } = await supabase.storage.from('expense-docs').createSignedUrl(toExpenseDocPath(exp.pop_file_url!), 3600)
+                                if (error || !data) { toast('Could not open proof of payment', 'error'); return }
+                                window.open(data.signedUrl, '_blank')
+                              }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#22C55E', padding: 4 }}
+                              title="View proof of payment"
+                            ><Receipt size={14} /></button>
                           )}
                           <button onClick={() => { setEditing(exp); setShowModal(true) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A0A0A0', padding: 4 }} title="Edit"><Pencil size={13} /></button>
                           <button onClick={() => deleteExpense(exp)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', padding: 4 }} title="Delete"><Trash2 size={13} /></button>
