@@ -614,7 +614,9 @@ export function PartsPage() {
   async function updateStatus(id: string, status: PartRequest['status']) {
     setActionLoading(id)
     try {
-      const { error: dbErr } = await supabase.from('parts_requests').update({ status }).eq('id', id)
+      const payload: Record<string, unknown> = { status }
+      if (status === 'installed') payload.installed_at = new Date().toISOString()
+      const { error: dbErr } = await supabase.from('parts_requests').update(payload).eq('id', id)
       if (dbErr) throw dbErr
       toast(`Status updated to ${status}`)
       await loadParts()
@@ -638,7 +640,7 @@ export function PartsPage() {
     if (!orderedQty || orderedQty < 1) { toast('Enter a valid ordered quantity', 'error'); return }
     setOrderSaving(true)
     try {
-      const payload: Record<string, unknown> = { status: 'ordered', ordered_qty: orderedQty }
+      const payload: Record<string, unknown> = { status: 'ordered', ordered_qty: orderedQty, ordered_at: new Date().toISOString() }
       if (orderForm.catalogue_part_id) payload.catalogue_part_id = orderForm.catalogue_part_id
       const { error: dbErr } = await supabase.from('parts_requests').update(payload).eq('id', orderModal.part.id)
       if (dbErr) throw dbErr
@@ -667,7 +669,7 @@ export function PartsPage() {
   async function handleMarkReceived(part: PartRequest) {
     setActionLoading(part.id)
     try {
-      const { error } = await supabase.from('parts_requests').update({ status: 'received' }).eq('id', part.id)
+      const { error } = await supabase.from('parts_requests').update({ status: 'received', received_at: new Date().toISOString() }).eq('id', part.id)
       if (error) throw error
       const orderedQty = part.ordered_qty ?? part.quantity
       const surplus = orderedQty - part.quantity
@@ -753,6 +755,9 @@ export function PartsPage() {
         quantity: qty,
         ordered_qty: qty,
         status: 'installed',
+        ordered_at: new Date().toISOString(),
+        received_at: new Date().toISOString(),
+        installed_at: new Date().toISOString(),
         urgency: 'normal',
         notes: grabGoForm.notes.trim() || 'Grab & Go',
         requested_by: user?.id ?? null,

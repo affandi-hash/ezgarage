@@ -297,10 +297,14 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
   async function startPayment(method: 'duitnow' | 'credit_card' | 'fpx') {
     setLoading(method); setError('')
     try {
+      const session = JSON.parse(sessionStorage.getItem('portal_session') || '{}')
       const res = await fetch(RAUDHAHPAY_CREATE_PAYMENT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-        body: JSON.stringify({ invoice_id: invoiceId, payment_method: method, redirect_url: window.location.href }),
+        body: JSON.stringify({
+          invoice_id: invoiceId, payment_method: method, redirect_url: window.location.href,
+          plate: session.plate, phone: session.phone, ic_first6: session.icFirst6,
+        }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to start payment. Please try again.'); setLoading(null); return }

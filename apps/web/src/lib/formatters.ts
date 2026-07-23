@@ -5,8 +5,11 @@ const MALAY_CONNECTORS = new Set(['bin', 'binti', 'bt', 'bte', 'al', 'ap', 'a/l'
 
 export function formatName(value: string): string {
   if (!value) return value
-  return value
-    .trim()
+  const trimmed = value.trim().replace(/\s+/g, ' ')
+  // Input typed fully in caps is usually intentional (an acronym or a company
+  // name like "SDN BHD") -- leave it alone instead of mangling it to Title Case.
+  if (/[A-Z]/.test(trimmed) && trimmed === trimmed.toUpperCase()) return trimmed
+  return trimmed
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .split(' ')

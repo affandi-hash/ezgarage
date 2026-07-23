@@ -17,7 +17,7 @@ const C = {
 };
 
 type VehicleStatus = 'available' | 'in_use' | 'maintenance' | 'retired';
-// fleet_trips has no status column â€” trips are tracked by start_time/end_time presence
+// fleet_trips has no status column — trips are tracked by start_time/end_time presence
 type IssueSeverity = 'low' | 'medium' | 'high' | 'critical';
 type IssueStatus = 'open' | 'in_progress' | 'resolved';
 
@@ -509,7 +509,7 @@ function TripsTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null;
     }).eq('id', endTripTarget.id);
     if (!error) {
       await supabase.from('fleet_vehicles').update({ status: 'available', current_mileage: endMileage }).eq('id', endTripTarget.fleet_vehicle_id);
-      toast(`Trip ended â€” ${distKm != null ? distKm + ' km' : 'mileage recorded'}`, 'success');
+      toast(`Trip ended — ${distKm != null ? distKm + ' km' : 'mileage recorded'}`, 'success');
       setEndTripTarget(null);
       setEndForm({ end_mileage: '' });
       load();
@@ -525,7 +525,7 @@ function TripsTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null;
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <span style={{ color: C.textSecondary, fontSize: 14 }}>{activeTrips.length} active Â· {pastTrips.length} completed</span>
+        <span style={{ color: C.textSecondary, fontSize: 14 }}>{activeTrips.length} active · {pastTrips.length} completed</span>
         <button onClick={() => setShowNew(true)} style={{
           display: 'flex', alignItems: 'center', gap: 6,
           background: C.orange, border: 'none', borderRadius: 6,
@@ -555,14 +555,14 @@ function TripsTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null;
                 return (
                   <tr key={t.id} style={{ borderBottom: `1px solid ${C.border}22`, background: isActive ? 'rgba(241,90,34,0.04)' : 'transparent' }}>
                     <td style={{ padding: '10px 12px', color: C.orange, fontWeight: 700 }}>
-                      {t.fleet_vehicles?.plate_number || 'â€”'}
+                      {t.fleet_vehicles?.plate_number || '—'}
                       <div style={{ color: C.textSecondary, fontSize: 11, fontWeight: 400 }}>{t.fleet_vehicles?.brand} {t.fleet_vehicles?.model}</div>
                     </td>
                     <td style={{ padding: '10px 12px', color: C.textPrimary }}>{t.driver_name || t.driver_id}</td>
                     <td style={{ padding: '10px 12px', color: C.textPrimary }}>{t.purpose}</td>
-                    <td style={{ padding: '10px 12px', color: C.textSecondary }}>{t.start_time ? new Date(t.start_time).toLocaleString() : 'â€”'}</td>
+                    <td style={{ padding: '10px 12px', color: C.textSecondary }}>{t.start_time ? new Date(t.start_time).toLocaleString() : '—'}</td>
                     <td style={{ padding: '10px 12px', color: C.textSecondary }}>{t.end_time ? new Date(t.end_time).toLocaleString() : <span style={{ color: C.orange, fontWeight: 600 }}>In Progress</span>}</td>
-                    <td style={{ padding: '10px 12px', color: C.textPrimary }}>{t.distance_km != null ? `${t.distance_km} km` : 'â€”'}</td>
+                    <td style={{ padding: '10px 12px', color: C.textPrimary }}>{t.distance_km != null ? `${t.distance_km} km` : '—'}</td>
                     <td style={{ padding: '10px 12px' }}>
                       {isActive && (
                         <button onClick={() => { setEndTripTarget(t); setEndForm({ end_mileage: '' }); }} style={{
@@ -588,8 +588,8 @@ function TripsTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null;
           <form onSubmit={handleStartTrip}>
             <FormField label="Vehicle *">
               <select style={selectStyle} value={newForm.fleet_vehicle_id} onChange={e => setNewForm(f => ({ ...f, fleet_vehicle_id: e.target.value }))} required>
-                <option value="">Select vehicleâ€¦</option>
-                {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} â€” {v.brand} {v.model}</option>)}
+                <option value="">Select vehicle…</option>
+                {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} — {v.brand} {v.model}</option>)}
               </select>
             </FormField>
             <FormField label="Driver Name">
@@ -603,7 +603,7 @@ function TripsTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null;
             </FormField>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
               <button type="button" onClick={() => setShowNew(false)} style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textSecondary, padding: '0 20px', minHeight: 44, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
-              <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 24px', minHeight: 44, cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>{saving ? 'Startingâ€¦' : 'Start Trip'}</button>
+              <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 24px', minHeight: 44, cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>{saving ? 'Starting…' : 'Start Trip'}</button>
             </div>
           </form>
         </Modal>
@@ -626,7 +626,7 @@ function TripsTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null;
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
               <button type="button" onClick={() => setEndTripTarget(null)} style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textSecondary, padding: '0 20px', minHeight: 44, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
-              <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 24px', minHeight: 44, cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>{saving ? 'Endingâ€¦' : 'End Trip'}</button>
+              <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 24px', minHeight: 44, cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>{saving ? 'Ending…' : 'End Trip'}</button>
             </div>
           </form>
         </Modal>
@@ -678,7 +678,7 @@ function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null
               ) : issues.map(issue => (
                 <tr key={issue.id} style={{ borderBottom: `1px solid ${C.border}22` }}>
                   <td style={{ padding: '10px 12px', color: C.orange, fontWeight: 700 }}>
-                    {issue.fleet_vehicles?.plate_number || 'â€”'}
+                    {issue.fleet_vehicles?.plate_number || '—'}
                     <div style={{ color: C.textSecondary, fontSize: 11, fontWeight: 400 }}>{issue.fleet_vehicles?.brand} {issue.fleet_vehicles?.model}</div>
                   </td>
                   <td style={{ padding: '10px 12px', color: C.textPrimary }}>{issue.issue_type}</td>
@@ -686,7 +686,7 @@ function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{issue.description}</div>
                   </td>
                   <td style={{ padding: '10px 12px' }}><Badge label={issue.severity} color={severityColor(issue.severity)} /></td>
-                  <td style={{ padding: '10px 12px', color: C.textSecondary }}>{issue.reported_at ? new Date(issue.reported_at).toLocaleDateString() : 'â€”'}</td>
+                  <td style={{ padding: '10px 12px', color: C.textSecondary }}>{issue.reported_at ? new Date(issue.reported_at).toLocaleDateString() : '—'}</td>
                   <td style={{ padding: '10px 12px' }}><Badge label={issue.status.replace('_', ' ')} color={issueStatusColor(issue.status)} /></td>
                   <td style={{ padding: '10px 12px' }}>
                     {issue.status !== 'resolved' && (
@@ -740,7 +740,7 @@ function NextServiceCard({ record, currentMileage }: { record: FleetMaintenance;
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>
-          {isOverdue ? 'Overdue' : isDueSoon ? 'Due Soon' : 'Upcoming'} â€” Next {record.service_type}
+          {isOverdue ? 'Overdue' : isDueSoon ? 'Due Soon' : 'Upcoming'} — Next {record.service_type}
         </div>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           {nextDate && (
@@ -813,11 +813,11 @@ function LogServiceModal({ vehicles, branchId, tenantId, tenantName, onClose, on
         const { data: existing, error } = await supabase
           .from('fleet_vendors').select('name').eq('tenant_id', tenantId).order('name');
         if (error || !existing || existing.length === 0) {
-          // table may not exist yet or is empty â€” show seed name locally only
+          // table may not exist yet or is empty — show seed name locally only
           setVendors([seedName]);
           setForm(f => ({ ...f, workshop_vendor: seedName }));
           if (!error) {
-            // table exists but empty â€” insert seed silently
+            // table exists but empty — insert seed silently
             supabase.from('fleet_vendors').insert({ tenant_id: tenantId, name: seedName }).then(() => {});
           }
         } else {
@@ -886,7 +886,7 @@ function LogServiceModal({ vehicles, branchId, tenantId, tenantName, onClose, on
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <FormField label="Vehicle *">
             <select style={selectStyle} value={form.fleet_vehicle_id} onChange={e => set('fleet_vehicle_id', e.target.value)} required>
-              {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} â€” {v.brand} {v.model}</option>)}
+              {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} — {v.brand} {v.model}</option>)}
             </select>
           </FormField>
           <FormField label="Service Type *">
@@ -916,13 +916,13 @@ function LogServiceModal({ vehicles, branchId, tenantId, tenantName, onClose, on
                   {savingVendor ? '...' : 'Save'}
                 </button>
                 <button type="button" onClick={() => setAddingVendor(false)} style={{ padding: '0 10px', background: C.surface, color: C.textSecondary, border: `1px solid ${C.border}`, borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
-                  âœ•
+                  ✕
                 </button>
               </div>
             ) : (
               <div style={{ display: 'flex', gap: 6 }}>
                 <select style={{ ...selectStyle, flex: 1 }} value={form.workshop_vendor} onChange={e => set('workshop_vendor', e.target.value)}>
-                  <option value="">â€” Select workshop â€”</option>
+                  <option value="">— Select workshop —</option>
                   {vendors.map(v => <option key={v} value={v}>{v}</option>)}
                 </select>
                 <button type="button" onClick={() => setAddingVendor(true)} style={{ padding: '0 10px', background: C.surface, color: C.orange, border: `1px solid ${C.orange}`, borderRadius: 6, cursor: 'pointer', fontSize: 18, lineHeight: 1 }} title="Add new workshop">
@@ -963,12 +963,12 @@ function LogServiceModal({ vehicles, branchId, tenantId, tenantName, onClose, on
         </div>
 
         <FormField label="Remarks">
-          <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 56 }} value={form.remarks} onChange={e => set('remarks', e.target.value)} placeholder="Any notes about the serviceâ€¦" />
+          <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 56 }} value={form.remarks} onChange={e => set('remarks', e.target.value)} placeholder="Any notes about the service…" />
         </FormField>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
           <button type="button" onClick={onClose} style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textSecondary, padding: '0 20px', minHeight: 44, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
-          <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 24px', minHeight: 44, cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>{saving ? 'Savingâ€¦' : 'Log Service'}</button>
+          <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 24px', minHeight: 44, cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>{saving ? 'Saving…' : 'Log Service'}</button>
         </div>
       </form>
     </Modal>
@@ -1003,7 +1003,7 @@ function MaintenanceTab({ branchFilter, isSuperAdmin }: { branchFilter: string |
     vq.then(({ data }) => setVehicles(data || []));
   }, [load]);
 
-  // Latest record per vehicle â€” used for Next Service cards
+  // Latest record per vehicle — used for Next Service cards
   const latestByVehicle = records.reduce<Record<string, FleetMaintenance>>((acc, r) => {
     if (!acc[r.fleet_vehicle_id] || r.service_date > acc[r.fleet_vehicle_id].service_date) {
       acc[r.fleet_vehicle_id] = r;
@@ -1027,7 +1027,7 @@ function MaintenanceTab({ branchFilter, isSuperAdmin }: { branchFilter: string |
             style={{ ...selectStyle, width: 'auto', minWidth: 180, fontSize: 13 }}
           >
             <option value="all">All Vehicles</option>
-            {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} â€” {v.brand} {v.model}</option>)}
+            {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} — {v.brand} {v.model}</option>)}
           </select>
           <span style={{ color: C.textSecondary, fontSize: 13 }}>{records.length} record{records.length !== 1 ? 's' : ''}</span>
         </div>
@@ -1055,7 +1055,7 @@ function MaintenanceTab({ branchFilter, isSuperAdmin }: { branchFilter: string |
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <ChevronRight size={12} color={C.textSecondary} />
                     <span style={{ fontSize: 11, color: C.textSecondary, fontWeight: 600 }}>
-                      {(r.fleet_vehicles as any)?.plate_number} â€” {(r.fleet_vehicles as any)?.brand} {(r.fleet_vehicles as any)?.model}
+                      {(r.fleet_vehicles as any)?.plate_number} — {(r.fleet_vehicles as any)?.brand} {(r.fleet_vehicles as any)?.model}
                     </span>
                   </div>
                   <NextServiceCard record={r} currentMileage={veh?.current_mileage ?? (r.fleet_vehicles as any)?.current_mileage ?? 0} />
@@ -1096,7 +1096,7 @@ function MaintenanceTab({ branchFilter, isSuperAdmin }: { branchFilter: string |
                   return (
                     <tr key={r.id} style={{ borderBottom: `1px solid ${C.border}22` }}>
                       <td style={{ padding: '10px 12px', color: C.orange, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        {(r.fleet_vehicles as any)?.plate_number || 'â€”'}
+                        {(r.fleet_vehicles as any)?.plate_number || '—'}
                         <div style={{ color: C.textSecondary, fontSize: 11, fontWeight: 400 }}>{(r.fleet_vehicles as any)?.brand} {(r.fleet_vehicles as any)?.model}</div>
                       </td>
                       <td style={{ padding: '10px 12px', color: C.textPrimary, whiteSpace: 'nowrap' }}>
@@ -1108,14 +1108,14 @@ function MaintenanceTab({ branchFilter, isSuperAdmin }: { branchFilter: string |
                         </span>
                       </td>
                       <td style={{ padding: '10px 12px', color: C.textSecondary, whiteSpace: 'nowrap' }}>
-                        {r.service_mileage ? `${r.service_mileage.toLocaleString()} km` : 'â€”'}
+                        {r.service_mileage ? `${r.service_mileage.toLocaleString()} km` : '—'}
                       </td>
-                      <td style={{ padding: '10px 12px', color: C.textSecondary }}>{r.workshop_vendor || 'â€”'}</td>
+                      <td style={{ padding: '10px 12px', color: C.textSecondary }}>{r.workshop_vendor || '—'}</td>
                       <td style={{ padding: '10px 12px', color: C.textSecondary, maxWidth: 160 }}>
-                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.parts_changed || 'â€”'}</div>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.parts_changed || '—'}</div>
                       </td>
                       <td style={{ padding: '10px 12px', color: C.textPrimary, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                        {r.total_cost > 0 ? `RM ${r.total_cost.toFixed(2)}` : 'â€”'}
+                        {r.total_cost > 0 ? `RM ${r.total_cost.toFixed(2)}` : '—'}
                       </td>
                       <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                         {nextDate ? (
@@ -1125,7 +1125,7 @@ function MaintenanceTab({ branchFilter, isSuperAdmin }: { branchFilter: string |
                           </span>
                         ) : r.next_service_mileage ? (
                           <span style={{ fontSize: 12, color: C.textSecondary }}>{r.next_service_mileage.toLocaleString()} km</span>
-                        ) : 'â€”'}
+                        ) : '—'}
                       </td>
                     </tr>
                   );
@@ -1150,7 +1150,7 @@ function MaintenanceTab({ branchFilter, isSuperAdmin }: { branchFilter: string |
   );
 }
 
-// â”€â”€â”€ FUEL LOG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── FUEL LOG ────────────────────────────────────────────────────────────────
 
 interface FuelLog {
   id: string;
@@ -1280,7 +1280,7 @@ function FuelLogTab({ branchFilter, isSuperAdmin }: { branchFilter: string | nul
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
               <FormField label="Vehicle *">
                 <select style={selectStyle} value={form.fleet_vehicle_id} onChange={e => setF('fleet_vehicle_id', e.target.value)} required>
-                  {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} â€” {v.brand} {v.model}</option>)}
+                  {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} — {v.brand} {v.model}</option>)}
                 </select>
               </FormField>
               <FormField label="Date *">
@@ -1311,7 +1311,7 @@ function FuelLogTab({ branchFilter, isSuperAdmin }: { branchFilter: string | nul
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <button type="button" onClick={() => setShowForm(false)} style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textSecondary, padding: '0 18px', minHeight: 40, cursor: 'pointer' }}>Cancel</button>
-              <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 22px', minHeight: 40, cursor: 'pointer', fontWeight: 700 }}>{saving ? 'Savingâ€¦' : 'Save'}</button>
+              <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 22px', minHeight: 40, cursor: 'pointer', fontWeight: 700 }}>{saving ? 'Saving…' : 'Save'}</button>
             </div>
           </form>
         </div>
@@ -1321,7 +1321,7 @@ function FuelLogTab({ branchFilter, isSuperAdmin }: { branchFilter: string | nul
         <Droplets size={13} /> Fuel History
       </div>
       {loading ? (
-        <div style={{ color: C.textSecondary, textAlign: 'center', padding: 40 }}>Loadingâ€¦</div>
+        <div style={{ color: C.textSecondary, textAlign: 'center', padding: 40 }}>Loading…</div>
       ) : logs.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: C.textSecondary }}>
           <Fuel size={32} color={C.border} style={{ marginBottom: 8 }} />
@@ -1341,11 +1341,11 @@ function FuelLogTab({ branchFilter, isSuperAdmin }: { branchFilter: string | nul
               {logs.map((l, i) => (
                 <tr key={l.id} style={{ borderBottom: `1px solid ${C.border}`, background: i % 2 === 0 ? 'transparent' : '#0E0E0E' }}>
                   <td style={{ padding: '10px 12px', color: C.orange, fontWeight: 700 }}>
-                    {l.fleet_vehicles?.plate_number || 'â€”'}
+                    {l.fleet_vehicles?.plate_number || '—'}
                     <div style={{ color: C.textSecondary, fontSize: 11, fontWeight: 400 }}>{l.fleet_vehicles?.brand} {l.fleet_vehicles?.model}</div>
                   </td>
                   <td style={{ padding: '10px 12px', color: C.textPrimary }}>{l.log_date.split('-').reverse().join('/')}</td>
-                  <td style={{ padding: '10px 12px', color: C.textSecondary }}>{l.station || 'â€”'}</td>
+                  <td style={{ padding: '10px 12px', color: C.textSecondary }}>{l.station || '—'}</td>
                   <td style={{ padding: '10px 12px', color: C.textPrimary }}>{l.litres.toFixed(2)} L</td>
                   <td style={{ padding: '10px 12px', color: C.textSecondary }}>RM {l.cost_per_litre.toFixed(3)}</td>
                   <td style={{ padding: '10px 12px', color: C.textPrimary, fontWeight: 600 }}>RM {l.total_cost.toFixed(2)}</td>
@@ -1363,7 +1363,7 @@ function FuelLogTab({ branchFilter, isSuperAdmin }: { branchFilter: string | nul
   );
 }
 
-// â”€â”€â”€ DOCUMENT VAULT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── DOCUMENT VAULT ───────────────────────────────────────────────────────────
 
 interface FleetDoc {
   id: string;
@@ -1450,7 +1450,7 @@ function DocumentVaultTab({ branchFilter, isSuperAdmin }: { branchFilter: string
   }
 
   function expiryStatus(expiry: string | null): { color: string; label: string } {
-    if (!expiry) return { color: C.textSecondary, label: 'â€”' };
+    if (!expiry) return { color: C.textSecondary, label: '—' };
     const days = Math.ceil((new Date(expiry).getTime() - Date.now()) / 86400000);
     if (days < 0) return { color: '#EF4444', label: `Expired ${Math.abs(days)}d ago` };
     if (days <= 30) return { color: '#F15A22', label: `${days}d left` };
@@ -1478,7 +1478,7 @@ function DocumentVaultTab({ branchFilter, isSuperAdmin }: { branchFilter: string
               const { color, label } = expiryStatus(d.expiry_date);
               return (
                 <div key={d.id} style={{ background: '#0E0E0E', border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 12px', fontSize: 12 }}>
-                  <span style={{ color: C.textPrimary, fontWeight: 600 }}>{d.fleet_vehicles?.plate_number} â€” {d.document_type}</span>
+                  <span style={{ color: C.textPrimary, fontWeight: 600 }}>{d.fleet_vehicles?.plate_number} — {d.document_type}</span>
                   <span style={{ color, marginLeft: 8 }}>{label}</span>
                 </div>
               );
@@ -1506,7 +1506,7 @@ function DocumentVaultTab({ branchFilter, isSuperAdmin }: { branchFilter: string
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
               <FormField label="Vehicle *">
                 <select style={selectStyle} value={form.fleet_vehicle_id} onChange={e => setF('fleet_vehicle_id', e.target.value)} required>
-                  {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} â€” {v.brand} {v.model}</option>)}
+                  {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} — {v.brand} {v.model}</option>)}
                 </select>
               </FormField>
               <FormField label="Document Type *">
@@ -1527,14 +1527,14 @@ function DocumentVaultTab({ branchFilter, isSuperAdmin }: { branchFilter: string
             </FormField>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
               <button type="button" onClick={() => setShowForm(false)} style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textSecondary, padding: '0 18px', minHeight: 40, cursor: 'pointer' }}>Cancel</button>
-              <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 22px', minHeight: 40, cursor: 'pointer', fontWeight: 700 }}>{saving ? 'Uploadingâ€¦' : 'Upload'}</button>
+              <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 22px', minHeight: 40, cursor: 'pointer', fontWeight: 700 }}>{saving ? 'Uploading…' : 'Upload'}</button>
             </div>
           </form>
         </div>
       )}
 
       {loading ? (
-        <div style={{ color: C.textSecondary, textAlign: 'center', padding: 40 }}>Loadingâ€¦</div>
+        <div style={{ color: C.textSecondary, textAlign: 'center', padding: 40 }}>Loading…</div>
       ) : docs.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: C.textSecondary }}>
           <FileText size={32} color={C.border} style={{ marginBottom: 8 }} />
@@ -1556,12 +1556,12 @@ function DocumentVaultTab({ branchFilter, isSuperAdmin }: { branchFilter: string
                 return (
                   <tr key={d.id} style={{ borderBottom: `1px solid ${C.border}`, background: i % 2 === 0 ? 'transparent' : '#0E0E0E' }}>
                     <td style={{ padding: '10px 12px', color: C.orange, fontWeight: 700 }}>
-                      {d.fleet_vehicles?.plate_number || 'â€”'}
+                      {d.fleet_vehicles?.plate_number || '—'}
                       <div style={{ color: C.textSecondary, fontSize: 11, fontWeight: 400 }}>{d.fleet_vehicles?.brand} {d.fleet_vehicles?.model}</div>
                     </td>
                     <td style={{ padding: '10px 12px', color: C.textPrimary }}>{d.document_type}</td>
                     <td style={{ padding: '10px 12px', color, fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</td>
-                    <td style={{ padding: '10px 12px', color: C.textSecondary }}>{d.notes || 'â€”'}</td>
+                    <td style={{ padding: '10px 12px', color: C.textSecondary }}>{d.notes || '—'}</td>
                     <td style={{ padding: '10px 12px' }}>
                       <a href={d.file_url} target="_blank" rel="noopener noreferrer" style={{ color: C.orange, fontSize: 12, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <FileText size={13} /> View
@@ -1583,7 +1583,7 @@ function DocumentVaultTab({ branchFilter, isSuperAdmin }: { branchFilter: string
   );
 }
 
-// â”€â”€â”€ SERVICE ALERTS (injected into MaintenanceTab header) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── SERVICE ALERTS (injected into MaintenanceTab header) ─────────────────────
 
 function ServiceAlertsBar({ vehicles, records }: { vehicles: FleetVehicle[]; records: FleetMaintenance[] }) {
   const today = new Date();

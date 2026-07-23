@@ -105,62 +105,62 @@ function summarize(log: AuditLog): { headline: string; detail: string; icon: str
   const customerRef = d.customer    ? ` (${d.customer})`              : ''
   const brandRef    = d.brand && d.model ? ` ${d.brand} ${d.model}`   : ''
 
-  // â”€â”€ Fleet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Fleet ──────────────────────────────────────────────────────────────
   if (a === 'vehicle added') {
-    return { icon: 'ðŸš—', headline: `Vehicle Added â€” ${d.plate ?? ''}`, detail: `${who} registered a new vehicle${brandRef}${d.plate ? ' ('+d.plate+')' : ''} into the fleet.`, context }
+    return { icon: '🚗', headline: `Vehicle Added — ${d.plate ?? ''}`, detail: `${who} registered a new vehicle${brandRef}${d.plate ? ' ('+d.plate+')' : ''} into the fleet.`, context }
   }
   if (a === 'service logged') {
-    return { icon: 'ðŸ”§', headline: `Service Logged â€” ${d.service_type ?? ''}`, detail: `${who} logged a ${d.service_type ?? 'maintenance'} service${vehicleRef}.`, context }
+    return { icon: '🔧', headline: `Service Logged — ${d.service_type ?? ''}`, detail: `${who} logged a ${d.service_type ?? 'maintenance'} service${vehicleRef}.`, context }
   }
   if (a === 'fuel log added') {
-    return { icon: 'â›½', headline: `Fuel Fill-up â€” ${d.litres ? d.litres+' L' : ''}`, detail: `${who} recorded a fuel fill-up${vehicleRef}${d.station ? ' at '+d.station : ''}.`, context }
+    return { icon: '⛽', headline: `Fuel Fill-up — ${d.litres ? d.litres+' L' : ''}`, detail: `${who} recorded a fuel fill-up${vehicleRef}${d.station ? ' at '+d.station : ''}.`, context }
   }
   if (a === 'document uploaded') {
-    return { icon: 'ðŸ“„', headline: `Document Uploaded â€” ${d.document_type ?? ''}`, detail: `${who} uploaded a ${d.document_type ?? 'document'}${vehicleRef}${d.expiry ? ', expires '+String(d.expiry).split('-').reverse().join('/') : ''}.`, context }
+    return { icon: '📄', headline: `Document Uploaded — ${d.document_type ?? ''}`, detail: `${who} uploaded a ${d.document_type ?? 'document'}${vehicleRef}${d.expiry ? ', expires '+String(d.expiry).split('-').reverse().join('/') : ''}.`, context }
   }
 
-  // â”€â”€ Attendance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Attendance ─────────────────────────────────────────────────────────
   if (a === 'leave request submitted') {
     const lt = d.leave_type?.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) ?? 'Leave'
-    return { icon: 'ðŸŒ´', headline: `Leave Request â€” ${lt}`, detail: `${who} submitted a ${lt} request${d.date_from ? ' from '+String(d.date_from).split('-').reverse().join('/') : ''}${d.date_to ? ' to '+String(d.date_to).split('-').reverse().join('/') : ''}.`, context }
+    return { icon: '🌴', headline: `Leave Request — ${lt}`, detail: `${who} submitted a ${lt} request${d.date_from ? ' from '+String(d.date_from).split('-').reverse().join('/') : ''}${d.date_to ? ' to '+String(d.date_to).split('-').reverse().join('/') : ''}.`, context }
   }
   if (a === 'ot request submitted') {
-    return { icon: 'â°', headline: `OT Request â€” ${d.ot_hours ? d.ot_hours+' hrs' : ''}`, detail: `${who} submitted an overtime request${d.date ? ' for '+String(d.date).split('-').reverse().join('/') : ''}${d.ot_hours ? ' ('+d.ot_hours+' hours)' : ''}.`, context }
+    return { icon: '⏰', headline: `OT Request — ${d.ot_hours ? d.ot_hours+' hrs' : ''}`, detail: `${who} submitted an overtime request${d.date ? ' for '+String(d.date).split('-').reverse().join('/') : ''}${d.ot_hours ? ' ('+d.ot_hours+' hours)' : ''}.`, context }
   }
 
-  // â”€â”€ Workshop / Job status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Workshop / Job status ──────────────────────────────────────────────
   if (a.startsWith('status_change:')) {
     const to = d.to_status ?? a.split(':')[1]
     const from = d.from_status ?? ov?.status ?? ''
     const fromLabel = STATUS_LABELS[from] ?? from?.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())
     const toLabel = STATUS_LABELS[to] ?? to?.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())
     const jobRef = d.job_number ? ` [${d.job_number}]` : ''
-    return { icon: 'ðŸ”„', headline: `Job${jobRef} â†’ ${toLabel}`, detail: `${who} moved the job status${fromLabel ? ` from "${fromLabel}"` : ''} to "${toLabel}"${vehicleRef}${customerRef}.`, context }
+    return { icon: '🔄', headline: `Job${jobRef} → ${toLabel}`, detail: `${who} moved the job status${fromLabel ? ` from "${fromLabel}"` : ''} to "${toLabel}"${vehicleRef}${customerRef}.`, context }
   }
   if (a.startsWith('approval:')) {
     const to = d.to_status ?? a.split(':')[1]
     const toLabel = STATUS_LABELS[to] ?? to?.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())
     const jobRef = d.job_number ? ` [${d.job_number}]` : ''
     const approver = d.approved_by ? ` by ${d.approved_by}` : ''
-    return { icon: 'âœ…', headline: `Approved${jobRef} â†’ ${toLabel}`, detail: `Job approved${approver} and progressed to "${toLabel}"${vehicleRef}${customerRef}.`, context }
+    return { icon: '✅', headline: `Approved${jobRef} → ${toLabel}`, detail: `Job approved${approver} and progressed to "${toLabel}"${vehicleRef}${customerRef}.`, context }
   }
 
-  // â”€â”€ Generic CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  if (a === 'create' && mod.includes('job')) return { icon: 'ðŸ†•', headline: 'New Job Card', detail: `${who} checked in a vehicle${vehicleRef}${customerRef}${d.service ? ' for '+d.service : ''}.`, context }
-  if (a === 'create' && (mod.includes('vehicle') || d.plate)) return { icon: 'ðŸš—', headline: 'Vehicle Registered', detail: `${who} registered ${d.plate ?? 'a vehicle'}${customerRef}.`, context }
-  if (a === 'create' && mod.includes('customer')) return { icon: 'ðŸ§‘', headline: 'Customer Added', detail: `${who} created a customer record${d.customer ? ' for '+d.customer : ''}.`, context }
-  if (a === 'create' && mod.includes('booking')) return { icon: 'ðŸ“…', headline: 'Booking Created', detail: `${who} created a new booking${vehicleRef}${customerRef}.`, context }
-  if (a === 'create') return { icon: 'ðŸ†•', headline: `New ${log.module ?? log.record_type ?? 'Record'}`, detail: `${who} created a new record${vehicleRef}${customerRef}.`, context }
+  // ── Generic CRUD ──────────────────────────────────────────────────────
+  if (a === 'create' && mod.includes('job')) return { icon: '🆕', headline: 'New Job Card', detail: `${who} checked in a vehicle${vehicleRef}${customerRef}${d.service ? ' for '+d.service : ''}.`, context }
+  if (a === 'create' && (mod.includes('vehicle') || d.plate)) return { icon: '🚗', headline: 'Vehicle Registered', detail: `${who} registered ${d.plate ?? 'a vehicle'}${customerRef}.`, context }
+  if (a === 'create' && mod.includes('customer')) return { icon: '🧑', headline: 'Customer Added', detail: `${who} created a customer record${d.customer ? ' for '+d.customer : ''}.`, context }
+  if (a === 'create' && mod.includes('booking')) return { icon: '📅', headline: 'Booking Created', detail: `${who} created a new booking${vehicleRef}${customerRef}.`, context }
+  if (a === 'create') return { icon: '🆕', headline: `New ${log.module ?? log.record_type ?? 'Record'}`, detail: `${who} created a new record${vehicleRef}${customerRef}.`, context }
   if (a === 'attendance edit') return { icon: 'u{1F550}', headline: 'Attendance Edited', detail: `\ edited attendance for \\\\.`, context }
-  if (a.includes('update') || a.includes('edit')) return { icon: 'âœï¸', headline: 'Record Updated', detail: `${who} edited details${vehicleRef}${customerRef}.`, context }
-  if (a.includes('delete') || a.includes('remove')) return { icon: 'ðŸ—‘ï¸', headline: 'Record Deleted', detail: `${who} deleted a record${vehicleRef}.`, context }
-  if (a.includes('login'))    return { icon: 'ðŸ”', headline: 'User Signed In',    detail: `${who} logged into the system.`, context }
-  if (a.includes('logout'))   return { icon: 'ðŸšª', headline: 'User Signed Out',   detail: `${who} logged out.`, context }
-  if (a.includes('password')) return { icon: 'ðŸ”‘', headline: 'Password Changed',  detail: `${who} changed a password.`, context }
-  if (a.includes('note'))     return { icon: 'ðŸ“', headline: 'Note Added',        detail: `${who} added a note${vehicleRef}.`, context }
-  if (a.includes('photo'))    return { icon: 'ðŸ“·', headline: 'Photo Uploaded',    detail: `${who} uploaded a photo${vehicleRef}.`, context }
-  if (a.includes('part'))     return { icon: 'ðŸ“¦', headline: 'Parts Activity',    detail: `${who} performed a parts action.`, context }
-  return { icon: 'ðŸ“‹', headline: getActionLabel(log.action), detail: `${who} performed this action${vehicleRef}${customerRef}.`, context }
+  if (a.includes('update') || a.includes('edit')) return { icon: '✏️', headline: 'Record Updated', detail: `${who} edited details${vehicleRef}${customerRef}.`, context }
+  if (a.includes('delete') || a.includes('remove')) return { icon: '🗑️', headline: 'Record Deleted', detail: `${who} deleted a record${vehicleRef}.`, context }
+  if (a.includes('login'))    return { icon: '🔐', headline: 'User Signed In',    detail: `${who} logged into the system.`, context }
+  if (a.includes('logout'))   return { icon: '🚪', headline: 'User Signed Out',   detail: `${who} logged out.`, context }
+  if (a.includes('password')) return { icon: '🔑', headline: 'Password Changed',  detail: `${who} changed a password.`, context }
+  if (a.includes('note'))     return { icon: '📝', headline: 'Note Added',        detail: `${who} added a note${vehicleRef}.`, context }
+  if (a.includes('photo'))    return { icon: '📷', headline: 'Photo Uploaded',    detail: `${who} uploaded a photo${vehicleRef}.`, context }
+  if (a.includes('part'))     return { icon: '📦', headline: 'Parts Activity',    detail: `${who} performed a parts action.`, context }
+  return { icon: '📋', headline: getActionLabel(log.action), detail: `${who} performed this action${vehicleRef}${customerRef}.`, context }
 }
 
 function InfoRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -192,22 +192,22 @@ function DetailPane({ log }: { log: AuditLog | null }) {
           .select('job_number, status, service_type, checked_in_at, customers!customer_id(full_name), vehicles!vehicle_id(plate_number, make, model)')
           .eq('id', recordId).single()
         if (data) setRelated({
-          'Job Number': (data as any).job_number ?? 'â€”',
-          'Plate': (data as any).vehicles?.plate_number ?? 'â€”',
-          'Customer': (data as any).customers?.full_name ?? 'â€”',
-          'Service': (data as any).service_type ?? 'â€”',
+          'Job Number': (data as any).job_number ?? '—',
+          'Plate': (data as any).vehicles?.plate_number ?? '—',
+          'Customer': (data as any).customers?.full_name ?? '—',
+          'Service': (data as any).service_type ?? '—',
           'Current Status': ((data as any).status ?? '').replace(/_/g,' ').replace(/\b\w/g,(c:string)=>c.toUpperCase()),
-          'Checked In': (data as any).checked_in_at ? new Date((data as any).checked_in_at).toLocaleString('en-MY',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}) : 'â€”',
+          'Checked In': (data as any).checked_in_at ? new Date((data as any).checked_in_at).toLocaleString('en-MY',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true}) : '—',
         })
       } else if (isVehicleRecord) {
         const { data } = await supabase.from('fleet_vehicles')
           .select('plate_number, brand, model, year, status, current_mileage')
           .eq('id', recordId).single()
         if (data) setRelated({
-          'Plate': data.plate_number ?? 'â€”',
+          'Plate': data.plate_number ?? '—',
           'Vehicle': `${data.brand} ${data.model} (${data.year})`,
-          'Status': data.status ?? 'â€”',
-          'Mileage': data.current_mileage ? `${data.current_mileage.toLocaleString()} km` : 'â€”',
+          'Status': data.status ?? '—',
+          'Mileage': data.current_mileage ? `${data.current_mileage.toLocaleString()} km` : '—',
         })
       }
     }
@@ -252,7 +252,7 @@ function DetailPane({ log }: { log: AuditLog | null }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: colors.textSecondary }}>
           <Clock size={12} />
           <span>{formatTimestamp(log.created_at)}</span>
-          <span style={{ color: colors.border }}>Â·</span>
+          <span style={{ color: colors.border }}>·</span>
           <span>{relativeTime(log.created_at)}</span>
         </div>
       </div>
@@ -261,7 +261,7 @@ function DetailPane({ log }: { log: AuditLog | null }) {
       <div style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 10, padding: '16px 18px', marginBottom: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <InfoRow label="Performed By" value={log.user_name || log.user_id} />
         <InfoRow label="Action" value={getActionLabel(log.action)} />
-        <InfoRow label="Module" value={[log.module, recordType].filter(Boolean).map(s => s!.charAt(0).toUpperCase() + s!.slice(1)).join(' / ') || 'â€”'} />
+        <InfoRow label="Module" value={[log.module, recordType].filter(Boolean).map(s => s!.charAt(0).toUpperCase() + s!.slice(1)).join(' / ') || '—'} />
         <InfoRow label="Timestamp" value={formatTimestamp(log.created_at)} />
         {(log.record_id ?? log.entity_id) && <InfoRow label="Record ID" value={String(log.record_id ?? log.entity_id)} mono />}
         {log.branch_id && <InfoRow label="Branch ID" value={log.branch_id} mono />}
@@ -270,7 +270,7 @@ function DetailPane({ log }: { log: AuditLog | null }) {
       {/* Live related record lookup */}
       {related && Object.keys(related).length > 0 && (
         <div style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 10, padding: '16px 18px', marginBottom: 16 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px' }}>ðŸ”— Related Record</p>
+          <p style={{ fontSize: 11, fontWeight: 700, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px' }}>🔗 Related Record</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             {Object.entries(related).map(([k, v]) => <InfoRow key={k} label={k} value={v} />)}
           </div>
@@ -280,7 +280,7 @@ function DetailPane({ log }: { log: AuditLog | null }) {
       {/* Extra details from logAudit's details field */}
       {hasDetails && (
         <div style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 10, padding: '16px 18px', marginBottom: 16 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px' }}>ðŸ“‹ Transaction Details</p>
+          <p style={{ fontSize: 11, fontWeight: 700, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 12px' }}>📋 Transaction Details</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             {Object.entries(log.details!).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '').map(([k, v]) => (
               <InfoRow key={k} label={k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} value={
@@ -651,7 +651,7 @@ export function AuditLogPage() {
                             if (d.document_type) snippets.push(d.document_type)
                             if (d.ot_hours)      snippets.push(`${d.ot_hours} hrs OT`)
                             if (d.customer)      snippets.push(d.customer)
-                            if (snippets.length > 0) return snippets.join(' Â· ')
+                            if (snippets.length > 0) return snippets.join(' · ')
                             return mod ?? ''
                           })()}
                         </span>
@@ -659,7 +659,7 @@ export function AuditLogPage() {
                       <div style={{ marginTop: 3, paddingLeft: 15, display: 'flex', alignItems: 'center', gap: 5 }}>
                         <User size={10} color={colors.textSecondary} />
                         <span style={{ fontSize: 11, color: colors.textSecondary }}>
-                          {log.user_name || log.user_id.slice(0, 8) + 'â€¦'}
+                          {log.user_name || log.user_id.slice(0, 8) + '…'}
                         </span>
                       </div>
                     </div>

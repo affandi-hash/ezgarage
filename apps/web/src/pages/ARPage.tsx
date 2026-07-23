@@ -12,6 +12,7 @@ import {
 
 interface ARInvoice {
   id: string
+  branch_id: string
   invoice_number: string
   customer_id: string | null
   customer_name: string
@@ -193,6 +194,7 @@ function DetailPanel({
     setSaving(true)
     const { data: inserted, error } = await supabase.from('receipts').insert({
       tenant_id: tenantId,
+      branch_id: invoice.branch_id,
       invoice_id: invoice.id,
       amount: amt,
       payment_method: form.payment_method,
@@ -410,7 +412,7 @@ export function ARPage() {
     setLoading(true)
     let query = supabase
       .from('invoices')
-      .select('id, invoice_number, customer_id, customer_name, customer_phone, vehicle_plate, issue_date, due_date, total_amount, amount_paid, balance_due, status, created_at, customers(customer_type, credit_days, credit_limit)')
+      .select('id, branch_id, invoice_number, customer_id, customer_name, customer_phone, vehicle_plate, issue_date, due_date, total_amount, amount_paid, balance_due, status, created_at, customers(customer_type, credit_days, credit_limit)')
       .eq('tenant_id', tenantId)
       .neq('status', 'void')
       .neq('status', 'draft')

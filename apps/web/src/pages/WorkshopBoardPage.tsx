@@ -74,7 +74,9 @@ const canApprove = (role: string) => FOREMAN_ROLES.includes(role)
 const ALLOWED_TRANSITIONS: Partial<Record<string, JobStatus[]>> = {
   checked_in:       ['diagnosing'],
   diagnosing:       ['waiting_approval'],
-  waiting_approval: ['waiting_parts'],
+  // A job with no parts to order can go straight to In Progress instead of
+  // being forced through Waiting Parts for no reason.
+  waiting_approval: ['waiting_parts', 'in_progress'],
   waiting_parts:    ['in_progress'],
   in_progress:      ['ready', 'waiting_approval'],
   // long_due is just an in_progress job that's sat too long (see the
@@ -87,6 +89,7 @@ const ALLOWED_TRANSITIONS: Partial<Record<string, JobStatus[]>> = {
 const GATED_SET = new Set([
   'diagnosing→waiting_approval',
   'waiting_approval→waiting_parts',
+  'waiting_approval→in_progress',
   'in_progress→ready',
   'in_progress→waiting_approval',
   'long_due→ready',

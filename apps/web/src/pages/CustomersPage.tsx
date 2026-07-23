@@ -22,7 +22,7 @@ import { useAuthStore } from '@/store/authStore'
 import { logAudit } from '@/lib/audit'
 import { formatName, formatPhone, formatEmail, formatIC, formatPlate, formatTitleCase } from '@/lib/formatters'
 
-// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Customer {
   id: string
@@ -89,7 +89,7 @@ interface EditForm {
   credit_limit: string
 }
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getInitial(name: string): string {
   return name.trim().charAt(0).toUpperCase()
@@ -138,7 +138,7 @@ function typeBadgeColor(type: string): { bg: string; text: string } {
   }
 }
 
-// â”€â”€â”€ Shared UI atoms â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Shared UI atoms ──────────────────────────────────────────────────────────
 
 function Spinner() {
   return (
@@ -209,7 +209,7 @@ function Avatar({ name, size = 36 }: { name: string; size?: number }) {
   )
 }
 
-// â”€â”€â”€ Customer Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Customer Row ─────────────────────────────────────────────────────────────
 
 function CustomerRow({
   customer,
@@ -269,7 +269,7 @@ function CustomerRow({
   )
 }
 
-// â”€â”€â”€ InfoField â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── InfoField ────────────────────────────────────────────────────────────────
 
 function InfoField({
   icon,
@@ -291,7 +291,7 @@ function InfoField({
   )
 }
 
-// â”€â”€â”€ Overview Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Overview Tab ─────────────────────────────────────────────────────────────
 
 function OverviewTab({
   customer,
@@ -607,7 +607,7 @@ function OverviewTab({
   )
 }
 
-// â”€â”€â”€ Vehicles Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Vehicles Tab ─────────────────────────────────────────────────────────────
 
 function VehiclesTab({ customerId, branchId }: { customerId: string; branchId: string }) {
   const { user } = useAuthStore()
@@ -847,7 +847,7 @@ function VehiclesTab({ customerId, branchId }: { customerId: string; branchId: s
   )
 }
 
-// â”€â”€â”€ Jobs Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Jobs Tab ─────────────────────────────────────────────────────────────────
 
 function JobsTab({ customerId }: { customerId: string }) {
   const [jobs, setJobs] = useState<Job[]>([])
@@ -920,7 +920,7 @@ function JobsTab({ customerId }: { customerId: string }) {
   )
 }
 
-// â”€â”€â”€ Notes Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Notes Tab ────────────────────────────────────────────────────────────────
 
 function NotesTab({
   customer,
@@ -994,7 +994,7 @@ function NotesTab({
   )
 }
 
-// â”€â”€â”€ Customer Detail (tabbed right panel) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Customer Detail (tabbed right panel) ─────────────────────────────────────
 
 function CustomerDetail({
   customer,
@@ -1058,7 +1058,7 @@ function CustomerDetail({
   )
 }
 
-// â”€â”€â”€ New Customer Slide-in Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── New Customer Slide-in Panel ──────────────────────────────────────────────
 
 function NewCustomerPanel({
   branchId,
@@ -1289,7 +1289,7 @@ function NewCustomerPanel({
   )
 }
 
-// â”€â”€â”€ Main Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Main Export ──────────────────────────────────────────────────────────────
 
 export function CustomersPage() {
   const { user } = useAuthStore()
@@ -1398,7 +1398,7 @@ export function CustomersPage() {
     <div
       style={{ display: 'flex', overflow: 'hidden', background: '#0E0E0E', color: '#F0F0F0', height: 'calc(100vh - 104px)' }}
     >
-      {/* â”€â”€ Left panel (380px fixed) â”€â”€ */}
+      {/* ── Left panel (380px fixed) ── */}
       <div
         style={{
           width: 380,
@@ -1519,7 +1519,7 @@ export function CustomersPage() {
         </div>
       </div>
 
-      {/* â”€â”€ Right panel (flex-1) â”€â”€ */}
+      {/* ── Right panel (flex-1) ── */}
       <div style={{ flex: 1, height: '100%', overflow: 'hidden', background: '#0E0E0E' }}>
         {selectedCustomer ? (
           <CustomerDetail
@@ -1539,7 +1539,7 @@ export function CustomersPage() {
         )}
       </div>
 
-      {/* â”€â”€ New Customer slide-in â”€â”€ */}
+      {/* ── New Customer slide-in ── */}
       {showNewPanel && (
         <NewCustomerPanel
           branchId={branchId}

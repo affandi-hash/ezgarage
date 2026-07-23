@@ -28,14 +28,20 @@ const ORANGE = '#F15A22'
 const TEXT_PRIMARY = '#F0F0F0'
 const TEXT_SECONDARY = '#A0A0A0'
 
+// Matches the real jobs.status vocabulary used on the Workshop Board --
+// this map previously used a stale, unrelated set of status names (e.g.
+// "waiting_for_parts", "collected") that never matched an actual job row,
+// so real statuses like "waiting_parts" and "delivered" always fell through
+// to the raw, unformatted database value.
 const STATUS_LABELS: Record<string, string> = {
-  received: 'Received',
-  inspecting: 'Inspecting',
+  checked_in: 'Checked In',
+  diagnosing: 'Diagnosing',
   waiting_approval: 'Waiting Approval',
+  waiting_parts: 'Waiting Parts',
   in_progress: 'In Progress',
-  waiting_for_parts: 'Waiting Parts',
-  done: 'Done',
-  collected: 'Collected',
+  ready: 'Ready',
+  long_due: 'Long Due',
+  delivered: 'Delivered',
   cancelled: 'Cancelled',
 }
 
@@ -639,7 +645,7 @@ export function ReportsPage() {
                 overviewData.statusCounts.map(({ status, count }) => (
                   <DivBar
                     key={status}
-                    label={STATUS_LABELS[status] ?? status}
+                    label={STATUS_LABELS[status] ?? status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                     value={count}
                     max={overviewData.statusCounts[0].count}
                     color={STATUS_COLORS[status] ?? ORANGE}

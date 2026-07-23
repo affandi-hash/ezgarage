@@ -25,13 +25,23 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { invoice_id, payment_method, amount: requestedAmount, redirect_url } = await req.json()
+    const { invoice_id, payment_method, amount: requestedAmount, redirect_url, plate, phone: requestPhone, ic_first6 } = await req.json()
 
     if (!invoice_id || !['fpx', 'duitnow', 'credit_card'].includes(payment_method)) {
       return new Response(JSON.stringify({ error: 'invoice_id and payment_method ("fpx", "duitnow", or "credit_card") are required' }), { status: 400, headers: corsHeaders })
     }
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+
+    // Re-verify the same plate + phone + first-6-IC-digits check the portal's
+    // own lookup already gated on -- a bare invoice_id was previously enough
+    // to create a real payment session for it.
+    const { data: verified, error: verifyErr } = await supabase.rpc('portal_verify_invoice_access', {
+      p_invoice_id: invoice_id, p_plate: plate, p_phone: requestPhone, p_ic_first6: ic_first6,
+    })
+    if (verifyErr || !verified) {
+      return new Response(JSON.stringify({ error: 'Could not verify your identity for this invoice' }), { status: 403, headers: corsHeaders })
+    }
 
     const { data: invoice, error: invErr } = await supabase
       .from('invoices')

@@ -274,7 +274,7 @@ function EditAttendanceModal({ record, onClose, onSaved, branchWorkStart, branch
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <p style={{ color: '#F0F0F0', fontWeight: 700, fontSize: 15, margin: 0 }}>Edit Attendance</p>
-            <p style={{ color: '#A0A0A0', fontSize: 12, margin: '2px 0 0' }}>{record.staff_profiles?.full_name ?? '—'} Â· {record.date}</p>
+            <p style={{ color: '#A0A0A0', fontSize: 12, margin: '2px 0 0' }}>{record.staff_profiles?.full_name ?? '—'} · {record.date}</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#A0A0A0', cursor: 'pointer' }}><X size={16} /></button>
         </div>
@@ -556,6 +556,7 @@ function DailyBoardTab({ branchId }: { branchId: string | null }) {
 // â"€â"€â"€ Leave Requests Tab â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 function LeaveRequestsTab({ branchId }: { branchId: string | null }) {
+  const { user } = useAuthStore()
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'pending' | 'all'>('all')
@@ -575,11 +576,11 @@ function LeaveRequestsTab({ branchId }: { branchId: string | null }) {
   useEffect(() => { fetchLeave() }, [fetchLeave])
 
   const handleApprove = async (id: string) => {
-    await supabase.from('leave_requests').update({ status: 'approved' }).eq('id', id)
+    await supabase.from('leave_requests').update({ status: 'approved', reviewed_by: user?.id ?? null, reviewed_at: new Date().toISOString() }).eq('id', id)
     fetchLeave()
   }
   const handleReject = async (id: string) => {
-    await supabase.from('leave_requests').update({ status: 'rejected' }).eq('id', id)
+    await supabase.from('leave_requests').update({ status: 'rejected', reviewed_by: user?.id ?? null, reviewed_at: new Date().toISOString() }).eq('id', id)
     fetchLeave()
   }
 
@@ -1409,7 +1410,7 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
           status, late_minutes: lateMinutes || null,
         })
         if (error) throw error
-        toast.success(`Clocked in at ${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}${lateMinutes > 0 ? ` Â· ${lateMinutes} min late` : ''}`)
+        toast.success(`Clocked in at ${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}${lateMinutes > 0 ? ` · ${lateMinutes} min late` : ''}`)
       } else {
         const clockIn = todayRecord?.clock_in_time ? new Date(todayRecord.clock_in_time) : null
         const workedHours = clockIn ? (now.getTime() - clockIn.getTime()) / 3_600_000 : 0
@@ -1421,7 +1422,7 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
         }).eq('id', todayRecord!.id)
         if (error) throw error
         const h = now.getHours(), m = now.getMinutes()
-        toast.success(`Clocked out at ${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}${otHours > 0 ? ` Â· ${otHours}h OT` : ''}`)
+        toast.success(`Clocked out at ${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}${otHours > 0 ? ` · ${otHours}h OT` : ''}`)
       }
       onDone()
     } catch (e: any) {
@@ -1473,7 +1474,7 @@ function ClockInOutModal({ mode, staffId, branchId, tenantId, todayRecord, onClo
         <div style={{ padding: '10px 20px', background: '#111', textAlign: 'center' }}>
           <span style={{ fontSize: 13, color: '#A0A0A0' }}>
             {new Date().toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
-            {' Â· '}
+            {' · '}
             <strong style={{ color: accent }}>{new Date().toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' })}</strong>
           </span>
         </div>

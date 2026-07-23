@@ -7,6 +7,7 @@ interface Invoice {
   id: string
   branch_id: string
   invoice_number: string
+  receipt_number: string | null
   customer_name: string
   vehicle_plate: string
   issue_date: string
@@ -61,7 +62,7 @@ export function PrintReceiptPage() {
 
   useEffect(() => {
     if (invoice && branchInfo !== undefined) {
-      document.title = `Receipt ${invoice.invoice_number}`
+      document.title = `Receipt ${invoice.receipt_number ?? invoice.invoice_number}`
       setTimeout(() => window.print(), 500)
     }
   }, [invoice, branchInfo])
@@ -80,7 +81,7 @@ export function PrintReceiptPage() {
       `}</style>
 
       <div className="no-print" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', background: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
-        <span style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>Receipt — {inv.invoice_number}</span>
+        <span style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>Receipt — {inv.receipt_number ?? inv.invoice_number}</span>
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={() => window.close()} style={{ background: '#fff', border: '1px solid #ccc', borderRadius: 6, padding: '7px 16px', fontSize: 13, cursor: 'pointer' }}>Close</button>
           <button onClick={() => window.print()} style={{ background: '#F15A22', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Print / Save PDF</button>
@@ -106,7 +107,7 @@ export function PrintReceiptPage() {
 
         {/* Receipt meta */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 14, fontSize: 12 }}>
-          <div><span style={{ color: '#888' }}>Receipt No:</span> <strong style={{ fontFamily: 'monospace' }}>{inv.invoice_number}</strong></div>
+          <div><span style={{ color: '#888' }}>Receipt No:</span> <strong style={{ fontFamily: 'monospace' }}>{inv.receipt_number ?? inv.invoice_number}</strong></div>
           <div style={{ textAlign: 'right' }}><span style={{ color: '#888' }}>Date:</span> <strong>{inv.payment_date ? new Date(inv.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : formatDate(inv.issue_date)}</strong></div>
           <div><span style={{ color: '#888' }}>Customer:</span> <strong>{inv.customer_name}</strong></div>
           <div style={{ textAlign: 'right' }}><span style={{ color: '#888' }}>Vehicle:</span> <strong style={{ fontFamily: 'monospace' }}>{inv.vehicle_plate}</strong></div>
