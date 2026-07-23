@@ -37,6 +37,35 @@ interface Expense {
   lifespan_years: number | null
   notes: string | null
   created_at: string
+  supplier_invoice_id: string | null
+  supplier_invoices?: { status: 'unpaid' | 'partial' | 'paid' | 'overdue'; amount_paid: number; total_amount: number } | null
+}
+
+// Same source of truth as Accounts Payable's own status — this just reads
+// it, never writes it, so the two can never drift out of sync.
+const AP_STATUS_COLOR: Record<string, string> = {
+  unpaid: '#A0A0A0', partial: '#F59E0B', paid: '#22C55E', overdue: '#EF4444',
+}
+const AP_STATUS_BG: Record<string, string> = {
+  unpaid: 'rgba(160,160,160,0.12)', partial: 'rgba(245,158,11,0.12)', paid: 'rgba(34,197,94,0.12)', overdue: 'rgba(239,68,68,0.12)',
+}
+
+function PaymentStatusBadge({ expense }: { expense: Expense }) {
+  const inv = expense.supplier_invoices
+  if (!inv) return <span style={{ fontSize: 12, color: '#4A4A4A' }}>—</span>
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 9999, fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: AP_STATUS_COLOR[inv.status], background: AP_STATUS_BG[inv.status], whiteSpace: 'nowrap' }}>
+      {inv.status}
+    </span>
+  )
+}
+
+interface SupplierInvoiceOption {
+  id: string
+  invoice_number: string | null
+  total_amount: number
+  status: string
+  suppliers?: { name: string } | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -166,6 +195,7 @@ interface ExpenseForm {
   recurring_period: string
   lifespan_years: string
   notes: string
+  supplier_invoice_id: string
 }
 
 const EMPTY: ExpenseForm = {
@@ -173,7 +203,7 @@ const EMPTY: ExpenseForm = {
   expense_date: new Date().toISOString().slice(0, 10),
   payment_method: 'Cash', reference: '', vendor: '',
   is_recurring: false, recurring_period: 'monthly',
-  lifespan_years: '', notes: '',
+  lifespan_years: '', notes: '', supplier_invoice_id: '',
 }
 
 function ExpenseModal({
@@ -199,14 +229,26 @@ function ExpenseModal({
       reference: editing.reference ?? '', vendor: editing.vendor ?? '',
       is_recurring: editing.is_recurring, recurring_period: editing.recurring_period ?? 'monthly',
       lifespan_years: editing.lifespan_years != null ? String(editing.lifespan_years) : '',
-      notes: editing.notes ?? '',
+      notes: editing.notes ?? '', supplier_invoice_id: editing.supplier_invoice_id ?? '',
     } : EMPTY
   )
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [invoiceOptions, setInvoiceOptions] = useState<SupplierInvoiceOption[]>([])
 
   const categories = form.type === 'opex' ? OPEX_CATEGORIES : CAPEX_CATEGORIES
+
+  // Optional link to an Accounts Payable invoice — lets this expense show
+  // that invoice's live paid/unpaid status instead of tracking its own.
+  useEffect(() => {
+    supabase.from('supplier_invoices')
+      .select('id, invoice_number, total_amount, status, suppliers(name)')
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(200)
+      .then(({ data }) => setInvoiceOptions((data as unknown as SupplierInvoiceOption[]) ?? []))
+  }, [tenantId])
 
   // reset category when type changes
   useEffect(() => {
@@ -244,6 +286,7 @@ function ExpenseModal({
       lifespan_years: form.type === 'capex' && form.lifespan_years ? parseInt(form.lifespan_years) : null,
       notes: form.notes || null, file_url: fileUrl,
       created_by: userId || null,
+      supplier_invoice_id: form.supplier_invoice_id || null,
     }
 
     const { error } = editing
@@ -328,6 +371,19 @@ function ExpenseModal({
             </div>
           )}
 
+          <div>
+            <label style={lbl}>Link to Supplier Invoice (optional)</label>
+            <select value={form.supplier_invoice_id} onChange={e => setForm(f => ({ ...f, supplier_invoice_id: e.target.value }))} style={inp}>
+              <option value="">Not linked — tracked here directly</option>
+              {invoiceOptions.map(inv => (
+                <option key={inv.id} value={inv.id}>
+                  {inv.invoice_number ?? 'No #'} · {inv.suppliers?.name ?? 'Unknown supplier'} · {fmtAmt(inv.total_amount)} · {inv.status}
+                </option>
+              ))}
+            </select>
+            <p style={{ color: '#4A4A4A', fontSize: 11, margin: '4px 0 0' }}>Linking shows that invoice's live paid/unpaid status here — it stays in sync with Accounts Payable automatically.</p>
+          </div>
+
           {form.type === 'opex' && (
             <div style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 8, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
@@ -406,7 +462,7 @@ export function ExpensesPage() {
     const currentMonth = thisMonth()
 
     // expenses
-    let query = supabase.from('expenses').select('*').eq('tenant_id', tenantId).order('expense_date', { ascending: false })
+    let query = supabase.from('expenses').select('*, supplier_invoices(status, amount_paid, total_amount)').eq('tenant_id', tenantId).order('expense_date', { ascending: false })
     if (branchId) query = query.eq('branch_id', branchId)
     const { data } = await query
     setExpenses((data as Expense[]) ?? [])
@@ -591,7 +647,7 @@ export function ExpensesPage() {
             <table style={{ width: '100%', minWidth: 700, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #2A2A2A' }}>
-                  {['Date', 'Category', 'Description', 'Vendor', 'Method', 'Amount', ''].map(h => (
+                  {['Date', 'Category', 'Description', 'Vendor', 'Method', 'Payment Status', 'Amount', ''].map(h => (
                     <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: '#4A4A4A', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -620,6 +676,7 @@ export function ExpensesPage() {
                       </td>
                       <td style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 13 }}>{exp.vendor ?? '—'}</td>
                       <td style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 12 }}>{exp.payment_method}</td>
+                      <td style={{ padding: '12px 16px' }}><PaymentStatusBadge expense={exp} /></td>
                       <td style={{ padding: '12px 16px', color: '#F0F0F0', fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtAmt(exp.amount)}</td>
                       <td style={{ padding: '12px 16px' }}>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -644,7 +701,7 @@ export function ExpensesPage() {
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: '2px solid #2A2A2A' }}>
-                  <td colSpan={5} style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 13, fontWeight: 600 }}>Total ({tableData.length} records)</td>
+                  <td colSpan={6} style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 13, fontWeight: 600 }}>Total ({tableData.length} records)</td>
                   <td style={{ padding: '12px 16px', color: '#F15A22', fontWeight: 800, fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>
                     {fmtAmt(tableData.reduce((s, e) => s + e.amount, 0))}
                   </td>
