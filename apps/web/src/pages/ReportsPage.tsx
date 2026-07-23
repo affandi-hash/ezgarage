@@ -266,12 +266,16 @@ export function ReportsPage() {
       let paidJobCount = 0
       let totalParts = 0
       let totalLabour = 0
+      // "Revenue" is labeled and read as cash actually collected -- it was
+      // previously summing paid + sent + overdue invoices (an accrual-style
+      // total), which overstated real collections by ~2.7x. Scope strictly
+      // to paid invoices so the figure matches what it says it is.
       let invQ = supabase
         .from('invoices')
         .select('job_id, line_items, status, total_amount, subtotal')
         .gte('issue_date', bounds.start)
         .lte('issue_date', bounds.end)
-        .in('status', ['paid', 'sent', 'overdue']) // accrual basis
+        .eq('status', 'paid')
       if (branchFilter) invQ = invQ.eq('branch_id', branchFilter)
       const { data: invRows } = await invQ
       type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number; cost_price?: number }
@@ -368,12 +372,21 @@ export function ReportsPage() {
       const months = last6MonthsKeys()
       const sixMonthsAgo = months[0] + '-01'
 
+      // jobs.payment_status is a stale, disconnected field the app never
+      // keeps in sync with the real invoice (only 1 job out of 52 ever shows
+      // 'paid' regardless of actual invoice status) -- it made the monthly
+      // trend and Parts/Labour totals read ~0 for real paid work, and made
+      // "Outstanding Invoices" just count nearly every job in the system.
+      // Parts/Labour were also never real figures at all, just a fixed
+      // 40/60 split of the total. Source everything from real invoices and
+      // their actual line items instead.
+      type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number }
       let revQ = supabase
-        .from('jobs')
-        .select('final_amount, estimated_cost, payment_status, closed_at, created_at, branch_id')
-        .gte('created_at', sixMonthsAgo)
+        .from('invoices')
+        .select('total_amount, subtotal, status, issue_date, line_items, branch_id')
+        .gte('issue_date', sixMonthsAgo)
       if (branchFilter) revQ = revQ.eq('branch_id', branchFilter)
-      const { data: revJobs } = await revQ
+      const { data: revInvoices } = await revQ
 
       const monthMap: Record<string, number> = {}
       months.forEach((m) => { monthMap[m] = 0 })
@@ -381,15 +394,20 @@ export function ReportsPage() {
       let labourTotal = 0
       let outstanding = 0
 
-      revJobs?.forEach((j: { final_amount: number | null; estimated_cost: number | null; payment_status: string | null; created_at: string }) => {
-        const m = j.created_at.substring(0, 7)
-        const amt = j.final_amount ?? j.estimated_cost ?? 0
-        if (j.payment_status === 'paid') {
+      revInvoices?.forEach((inv: { total_amount: number | null; subtotal: number | null; status: string; issue_date: string; line_items: LineItem[] | null }) => {
+        if (inv.status === 'paid') {
+          const m = inv.issue_date.substring(0, 7)
+          const amt = inv.total_amount ?? inv.subtotal ?? 0
           if (monthMap[m] !== undefined) monthMap[m] += amt
-          partsTotal += amt * 0.4
-          labourTotal += amt * 0.6
+          ;(inv.line_items ?? []).forEach((li) => {
+            const qty = li.qty ?? 1
+            const lineAmt = li.amount ?? qty * (li.unit_price ?? 0)
+            if (li.item_type === 'part') partsTotal += lineAmt
+            else if (li.item_type === 'labour') labourTotal += lineAmt
+          })
+        } else if (inv.status === 'sent' || inv.status === 'overdue') {
+          outstanding++
         }
-        if (!j.payment_status || j.payment_status === 'unpaid' || j.payment_status === 'pending') outstanding++
       })
 
       setRevenueData({

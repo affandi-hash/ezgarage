@@ -315,7 +315,7 @@ export function DashboardPage() {
       iconColor: '#F97316',
     },
     {
-      label: 'Est. Revenue (Month)',
+      label: 'Revenue (Month)',
       value: loading ? '—' : formatRM(stats?.est_revenue ?? 0),
       icon: DollarSign,
       iconColor: '#10B981',

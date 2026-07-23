@@ -226,8 +226,9 @@ const inputStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 // Actions menu
 // ---------------------------------------------------------------------------
-function ActionsMenu({ booking, onConfirm, onCheckIn, onConvertToJob, onCancel, onNoShow, onDelete }: {
+function ActionsMenu({ booking, converted, onConfirm, onCheckIn, onConvertToJob, onCancel, onNoShow, onDelete }: {
   booking: BookingRow
+  converted: boolean
   onConfirm: (id: string) => void
   onCheckIn: (id: string) => void
   onConvertToJob: (booking: BookingRow) => void
@@ -277,7 +278,7 @@ setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
             {[
               { label: 'Confirm Booking', action: () => { onConfirm(booking.id); setOpen(false) }, color: '#86EFAC', show: booking.status === 'pending', icon: <Check size={13} /> },
               { label: 'Check In', action: () => { onCheckIn(booking.id); setOpen(false) }, color: '#A78BFA', show: booking.status === 'confirmed', icon: null },
-              { label: '→ Convert to Job Card', action: () => { onConvertToJob(booking); setOpen(false) }, color: '#F15A22', show: booking.status === 'confirmed' || booking.status === 'arrived', icon: null },
+              { label: '→ Convert to Job Card', action: () => { onConvertToJob(booking); setOpen(false) }, color: '#F15A22', show: (booking.status === 'confirmed' || booking.status === 'arrived') && !converted, icon: null },
               {
                 label: 'Cancel Booking',
                 action: () => {
@@ -813,6 +814,10 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
         customer_complaint: (booking as any).problem_description ?? null,
         checked_in_at: new Date().toISOString(),
         payment_status: 'unpaid',
+        // Link back to the source booking so it can never be converted a
+        // second time -- this was never set before, so nothing stopped a
+        // distracted click from creating a duplicate job for the same visit.
+        booking_id: booking.id,
       })
       if (jobErr) throw jobErr
 
@@ -1028,6 +1033,7 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
 export function BookingsPage() {
   const { user } = useAuthStore()
   const [bookings, setBookings] = useState<BookingRow[]>([])
+  const [convertedBookingIds, setConvertedBookingIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('all')
@@ -1058,6 +1064,16 @@ export function BookingsPage() {
 
       if (err) throw err
       setBookings((data as unknown as BookingRow[]) ?? [])
+
+      // Which of these bookings already have a job card, so "Convert to Job
+      // Card" can be hidden instead of silently creating a duplicate job.
+      const bookingIds = ((data as unknown as BookingRow[]) ?? []).map(b => b.id)
+      if (bookingIds.length > 0) {
+        const { data: linkedJobs } = await supabase.from('jobs').select('booking_id').in('booking_id', bookingIds)
+        setConvertedBookingIds(new Set((linkedJobs ?? []).map(j => j.booking_id).filter(Boolean) as string[]))
+      } else {
+        setConvertedBookingIds(new Set())
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load bookings')
     } finally {
@@ -1354,11 +1370,19 @@ export function BookingsPage() {
                     <ModeBadge mode={booking.arrival_mode} />
 
                     {/* Status */}
-                    <StatusBadge status={booking.status} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <StatusBadge status={booking.status} />
+                      {convertedBookingIds.has(booking.id) && (
+                        <span title="A job card already exists for this booking" style={{ fontSize: 10, fontWeight: 700, color: '#4ADE80', border: '1px solid rgba(74,222,128,0.4)', borderRadius: 4, padding: '1px 6px' }}>
+                          CONVERTED
+                        </span>
+                      )}
+                    </div>
 
                     {/* Actions */}
                     <ActionsMenu
                       booking={booking}
+                      converted={convertedBookingIds.has(booking.id)}
                       onConfirm={(id) => updateBookingStatus(id, 'confirmed')}
                       onCheckIn={(id) => updateBookingStatus(id, 'arrived')}
                       onConvertToJob={(b) => setConvertingBooking(b)}

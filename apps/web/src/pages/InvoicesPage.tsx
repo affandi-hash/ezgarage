@@ -633,9 +633,15 @@ export function InvoicesPage() {
   async function saveInvoice() {
     if (!editInvoice) return
     setSaving(true)
-    const { id, ...rest } = editInvoice
-    await supabase.from('invoices').update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id)
+    // balance_due is a GENERATED ALWAYS column (total_amount - amount_paid)
+    // -- Postgres rejects any UPDATE that tries to set it directly, and
+    // since the error here was never checked, every single "Save Draft"
+    // click failed with the edit never actually reaching the database.
+    const { id, balance_due: _balance_due, ...rest } = editInvoice
+    const { error } = await supabase.from('invoices').update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) { toast.error('Failed to save draft: ' + error.message); setSaving(false); return }
     await loadInvoices()
+    toast.success('Draft saved')
     setSaving(false)
   }
 

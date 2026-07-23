@@ -175,29 +175,23 @@ function InviteModal({ branches, onClose, onInvited }: InviteModalProps) {
     }
     setSaving(true);
     setError('');
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/users/invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({
-          email:         form.email.trim().toLowerCase(),
-          full_name:     form.full_name.trim(),
-          role:          form.role,
-          branch_id:     form.branch_id || null,
-          phone:         form.phone.trim() || null,
-          temp_password: form.temp_password,
-        }),
-      });
-      const json = await res.json();
-      setSaving(false);
-      if (!res.ok) { setError(json.error ?? 'Failed to invite user.'); return; }
-      onInvited();
-      onClose();
-    } catch (e) {
-      setSaving(false);
-      setError('Could not reach server. Is the backend running?');
-    }
+    // Previously called a VITE_BACKEND_URL-hosted API route that was never
+    // actually deployed anywhere -- creating an auth user needs the
+    // service-role key, so it now goes through the invite-user edge function.
+    const { data, error: fnError } = await supabase.functions.invoke('invite-user', {
+      body: {
+        email:         form.email.trim().toLowerCase(),
+        full_name:     form.full_name.trim(),
+        role:          form.role,
+        branch_id:     form.branch_id || null,
+        phone:         form.phone.trim() || null,
+        temp_password: form.temp_password,
+      },
+    });
+    setSaving(false);
+    if (fnError || data?.error) { setError(data?.error ?? fnError?.message ?? 'Failed to invite user.'); return; }
+    onInvited();
+    onClose();
   };
 
   return (
@@ -462,8 +456,14 @@ export function UsersPage() {
   const handleToggleActive = async () => {
     if (!selectedUser) return;
     const newVal = !selectedUser.is_active;
-    await supabase.from('users').update({ is_active: newVal }).eq('id', selectedUser.id);
-    setUsers((prev) => prev.map((u) => (u.id === selectedUser.id ? { ...u, is_active: newVal } : u)));
+    // Reactivating only ever flipped is_active -- approval_status stayed
+    // 'rejected' from whatever previously deactivated the account (this
+    // toggle, or handleDeactivate below), which silently kept the user
+    // blocked from logging in despite the UI showing them as active.
+    const updates: { is_active: boolean; approval_status?: ApprovalStatus } = { is_active: newVal };
+    if (newVal) updates.approval_status = 'approved';
+    await supabase.from('users').update(updates).eq('id', selectedUser.id);
+    setUsers((prev) => prev.map((u) => (u.id === selectedUser.id ? { ...u, ...updates } : u)));
     logAudit({ action: newVal ? 'User Activated' : 'User Deactivated', module: 'User', record_type: 'user', record_id: selectedUser.id, details: { target_user: selectedUser.full_name, target_email: selectedUser.email }, branch_id: currentUser?.branch_id, user_id: currentUser?.id, tenant_id: currentUser?.tenant_id });
   };
 
@@ -541,21 +541,17 @@ export function UsersPage() {
   const handleResetPassword = async () => {
     if (!selectedUser || resetPw.trim().length < 8) return;
     setResetSaving(true); setResetError('');
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/users/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ user_id: selectedUser.id, new_password: resetPw.trim() }),
-      });
-      const json = await res.json();
-      setResetSaving(false);
-      if (!res.ok) { setResetError(json.error ?? 'Failed to reset password.'); return; }
-      setResetDone(true);
-    } catch {
-      setResetSaving(false);
-      setResetError('Could not reach server. Is the backend running?');
-    }
+    // Previously called a VITE_BACKEND_URL-hosted API route that was never
+    // actually deployed anywhere -- reset_user_password is a real, working
+    // SECURITY DEFINER RPC that already does this server-side, call it
+    // directly instead.
+    const { error } = await supabase.rpc('reset_user_password', {
+      p_user_id: selectedUser.id,
+      p_new_password: resetPw.trim(),
+    });
+    setResetSaving(false);
+    if (error) { setResetError(error.message ?? 'Failed to reset password.'); return; }
+    setResetDone(true);
   };
 
   const PILL_LABELS: { key: typeof filterStatus; label: string }[] = [

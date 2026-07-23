@@ -146,6 +146,11 @@ function TenantDirectory() {
   useEffect(() => { load() }, [])
 
   async function toggleActive(t: TenantHealthRow) {
+    // Suspending instantly locks every user at that tenant out of the
+    // product -- this had no confirmation step at all, so a single misclick
+    // could take down a live paying customer with no "are you sure."
+    // Reactivating is safe and instantly reversible, so it stays one click.
+    if (t.is_active && !window.confirm(`Suspend ${t.tenant_name}? Every user at this tenant will immediately lose access.`)) return
     const { error } = await supabase.from('tenants').update({ is_active: !t.is_active }).eq('id', t.tenant_id)
     if (error) { toast.error(error.message); return }
     toast.success(t.is_active ? `${t.tenant_name} suspended` : `${t.tenant_name} reactivated`)

@@ -669,6 +669,10 @@ function VehiclesTab({ customerId, branchId }: { customerId: string; branchId: s
         vehicle_type: addForm.vehicle_type,
         customer_id: customerId,
         branch_id: branchId,
+        // Was missing entirely -- the vehicle would save with a null
+        // tenant_id, making it invisible to tenant-scoped staff and letting
+        // duplicate plate numbers slip past the uniqueness check.
+        tenant_id: user?.tenant_id,
       })
       .select()
       .single()

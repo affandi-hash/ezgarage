@@ -258,7 +258,11 @@ function QuoteDrawer({ branchId, tenantId, userId, editQuote, onClose, onSaved }
   }
 
   async function handleSave(status: 'draft' | 'sent' = 'draft') {
-    if (!branchId || !tenantId) return
+    // A super_admin viewing "All Branches" has no single branch to save this
+    // quotation under -- this used to silently do nothing, with the button
+    // appearing to just not respond and no indication why.
+    if (!branchId) { toast.error('Select a specific branch (not "All Branches") before saving a quotation'); return }
+    if (!tenantId) return
     if (!custName.trim()) { toast.error('Customer name is required'); return }
     if (!plate.trim()) { toast.error('Vehicle plate is required'); return }
     if (items.every(i => !i.description.trim())) { toast.error('Add at least one line item'); return }
@@ -641,7 +645,8 @@ export function QuotationsPage() {
       customer_email: q.customer_email,
       vehicle_plate: q.vehicle_plate,
       service_type: 'Workshop Service',
-      scheduled_at: new Date(today + 'T09:00:00').toISOString(),
+      booking_date: today,
+      booking_time: '09:00:00',
       arrival_mode: 'drop_off', status: 'confirmed', source: 'staff',
       notes: `Converted from quotation ${q.quote_number}`,
     }).select('id, booking_number').single()

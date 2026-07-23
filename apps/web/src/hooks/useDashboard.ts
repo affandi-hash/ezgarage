@@ -90,11 +90,14 @@ export function useDashboard(branchId?: string | null): UseDashboardReturn {
       if (bookingsError) throw new Error(bookingsError.message)
       const bookings = (bookingsData || []) as Booking[]
 
-      // Completed this month
+      // Completed this month -- 'closed' is never a real job status (jobs use
+      // 'delivered' as their terminal state), so this always matched zero
+      // rows and both "Est. Revenue (Month)" and "Completed This Month"
+      // silently read 0 no matter how much work the shop actually finished.
       let closedQuery = supabase
         .from('jobs')
-        .select('id, estimated_cost', { count: 'exact' })
-        .eq('status', 'closed')
+        .select('id, final_amount', { count: 'exact' })
+        .eq('status', 'delivered')
         .gte('checked_in_at', monthStart)
 
       if (branchId) closedQuery = closedQuery.eq('branch_id', branchId)
@@ -120,8 +123,12 @@ export function useDashboard(branchId?: string | null): UseDashboardReturn {
       const waitingApproval = jobs.filter((j) => j.status === 'waiting_approval').length
       const waitingParts = jobs.filter((j) => j.status === 'waiting_parts').length
 
+      // final_amount (the actual billed total) is reliably populated on
+      // delivered jobs; estimated_cost is the pre-work quote and is often
+      // never updated, so summing it understated real revenue even once the
+      // status filter was fixed.
       const estRevenue = (closedJobs || []).reduce(
-        (sum: number, j: any) => sum + (j.estimated_cost || 0),
+        (sum: number, j: any) => sum + (j.final_amount || 0),
         0
       )
 
