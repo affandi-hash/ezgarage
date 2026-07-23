@@ -60,11 +60,11 @@ interface FleetIssue {
   branch_id: string;
   fleet_vehicle_id: string;
   reported_by: string;
-  issue_type: string;
+  category: string;
   description: string;
   severity: IssueSeverity;
   status: IssueStatus;
-  reported_at: string;
+  created_at: string;
   resolved_at: string | null;
   fleet_vehicles?: { plate_number: string; brand: string; model: string };
 }
@@ -698,7 +698,7 @@ function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null
   const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [showReport, setShowReport] = useState(false);
-  const [reportForm, setReportForm] = useState({ fleet_vehicle_id: '', issue_type: '', description: '', severity: 'medium' as IssueSeverity });
+  const [reportForm, setReportForm] = useState({ fleet_vehicle_id: '', category: '', description: '', severity: 'medium' as IssueSeverity });
   const [saving, setSaving] = useState(false);
 
   async function load() {
@@ -706,7 +706,7 @@ function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null
     let q = supabase
       .from('fleet_issues')
       .select('*, fleet_vehicles(plate_number, brand, model)')
-      .order('reported_at', { ascending: false });
+      .order('created_at', { ascending: false });
     if (!isSuperAdmin && branchFilter) q = q.eq('branch_id', branchFilter);
     const { data } = await q;
     setIssues(data || []);
@@ -733,17 +733,17 @@ function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null
       branch_id: vehicle?.branch_id || branchFilter || '',
       tenant_id: user?.tenant_id,
       reported_by: user?.id ?? null,
-      issue_type: reportForm.issue_type.trim(),
+      category: reportForm.category.trim(),
       description: reportForm.description.trim(),
       severity: reportForm.severity,
       status: 'open',
-      reported_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
     });
     setSaving(false);
     if (error) { toast(error.message, 'error'); return; }
-    logAudit({ action: 'Fleet Issue Reported', module: 'Fleet', record_type: 'fleet_issue', details: { plate: vehicle?.plate_number, issue_type: reportForm.issue_type }, branch_id: vehicle?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id });
+    logAudit({ action: 'Fleet Issue Reported', module: 'Fleet', record_type: 'fleet_issue', details: { plate: vehicle?.plate_number, category: reportForm.category }, branch_id: vehicle?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id });
     toast('Issue reported', 'success');
-    setReportForm({ fleet_vehicle_id: '', issue_type: '', description: '', severity: 'medium' });
+    setReportForm({ fleet_vehicle_id: '', category: '', description: '', severity: 'medium' });
     setShowReport(false);
     load();
   }
@@ -780,12 +780,12 @@ function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null
                     {issue.fleet_vehicles?.plate_number || '—'}
                     <div style={{ color: C.textSecondary, fontSize: 11, fontWeight: 400 }}>{issue.fleet_vehicles?.brand} {issue.fleet_vehicles?.model}</div>
                   </td>
-                  <td style={{ padding: '10px 12px', color: C.textPrimary }}>{issue.issue_type}</td>
+                  <td style={{ padding: '10px 12px', color: C.textPrimary }}>{issue.category}</td>
                   <td style={{ padding: '10px 12px', color: C.textSecondary, maxWidth: 200 }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{issue.description}</div>
                   </td>
                   <td style={{ padding: '10px 12px' }}><Badge label={issue.severity} color={severityColor(issue.severity)} /></td>
-                  <td style={{ padding: '10px 12px', color: C.textSecondary }}>{issue.reported_at ? new Date(issue.reported_at).toLocaleDateString() : '—'}</td>
+                  <td style={{ padding: '10px 12px', color: C.textSecondary }}>{issue.created_at ? new Date(issue.created_at).toLocaleDateString() : '—'}</td>
                   <td style={{ padding: '10px 12px' }}><Badge label={issue.status.replace('_', ' ')} color={issueStatusColor(issue.status)} /></td>
                   <td style={{ padding: '10px 12px' }}>
                     {issue.status !== 'resolved' && (
@@ -817,7 +817,7 @@ function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null
               </select>
             </FormField>
             <FormField label="Issue Type *">
-              <input style={inputStyle} value={reportForm.issue_type} onChange={e => setReportForm(f => ({ ...f, issue_type: e.target.value }))} required placeholder="e.g. Brake noise, AC not cooling" />
+              <input style={inputStyle} value={reportForm.category} onChange={e => setReportForm(f => ({ ...f, category: e.target.value }))} required placeholder="e.g. Brake noise, AC not cooling" />
             </FormField>
             <FormField label="Description *">
               <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 70 }} value={reportForm.description} onChange={e => setReportForm(f => ({ ...f, description: e.target.value }))} required placeholder="Describe what's wrong…" />
