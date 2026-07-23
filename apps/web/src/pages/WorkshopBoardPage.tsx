@@ -254,7 +254,9 @@ function StatusUpdateModal({ job, userRole, onClose, onConfirmDirect, onRequestA
     onClose()
   }
 
-  const confirmDisabled = saving || estimateInvalid || (!isSubmitForApproval && gated && checklistAnswer === null)
+  const confirmDisabled = saving || estimateInvalid
+    || (!isSubmitForApproval && gated && checklistAnswer === null)
+    || (!isSubmitForApproval && gated && checklistAnswer === false && !notes.trim())
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 50, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
@@ -469,8 +471,8 @@ function ApprovalModal({ request, job, reviewerName, reviewerId, onClose, onAppr
             style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid #EF4444', backgroundColor: 'rgba(239,68,68,0.1)', color: '#FCA5A5', fontSize: 13, fontWeight: 600, cursor: saving || !notes.trim() ? 'not-allowed' : 'pointer', opacity: saving || !notes.trim() ? 0.6 : 1 }}>
             Reject
           </button>
-          <button onClick={handleApprove} disabled={saving || checklistAnswer === null}
-            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 600, cursor: saving || checklistAnswer === null ? 'not-allowed' : 'pointer', opacity: saving || checklistAnswer === null ? 0.6 : 1 }}>
+          <button onClick={handleApprove} disabled={saving || checklistAnswer !== true}
+            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 600, cursor: saving || checklistAnswer !== true ? 'not-allowed' : 'pointer', opacity: saving || checklistAnswer !== true ? 0.6 : 1 }}>
             {saving ? 'Saving…' : 'Approve & Move'}
           </button>
         </div>
@@ -1889,15 +1891,27 @@ export function WorkshopBoardPage() {
       merged = existingNotes ? `${existingNotes}\n${newEntry}` : newEntry
     }
 
+    // A "No" answer on a foreman sign-off means the job is NOT ready to move
+    // on -- it must stay at its current status (with the corrective note
+    // attached) rather than silently advancing exactly as a "Yes" would.
+    const rejected = checklistAnswer === false
+    const effectiveStatus = rejected ? (existing?.status ?? newStatus) : newStatus
+
+    // Answering "Yes" to "has the customer approved the repair estimate?"
+    // (asked when leaving Waiting Approval) previously moved the job along
+    // but never actually recorded the approval on the job itself.
+    const confirmingCustomerApproval = !rejected && checklistAnswer === true && existing?.status === 'waiting_approval'
+
     const { error: err } = await supabase.from('jobs').update({
-      status: newStatus,
+      status: effectiveStatus,
       next_action: nextAction || null,
       internal_notes: merged || null,
+      ...(confirmingCustomerApproval ? { customer_approved: true, customer_approved_at: new Date().toISOString() } : {}),
     }).eq('id', jobId)
 
     if (err) { toast(err.message, 'error'); return }
 
-    // If foreman approved a gated transition, log it
+    // If a foreman sign-off gated this transition, log the real answer
     if (checklistAnswer !== null && checklistAnswer !== undefined && checklistQuestion) {
       await supabase.from('status_change_requests').insert({
         job_id: jobId,
@@ -1913,14 +1927,14 @@ export function WorkshopBoardPage() {
         reviewed_by: userId || null,
         reviewed_by_name: userName,
         reviewed_at: new Date().toISOString(),
-        request_status: 'approved',
+        request_status: rejected ? 'rejected' : 'approved',
       })
     }
 
-    toast('Job status updated')
+    toast(rejected ? 'Marked as not ready — job stays at its current status' : 'Job status updated')
     const _auditJob = jobs.find(j => j.id === jobId)
-    logAudit({ action: `status_change:${newStatus}`, module: 'Job', record_id: jobId, record_type: 'job', details: { job_number: _auditJob?.job_number ?? null, plate: _auditJob?.plate_number ?? null, customer: _auditJob?.customer_name ?? null, from_status: _auditJob?.status ?? null, to_status: newStatus }, branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id })
-    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus, next_action: nextAction || null, internal_notes: merged } : j))
+    logAudit({ action: `status_change:${effectiveStatus}`, module: 'Job', record_id: jobId, record_type: 'job', details: { job_number: _auditJob?.job_number ?? null, plate: _auditJob?.plate_number ?? null, customer: _auditJob?.customer_name ?? null, from_status: _auditJob?.status ?? null, to_status: effectiveStatus }, branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id })
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: effectiveStatus, next_action: nextAction || null, internal_notes: merged } : j))
     fetchPendingRequests()
   }
 
@@ -1961,12 +1975,16 @@ export function WorkshopBoardPage() {
     fetchPendingRequests()
   }
 
-  // Foreman approves
+  // Foreman reviews a mechanic's submitted request -- a "No" answer must
+  // reject the request and leave the job at its current status instead of
+  // always advancing it and always logging "approved" regardless of the
+  // real answer.
   const handleApproveRequest = async (requestId: string, jobId: string, toStatus: JobStatus, checklistAnswer: boolean, notes: string, reviewerName: string, reviewerId: string) => {
     const request = pendingRequests.find(r => r.id === requestId)
+    const rejected = checklistAnswer === false
 
     const { error: updateErr } = await supabase.from('status_change_requests').update({
-      request_status: 'approved',
+      request_status: rejected ? 'rejected' : 'approved',
       checklist_answer: checklistAnswer,
       reviewer_notes: notes.trim() || null,
       reviewed_by: reviewerId || null,
@@ -1976,14 +1994,20 @@ export function WorkshopBoardPage() {
 
     if (updateErr) { toast(updateErr.message, 'error'); return }
 
-    const { error: jobErr } = await supabase.from('jobs').update({ status: toStatus }).eq('id', jobId)
-    if (jobErr) { toast(jobErr.message, 'error'); return }
+    if (!rejected) {
+      const confirmingCustomerApproval = request?.from_status === 'waiting_approval'
+      const { error: jobErr } = await supabase.from('jobs').update({
+        status: toStatus,
+        ...(confirmingCustomerApproval ? { customer_approved: true, customer_approved_at: new Date().toISOString() } : {}),
+      }).eq('id', jobId)
+      if (jobErr) { toast(jobErr.message, 'error'); return }
+    }
 
-    toast(`Approved — job moved to ${STATUS_CONFIG[toStatus]?.label}`)
+    toast(rejected ? 'Rejected — job stays at its current status' : `Approved — job moved to ${STATUS_CONFIG[toStatus]?.label}`)
     const _approvalJob = jobs.find(j => j.id === jobId)
-    logAudit({ action: `approval:${toStatus}`, module: 'Job', record_id: jobId, record_type: 'job', details: { job_number: _approvalJob?.job_number ?? null, plate: _approvalJob?.plate_number ?? null, customer: _approvalJob?.customer_name ?? null, to_status: toStatus, approved_by: user?.full_name ?? null }, branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id })
-    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: toStatus } : j))
-    if (request) setJobHistory(prev => ({ ...prev, [jobId]: [{ ...request, request_status: 'approved', checklist_answer: checklistAnswer, reviewer_notes: notes.trim() || null, reviewed_by: reviewerId, reviewed_by_name: reviewerName, reviewed_at: new Date().toISOString() }, ...(prev[jobId] ?? [])] }))
+    logAudit({ action: `approval:${rejected ? 'rejected' : toStatus}`, module: 'Job', record_id: jobId, record_type: 'job', details: { job_number: _approvalJob?.job_number ?? null, plate: _approvalJob?.plate_number ?? null, customer: _approvalJob?.customer_name ?? null, to_status: rejected ? _approvalJob?.status ?? null : toStatus, approved_by: user?.full_name ?? null }, branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id })
+    if (!rejected) setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: toStatus } : j))
+    if (request) setJobHistory(prev => ({ ...prev, [jobId]: [{ ...request, request_status: rejected ? 'rejected' : 'approved', checklist_answer: checklistAnswer, reviewer_notes: notes.trim() || null, reviewed_by: reviewerId, reviewed_by_name: reviewerName, reviewed_at: new Date().toISOString() }, ...(prev[jobId] ?? [])] }))
     fetchPendingRequests()
   }
 

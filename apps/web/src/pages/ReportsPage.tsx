@@ -227,7 +227,7 @@ export function ReportsPage() {
     try {
       let jobQ = supabase
         .from('jobs')
-        .select('id, status, service_type, created_at, closed_at, assigned_mechanic_id, final_amount, payment_status, customer_id, branch_id')
+        .select('id, status, service_type, created_at, status_updated_at, mechanic_ids, final_amount, payment_status, customer_id, branch_id')
         .gte('created_at', bounds.start)
         .lte('created_at', bounds.end + 'T23:59:59')
       if (branchFilter) jobQ = jobQ.eq('branch_id', branchFilter)
@@ -242,13 +242,17 @@ export function ReportsPage() {
       let daysSum = 0
       let daysCount = 0
 
-      jobs?.forEach((j: { status: string; service_type: string; assigned_mechanic_id: string; created_at: string; closed_at: string | null; final_amount: number | null; payment_status: string | null; customer_id: string | null }) => {
+      // Jobs use "delivered" as their completed status, and can carry more
+      // than one mechanic (mechanic_ids) -- this used to key off a single
+      // assigned_mechanic_id and a "closed" status/closed_at that the app
+      // never actually sets, so every completion-based figure read zero.
+      jobs?.forEach((j: { status: string; service_type: string; mechanic_ids: string[] | null; created_at: string; status_updated_at: string | null; final_amount: number | null; payment_status: string | null; customer_id: string | null }) => {
         statusMap[j.status] = (statusMap[j.status] ?? 0) + 1
         if (j.service_type) svcMap[j.service_type] = (svcMap[j.service_type] ?? 0) + 1
-        if (j.assigned_mechanic_id) mechMap[j.assigned_mechanic_id] = (mechMap[j.assigned_mechanic_id] ?? 0) + 1
+        ;(j.mechanic_ids ?? []).forEach((mid) => { mechMap[mid] = (mechMap[mid] ?? 0) + 1 })
         if (j.customer_id) customerSet.add(j.customer_id)
-        if (j.closed_at && j.created_at) {
-          const d = (new Date(j.closed_at).getTime() - new Date(j.created_at).getTime()) / 86400000
+        if (j.status === 'delivered' && j.status_updated_at && j.created_at) {
+          const d = (new Date(j.status_updated_at).getTime() - new Date(j.created_at).getTime()) / 86400000
           if (d >= 0) { daysSum += d; daysCount++ }
         }
       })
@@ -417,22 +421,23 @@ export function ReportsPage() {
 
       const jobsQ = supabase
         .from('jobs')
-        .select('assigned_mechanic_id, created_at, closed_at')
-        .eq('status', 'closed')
+        .select('mechanic_ids, created_at, status_updated_at')
+        .eq('status', 'delivered')
         .gte('created_at', bounds.start)
         .lte('created_at', bounds.end + 'T23:59:59')
       const { data: completedJobs } = await jobsQ
 
       const jobCountMap: Record<string, number> = {}
       const jobDaysMap: Record<string, number[]> = {}
-      completedJobs?.forEach((j: { assigned_mechanic_id: string; created_at: string; closed_at: string | null }) => {
-        if (!j.assigned_mechanic_id) return
-        jobCountMap[j.assigned_mechanic_id] = (jobCountMap[j.assigned_mechanic_id] ?? 0) + 1
-        if (j.closed_at) {
-          const d = (new Date(j.closed_at).getTime() - new Date(j.created_at).getTime()) / 86400000
-          if (!jobDaysMap[j.assigned_mechanic_id]) jobDaysMap[j.assigned_mechanic_id] = []
-          jobDaysMap[j.assigned_mechanic_id].push(d)
-        }
+      completedJobs?.forEach((j: { mechanic_ids: string[] | null; created_at: string; status_updated_at: string | null }) => {
+        (j.mechanic_ids ?? []).forEach((mid) => {
+          jobCountMap[mid] = (jobCountMap[mid] ?? 0) + 1
+          if (j.status_updated_at) {
+            const d = (new Date(j.status_updated_at).getTime() - new Date(j.created_at).getTime()) / 86400000
+            if (!jobDaysMap[mid]) jobDaysMap[mid] = []
+            jobDaysMap[mid].push(d)
+          }
+        })
       })
 
       setStaffData(

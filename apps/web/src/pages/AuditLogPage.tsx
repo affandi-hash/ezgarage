@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/authStore';
 type AuditLog = {
   id: string;
   branch_id: string | null;
-  user_id: string;
+  user_id: string | null;
   action: string;
   entity_type: string | null;
   entity_id: string | null;
@@ -259,7 +259,7 @@ function DetailPane({ log }: { log: AuditLog | null }) {
 
       {/* Who & What */}
       <div style={{ background: colors.surface, border: `1px solid ${colors.border}`, borderRadius: 10, padding: '16px 18px', marginBottom: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <InfoRow label="Performed By" value={log.user_name || log.user_id} />
+        <InfoRow label="Performed By" value={log.user_name || log.user_id || 'System'} />
         <InfoRow label="Action" value={getActionLabel(log.action)} />
         <InfoRow label="Module" value={[log.module, recordType].filter(Boolean).map(s => s!.charAt(0).toUpperCase() + s!.slice(1)).join(' / ') || '—'} />
         <InfoRow label="Timestamp" value={formatTimestamp(log.created_at)} />
@@ -659,7 +659,7 @@ export function AuditLogPage() {
                       <div style={{ marginTop: 3, paddingLeft: 15, display: 'flex', alignItems: 'center', gap: 5 }}>
                         <User size={10} color={colors.textSecondary} />
                         <span style={{ fontSize: 11, color: colors.textSecondary }}>
-                          {log.user_name || log.user_id.slice(0, 8) + '…'}
+                          {log.user_name || (log.user_id ? log.user_id.slice(0, 8) + '…' : 'System')}
                         </span>
                       </div>
                     </div>

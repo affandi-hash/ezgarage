@@ -1500,7 +1500,7 @@ export function VehiclesPage() {
 
       return true
     })
-  }, [vehicles, search, typeFilter, statusFilter])
+  }, [vehicles, search, typeFilter, statusFilter, internalOnly])
 
   const selectedVehicle = vehicles.find((v) => v.id === selectedId) ?? null
 

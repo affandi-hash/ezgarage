@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Users, Plus, X, Shield, Check, Ban, Save, Search, Mail, Phone, Eye, EyeOff, KeyRound } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
+import { logAudit } from '@/lib/audit';
 
 type Role =
   | 'super_admin'
@@ -463,6 +464,7 @@ export function UsersPage() {
     const newVal = !selectedUser.is_active;
     await supabase.from('users').update({ is_active: newVal }).eq('id', selectedUser.id);
     setUsers((prev) => prev.map((u) => (u.id === selectedUser.id ? { ...u, is_active: newVal } : u)));
+    logAudit({ action: newVal ? 'User Activated' : 'User Deactivated', module: 'User', record_type: 'user', record_id: selectedUser.id, details: { target_user: selectedUser.full_name, target_email: selectedUser.email }, branch_id: currentUser?.branch_id, user_id: currentUser?.id, tenant_id: currentUser?.tenant_id });
   };
 
   const handleApproval = async (status: 'approved' | 'rejected') => {
@@ -471,6 +473,7 @@ export function UsersPage() {
     setUsers((prev) =>
       prev.map((u) => (u.id === selectedUser.id ? { ...u, approval_status: status, is_active: status === 'approved' } : u))
     );
+    logAudit({ action: status === 'approved' ? 'User Approved' : 'User Rejected', module: 'User', record_type: 'user', record_id: selectedUser.id, details: { target_user: selectedUser.full_name, target_email: selectedUser.email }, branch_id: currentUser?.branch_id, user_id: currentUser?.id, tenant_id: currentUser?.tenant_id });
   };
 
   const handleSave = async () => {
@@ -504,6 +507,15 @@ export function UsersPage() {
           : u
       )
     );
+    logAudit({
+      action: 'User Updated', module: 'User', record_type: 'user', record_id: selectedUser.id,
+      details: {
+        target_user: editForm.full_name, target_email: selectedUser.email,
+        role_from: selectedUser.role, role_to: editForm.role,
+        branch_from: branchName(selectedUser.branch_id), branch_to: branchName(editForm.branch_id || null),
+      },
+      branch_id: currentUser?.branch_id, user_id: currentUser?.id, tenant_id: currentUser?.tenant_id,
+    });
   };
 
   const handleDeactivate = async () => {
@@ -512,6 +524,7 @@ export function UsersPage() {
     setUsers((prev) =>
       prev.map((u) => (u.id === selectedUser.id ? { ...u, is_active: false, approval_status: 'rejected' } : u))
     );
+    logAudit({ action: 'User Deactivated', module: 'User', record_type: 'user', record_id: selectedUser.id, details: { target_user: selectedUser.full_name, target_email: selectedUser.email }, branch_id: currentUser?.branch_id, user_id: currentUser?.id, tenant_id: currentUser?.tenant_id });
   };
 
   const [resetPwModal, setResetPwModal] = useState(false);

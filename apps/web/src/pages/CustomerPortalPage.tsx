@@ -398,7 +398,7 @@ function JobCard({ job, plate, phone, icFirst6, tenantSlug }: { job: PortalJob; 
   // 'delivered' is the real terminal status for the vast majority of jobs
   // (WorkshopBoardPage's actual vocabulary) — 'completed'/'collected' were
   // never real values, so this silently hid Pay Online for nearly every job.
-  const showPaymentUpload = ['ready', 'long_due', 'delivered', 'closed'].includes(job.status) && hasInvoice
+  const showPaymentUpload = ['ready', 'long_due', 'delivered', 'closed'].includes(job.status) && hasInvoice && balanceDue > 0
   const showPayOnline = showPaymentUpload && balanceDue > 0
 
   const doApprove = async () => {

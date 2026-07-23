@@ -125,8 +125,16 @@ export function useDashboard(branchId?: string | null): UseDashboardReturn {
         0
       )
 
-      const totalDays = jobs.reduce((sum, j) => sum + (j.days_in_garage || 0), 0)
-      const avgDays = jobs.length > 0 ? Math.round(totalDays / jobs.length) : 0
+      // days_in_garage is a stored column the app never actually populates --
+      // compute how long each still-active job has been checked in directly
+      // from checked_in_at instead of trusting an always-zero field.
+      const now = Date.now()
+      const totalDays = jobs.reduce((sum, j) => {
+        if (!j.checked_in_at) return sum
+        const days = (now - new Date(j.checked_in_at).getTime()) / 86400000
+        return sum + Math.max(0, days)
+      }, 0)
+      const avgDays = jobs.length > 0 ? Math.round((totalDays / jobs.length) * 10) / 10 : 0
 
       setStats({
         bookings_today: bookings.length,

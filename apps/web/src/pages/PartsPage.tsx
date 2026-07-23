@@ -31,7 +31,7 @@ interface PartRequest {
   quantity: number
   ordered_qty?: number | null
   catalogue_part_id?: string | null
-  unit_price?: number | null
+  cost_price?: number | null
   selling_price?: number | null
   supplier?: string | null
   urgency: 'low' | 'normal' | 'urgent' | 'critical'
@@ -57,7 +57,7 @@ interface NewRequestForm {
   part_name: string
   part_number: string
   quantity: string
-  unit_price: string
+  cost_price: string
   supplier: string
   urgency: PartRequest['urgency']
   notes: string
@@ -69,7 +69,7 @@ const EMPTY_FORM: NewRequestForm = {
   part_name: '',
   part_number: '',
   quantity: '',
-  unit_price: '',
+  cost_price: '',
   supplier: '',
   urgency: 'normal',
   notes: '',
@@ -377,8 +377,8 @@ function NewRequestModal({ onClose, onSubmit, loading, tenantId }: NewRequestMod
                   type="number"
                   min="0"
                   step="0.01"
-                  value={form.unit_price}
-                  onChange={(e) => set('unit_price', e.target.value)}
+                  value={form.cost_price}
+                  onChange={(e) => set('cost_price', e.target.value)}
                   placeholder="0.00"
                   style={{ width: '100%', borderRadius: 8, padding: '8px 12px', fontSize: 14, outline: 'none', ...inputStyle }}
                 />
@@ -529,7 +529,7 @@ export function PartsPage() {
   async function savePriceInline(partId: string, value: string) {
     const price = parseFloat(value)
     if (!isNaN(price) && price >= 0) {
-      await supabase.from('parts_requests').update({ selling_price: price }).eq('id', partId)
+      await supabase.from('parts_requests').update({ cost_price: price }).eq('id', partId)
       await loadParts()
     }
     setEditingPrice(null)
@@ -657,7 +657,7 @@ export function PartsPage() {
   async function buildCatalogueUpdate(catalogueId: string, qtyToAdd: number, part: PartRequest) {
     const { data: catRow } = await supabase.from('parts_catalogue').select('stock_qty, supplier_id').eq('id', catalogueId).single()
     const update: Record<string, unknown> = { stock_qty: (catRow?.stock_qty ?? 0) + qtyToAdd }
-    if (part.unit_price) update.cost_price = part.unit_price
+    if (part.cost_price) update.cost_price = part.cost_price
     if (part.selling_price) update.selling_price = part.selling_price
     if (!catRow?.supplier_id && part.supplier) {
       const { data: sup } = await supabase.from('suppliers').select('id').eq('name', part.supplier).eq('tenant_id', tenantId).single()
@@ -728,7 +728,7 @@ export function PartsPage() {
     try {
       const { data: catPart, error: fetchErr } = await supabase
         .from('parts_catalogue')
-        .select('id, name, part_number, stock_qty, selling_price')
+        .select('id, name, part_number, stock_qty, selling_price, cost_price')
         .eq('id', grabGoForm.catalogue_part_id)
         .single()
       if (fetchErr || !catPart) throw new Error('Could not find catalogue part')
@@ -762,6 +762,7 @@ export function PartsPage() {
         notes: grabGoForm.notes.trim() || 'Grab & Go',
         requested_by: user?.id ?? null,
         selling_price: grabGoForm.selling_price ? parseFloat(grabGoForm.selling_price) : (catPart.selling_price ?? null),
+        cost_price: catPart.cost_price ?? null,
         supplier: grabGoForm.supplier_name.trim() || null,
       }
       if (grabGoForm.job_id) reqPayload.job_id = grabGoForm.job_id
@@ -813,8 +814,8 @@ export function PartsPage() {
       }
       if (form.part_number.trim()) payload.part_number = form.part_number.trim()
       if (form.supplier.trim()) payload.supplier = form.supplier.trim()
-      if (form.unit_price) {
-        payload.selling_price = Number(form.unit_price)
+      if (form.cost_price) {
+        payload.cost_price = Number(form.cost_price)
       }
       if (form.notes.trim()) payload.notes = form.notes.trim()
       if (form.job_id) payload.job_id = form.job_id
@@ -1031,7 +1032,7 @@ export function PartsPage() {
                       )}
                     </td>
 
-                    {/* Est. Cost — click to edit unit_price */}
+                    {/* Est. Cost — click to edit cost_price */}
                     <td style={{ padding: '12px 16px' }}>
                       {editingPrice?.id === part.id ? (
                         <input
@@ -1044,7 +1045,7 @@ export function PartsPage() {
                           style={{ width: 90, background: '#1E1E1E', border: '1px solid #F15A22', borderRadius: 6, color: '#F0F0F0', padding: '4px 8px', fontSize: 13, outline: 'none' }}
                         />
                       ) : (() => {
-                        const price = part.unit_price ?? part.selling_price
+                        const price = part.cost_price ?? part.selling_price
                         return (
                           <span
                             title="Click to set price"

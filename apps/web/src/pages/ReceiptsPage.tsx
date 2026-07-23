@@ -15,6 +15,8 @@ interface ReceiptRecord {
   vehicle_plate: string
   vehicle_info: string
   total_amount: number
+  // this specific payment's amount -- NOT the invoice's cumulative amount_paid,
+  // since one invoice can have several of these rows (split/partial payments)
   amount_paid: number
   balance_due: number
   payment_method: string | null
@@ -23,6 +25,28 @@ interface ReceiptRecord {
   issue_date: string
   is_internal_fleet?: boolean
   branches?: { logo_url?: string | null } | null
+}
+
+interface ReceiptRow {
+  id: string
+  branch_id: string
+  amount: number
+  payment_method: string | null
+  payment_date: string | null
+  reference_number: string | null
+  invoices: {
+    invoice_number: string
+    receipt_number: string | null
+    customer_name: string
+    customer_phone: string
+    vehicle_plate: string
+    vehicle_info: string
+    total_amount: number
+    balance_due: number
+    issue_date: string
+    is_internal_fleet?: boolean
+    branches?: { logo_url?: string | null } | null
+  } | null
 }
 
 // ─── Theme ─────────────────────────────────────────────────────────────────────
@@ -158,13 +182,17 @@ function buildReceiptHtml(r: ReceiptRecord): string {
 
 // ─── Payment Method Options ────────────────────────────────────────────────────
 
+// Matches the real values recorded on the receipts table -- this used to
+// offer "Online Transfer" and "Cheque", which never once matched an actual
+// payment_method value (the app records "bank_transfer" and "qr"), so those
+// filters always silently returned zero rows.
 const METHOD_OPTS = [
   { value: '', label: 'All Methods' },
   { value: 'cash', label: 'Cash' },
   { value: 'card', label: 'Card' },
-  { value: 'online_transfer', label: 'Online Transfer' },
-  { value: 'cheque', label: 'Cheque' },
-  { value: 'other', label: 'Other' },
+  { value: 'credit_card', label: 'Credit Card' },
+  { value: 'bank_transfer', label: 'Bank Transfer' },
+  { value: 'qr', label: 'QR / DuitNow' },
 ]
 
 // ─── ReceiptsPage ──────────────────────────────────────────────────────────────
@@ -181,16 +209,42 @@ export function ReceiptsPage() {
 
   const loadReceipts = useCallback(async () => {
     setLoading(true)
+    // Query the real per-payment ledger (receipts), not invoices -- an
+    // invoice's own payment_method/payment_date/payment_reference columns
+    // only ever hold the LATEST payment, so querying invoices directly
+    // silently collapsed split/partial payments into a single row and lost
+    // the earlier payment(s) entirely.
     let q = supabase
-      .from('invoices')
-      .select('id,branch_id,invoice_number,receipt_number,customer_name,customer_phone,vehicle_plate,vehicle_info,total_amount,amount_paid,balance_due,payment_method,payment_date,payment_reference,issue_date,is_internal_fleet,branches(logo_url)')
-      .gt('amount_paid', 0)
+      .from('receipts')
+      .select('id,branch_id,amount,payment_method,payment_date,reference_number,invoices!invoice_id(invoice_number,receipt_number,customer_name,customer_phone,vehicle_plate,vehicle_info,total_amount,balance_due,issue_date,is_internal_fleet,branches(logo_url))')
+      .is('voided_at', null)
       .order('payment_date', { ascending: false })
       .order('created_at', { ascending: false })
     if (user?.role !== 'super_admin' && user?.branch_id)
       q = q.eq('branch_id', user.branch_id)
     const { data } = await q
-    setReceipts((data as ReceiptRecord[]) ?? [])
+    const rows = ((data as unknown as ReceiptRow[]) ?? [])
+      .filter((r) => r.invoices)
+      .map((r): ReceiptRecord => ({
+        id: r.id,
+        branch_id: r.branch_id,
+        invoice_number: r.invoices!.invoice_number,
+        receipt_number: r.invoices!.receipt_number,
+        customer_name: r.invoices!.customer_name,
+        customer_phone: r.invoices!.customer_phone,
+        vehicle_plate: r.invoices!.vehicle_plate,
+        vehicle_info: r.invoices!.vehicle_info,
+        total_amount: r.invoices!.total_amount,
+        amount_paid: r.amount,
+        balance_due: r.invoices!.balance_due,
+        payment_method: r.payment_method,
+        payment_date: r.payment_date,
+        payment_reference: r.reference_number,
+        issue_date: r.invoices!.issue_date,
+        is_internal_fleet: r.invoices!.is_internal_fleet,
+        branches: r.invoices!.branches,
+      }))
+    setReceipts(rows)
     setLoading(false)
   }, [user])
 

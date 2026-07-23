@@ -177,6 +177,11 @@ function RecentJobsTable({ jobs }: { jobs: Job[] }) {
                 const customerName = typeof job.customer === 'object' && job.customer ? (job.customer as any).full_name : '—'
                 const plate = typeof job.vehicle === 'object' && job.vehicle ? (job.vehicle as any).plate_number : '—'
                 const staffName = typeof job.foreman === 'object' && job.foreman ? (job.foreman as any).full_name?.split(' ')[0] : '—'
+                // days_in_garage is never populated by the app -- compute it
+                // live from checked_in_at instead of always showing 0d.
+                const daysInGarage = job.checked_in_at
+                  ? Math.max(0, Math.floor((Date.now() - new Date(job.checked_in_at).getTime()) / 86400000))
+                  : 0
 
                 return (
                   <tr key={job.id} style={{ cursor: 'default' }}
@@ -187,7 +192,7 @@ function RecentJobsTable({ jobs }: { jobs: Job[] }) {
                     <td style={{ ...tdStyle, color: '#A0A0A0', fontFamily: 'monospace' }}>{plate}</td>
                     <td style={{ ...tdStyle, color: '#A0A0A0', textTransform: 'capitalize' as const }}>{job.service_type?.replace(/_/g, ' ')}</td>
                     <td style={tdStyle}><StatusBadge status={job.status} /></td>
-                    <td style={{ ...tdStyle, color: job.days_in_garage && job.days_in_garage > 7 ? '#EF4444' : '#A0A0A0' }}>{job.days_in_garage ?? 0}d</td>
+                    <td style={{ ...tdStyle, color: daysInGarage > 7 ? '#EF4444' : '#A0A0A0' }}>{daysInGarage}d</td>
                     <td style={{ ...tdStyle, color: '#A0A0A0' }}>{staffName}</td>
                   </tr>
                 )

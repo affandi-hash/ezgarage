@@ -1471,6 +1471,20 @@ export function SettingsPage() {
   const branchId = user?.role === 'super_admin' ? null : (user?.branch_id ?? null)
   const [activeTab, setActiveTab] = useState<SettingsTab>('rules')
 
+  // A super_admin has no single home branch, so branchId is always null for
+  // them -- Branch Settings previously had no way to ever pick one and just
+  // showed "Select a branch" forever. Let them pick which branch to manage.
+  const [branchList, setBranchList] = useState<{ id: string; name: string }[]>([])
+  const [pickedBranchId, setPickedBranchId] = useState<string | null>(null)
+  useEffect(() => {
+    if (user?.role !== 'super_admin') return
+    supabase.from('branches').select('id, name').eq('tenant_id', user.tenant_id ?? '').order('name').then(({ data }) => {
+      setBranchList(data ?? [])
+      setPickedBranchId(prev => prev ?? data?.[0]?.id ?? null)
+    })
+  }, [user?.role, user?.tenant_id])
+  const effectiveBranchId = branchId ?? pickedBranchId
+
   return (
     <div style={{ display: 'flex', height: '100%', backgroundColor: '#0E0E0E', overflow: 'hidden' }}>
       {/* Sidebar */}
@@ -1502,11 +1516,23 @@ export function SettingsPage() {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+        {activeTab === 'branch' && user?.role === 'super_admin' && branchList.length > 0 && (
+          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <label style={{ fontSize: 12, color: '#A0A0A0', fontWeight: 600 }}>BRANCH</label>
+            <select
+              value={pickedBranchId ?? ''}
+              onChange={e => setPickedBranchId(e.target.value)}
+              style={{ background: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 8, color: '#F0F0F0', padding: '8px 12px', fontSize: 13, cursor: 'pointer' }}
+            >
+              {branchList.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+        )}
         {activeTab === 'rules'         && <WorkshopRulesSection branchId={branchId} tenantId={user?.tenant_id ?? null} />}
         {activeTab === 'job_types'     && <JobTypesSection branchId={branchId} tenantId={user?.tenant_id ?? null} />}
         {activeTab === 'wa_templates'  && <WATemplatesSection tenantId={user?.tenant_id ?? null} branchId={branchId} />}
         {activeTab === 'status_colors' && <StatusColorsSection tenantId={user?.tenant_id ?? null} />}
-        {activeTab === 'branch'        && <BranchSettingsSection branchId={branchId} />}
+        {activeTab === 'branch'        && <BranchSettingsSection branchId={effectiveBranchId} />}
         {activeTab === 'working_hours' && <WorkingHoursSection branchId={branchId} />}
         {activeTab === 'portal'        && <CustomerPortalSection tenantId={user?.tenant_id ?? null} />}
       </div>

@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useCallback } from 'react';
-import { Car, Truck, MapPin, AlertTriangle, Wrench, Plus, X, Fuel, FlagOff, Trash2, CalendarClock, ChevronRight, CheckCircle2, Clock, FileText, Upload, BellRing, Droplets } from 'lucide-react';
+import { Car, Truck, MapPin, AlertTriangle, Wrench, Plus, X, Fuel, FlagOff, Trash2, CalendarClock, ChevronRight, CheckCircle2, Clock, FileText, Upload, BellRing, Droplets, Pencil } from 'lucide-react';
 import { DatePickerInput } from '@/components/ui/DateTimePickers';
 import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
@@ -188,9 +188,14 @@ const inputStyle: React.CSSProperties = {
 
 const selectStyle: React.CSSProperties = { ...inputStyle };
 
-function AddVehicleForm({ branchId, onSuccess, onClose }: { branchId: string; onSuccess: () => void; onClose: () => void }) {
+function AddVehicleForm({ branchId, editing, onSuccess, onClose }: { branchId: string; editing?: FleetVehicle; onSuccess: () => void; onClose: () => void }) {
   const { user } = useAuthStore();
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => editing ? {
+    plate_number: editing.plate_number, brand: editing.brand, model: editing.model, year: editing.year,
+    color: editing.color, vehicle_type: editing.vehicle_type, fuel_type: editing.fuel_type,
+    current_mileage: editing.current_mileage, status: editing.status, notes: editing.notes ?? '',
+    insurance_expiry: editing.insurance_expiry ?? '', road_tax_expiry: editing.road_tax_expiry ?? '',
+  } : {
     plate_number: '', brand: '', model: '', year: new Date().getFullYear(),
     color: '', vehicle_type: 'car', fuel_type: 'petrol',
     current_mileage: 0, status: 'available', notes: '',
@@ -203,6 +208,31 @@ function AddVehicleForm({ branchId, onSuccess, onClose }: { branchId: string; on
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+
+    if (editing) {
+      const { error } = await supabase.from('fleet_vehicles').update({
+        plate_number: form.plate_number,
+        brand: form.brand,
+        model: form.model,
+        year: Number(form.year),
+        color: form.color,
+        vehicle_type: form.vehicle_type,
+        fuel_type: form.fuel_type,
+        current_mileage: Number(form.current_mileage),
+        status: form.status,
+        notes: form.notes || null,
+        insurance_expiry: form.insurance_expiry || null,
+        road_tax_expiry: form.road_tax_expiry || null,
+      }).eq('id', editing.id);
+      setSaving(false);
+      if (error) { toast(error.message, 'error'); return; }
+      logAudit({ action: 'Vehicle Updated', module: 'Fleet', record_type: 'fleet_vehicle', record_id: editing.id, details: { plate: form.plate_number, brand: form.brand, model: form.model }, branch_id: editing.branch_id, user_id: user?.id, tenant_id: user?.tenant_id });
+      toast('Vehicle updated', 'success');
+      onSuccess();
+      onClose();
+      return;
+    }
+
     // resolve branch_id: prefer prop, fall back to staff_profiles
     let resolvedBranchId = branchId
     if (!resolvedBranchId && user?.id) {
@@ -301,7 +331,7 @@ function AddVehicleForm({ branchId, onSuccess, onClose }: { branchId: string; on
         <button type="submit" disabled={saving} style={{
           background: C.orange, border: 'none', borderRadius: 6,
           color: '#fff', padding: '0 24px', minHeight: 44, cursor: 'pointer', fontSize: 14, fontWeight: 700,
-        }}>{saving ? 'Saving...' : 'Add Vehicle'}</button>
+        }}>{saving ? 'Saving...' : editing ? 'Save Changes' : 'Add Vehicle'}</button>
       </div>
     </form>
   );
@@ -311,6 +341,7 @@ function VehiclesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | nu
   const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<FleetVehicle | null>(null);
   const { user } = useAuthStore();
 
   async function load() {
@@ -368,6 +399,22 @@ function VehiclesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | nu
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Badge label={v.status.replace('_', ' ')} color={vehicleStatusColor(v.status)} />
                   <button
+                    onClick={() => setEditingVehicle(v)}
+                    title="Edit vehicle"
+                    style={{
+                      background: 'none',
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 5,
+                      color: C.textSecondary,
+                      padding: '4px 6px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  <button
                     onClick={() => handleDelete(v.id)}
                     title="Delete vehicle"
                     style={{
@@ -421,6 +468,16 @@ function VehiclesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | nu
             branchId={user?.branch_id || ''}
             onSuccess={load}
             onClose={() => setShowAdd(false)}
+          />
+        </Modal>
+      )}
+      {editingVehicle && (
+        <Modal title="Edit Fleet Vehicle" onClose={() => setEditingVehicle(null)}>
+          <AddVehicleForm
+            branchId={editingVehicle.branch_id}
+            editing={editingVehicle}
+            onSuccess={load}
+            onClose={() => setEditingVehicle(null)}
           />
         </Modal>
       )}
@@ -636,8 +693,13 @@ function TripsTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null;
 }
 
 function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null; isSuperAdmin: boolean }) {
+  const { user } = useAuthStore();
   const [issues, setIssues] = useState<FleetIssue[]>([]);
+  const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showReport, setShowReport] = useState(false);
+  const [reportForm, setReportForm] = useState({ fleet_vehicle_id: '', issue_type: '', description: '', severity: 'medium' as IssueSeverity });
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -648,6 +710,10 @@ function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null
     if (!isSuperAdmin && branchFilter) q = q.eq('branch_id', branchFilter);
     const { data } = await q;
     setIssues(data || []);
+    let vq = supabase.from('fleet_vehicles').select('*').order('plate_number');
+    if (!isSuperAdmin && branchFilter) vq = vq.eq('branch_id', branchFilter);
+    const { data: vData } = await vq;
+    setVehicles(vData || []);
     setLoading(false);
   }
 
@@ -658,8 +724,41 @@ function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null
     load();
   }
 
+  async function handleReportSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const vehicle = vehicles.find(v => v.id === reportForm.fleet_vehicle_id);
+    const { error } = await supabase.from('fleet_issues').insert({
+      fleet_vehicle_id: reportForm.fleet_vehicle_id,
+      branch_id: vehicle?.branch_id || branchFilter || '',
+      tenant_id: user?.tenant_id,
+      reported_by: user?.id ?? null,
+      issue_type: reportForm.issue_type.trim(),
+      description: reportForm.description.trim(),
+      severity: reportForm.severity,
+      status: 'open',
+      reported_at: new Date().toISOString(),
+    });
+    setSaving(false);
+    if (error) { toast(error.message, 'error'); return; }
+    logAudit({ action: 'Fleet Issue Reported', module: 'Fleet', record_type: 'fleet_issue', details: { plate: vehicle?.plate_number, issue_type: reportForm.issue_type }, branch_id: vehicle?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id });
+    toast('Issue reported', 'success');
+    setReportForm({ fleet_vehicle_id: '', issue_type: '', description: '', severity: 'medium' });
+    setShowReport(false);
+    load();
+  }
+
   return (
     <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+        <button onClick={() => setShowReport(true)} style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: C.orange, border: 'none', borderRadius: 6,
+          color: '#fff', padding: '8px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 14,
+        }}>
+          <Plus size={16} /> Report Issue
+        </button>
+      </div>
       {loading ? (
         <div style={{ color: C.textSecondary, textAlign: 'center', padding: 60 }}>Loading issues...</div>
       ) : (
@@ -707,6 +806,36 @@ function IssuesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | null
             </tbody>
           </table>
         </div>
+      )}
+      {showReport && (
+        <Modal title="Report Fleet Issue" onClose={() => setShowReport(false)}>
+          <form onSubmit={handleReportSubmit}>
+            <FormField label="Vehicle *">
+              <select style={selectStyle} value={reportForm.fleet_vehicle_id} onChange={e => setReportForm(f => ({ ...f, fleet_vehicle_id: e.target.value }))} required>
+                <option value="">Select vehicle…</option>
+                {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} — {v.brand} {v.model}</option>)}
+              </select>
+            </FormField>
+            <FormField label="Issue Type *">
+              <input style={inputStyle} value={reportForm.issue_type} onChange={e => setReportForm(f => ({ ...f, issue_type: e.target.value }))} required placeholder="e.g. Brake noise, AC not cooling" />
+            </FormField>
+            <FormField label="Description *">
+              <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 70 }} value={reportForm.description} onChange={e => setReportForm(f => ({ ...f, description: e.target.value }))} required placeholder="Describe what's wrong…" />
+            </FormField>
+            <FormField label="Severity">
+              <select style={selectStyle} value={reportForm.severity} onChange={e => setReportForm(f => ({ ...f, severity: e.target.value as IssueSeverity }))}>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </select>
+            </FormField>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+              <button type="button" onClick={() => setShowReport(false)} style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textSecondary, padding: '0 20px', minHeight: 44, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
+              <button type="submit" disabled={saving} style={{ background: C.orange, border: 'none', borderRadius: 6, color: '#fff', padding: '0 24px', minHeight: 44, cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>{saving ? 'Reporting…' : 'Report Issue'}</button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

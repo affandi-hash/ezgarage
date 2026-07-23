@@ -226,12 +226,13 @@ const inputStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 // Actions menu
 // ---------------------------------------------------------------------------
-function ActionsMenu({ booking, onConfirm, onCheckIn, onConvertToJob, onCancel, onDelete }: {
+function ActionsMenu({ booking, onConfirm, onCheckIn, onConvertToJob, onCancel, onNoShow, onDelete }: {
   booking: BookingRow
   onConfirm: (id: string) => void
   onCheckIn: (id: string) => void
   onConvertToJob: (booking: BookingRow) => void
   onCancel: (id: string) => void
+  onNoShow: (id: string) => void
   onDelete: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -287,6 +288,18 @@ setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
                 },
                 color: '#FCD34D',
                 show: booking.status === 'pending' || booking.status === 'confirmed',
+                icon: <Ban size={13} />,
+              },
+              {
+                label: 'Mark No Show',
+                action: () => {
+                  setOpen(false)
+                  if (window.confirm('Mark this booking as a no-show? The customer never checked in for their confirmed appointment.')) {
+                    onNoShow(booking.id)
+                  }
+                },
+                color: '#FCA5A5',
+                show: booking.status === 'confirmed',
                 icon: <Ban size={13} />,
               },
               {
@@ -1350,6 +1363,7 @@ export function BookingsPage() {
                       onCheckIn={(id) => updateBookingStatus(id, 'arrived')}
                       onConvertToJob={(b) => setConvertingBooking(b)}
                       onCancel={(id) => updateBookingStatus(id, 'cancelled')}
+                      onNoShow={(id) => updateBookingStatus(id, 'no_show')}
                       onDelete={deleteBooking}
                     />
                   </div>
