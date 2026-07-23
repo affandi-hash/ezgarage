@@ -610,7 +610,10 @@ export function QuotationsPage() {
   }
 
   async function duplicateQuote(q: QuoteRow) {
-    if (!branchId || !tenantId) return
+    // Same silent no-op this page's Save Draft had on "All Branches" --
+    // caught while re-verifying the fix elsewhere on this page.
+    if (!branchId) { toast.error('Select a specific branch (not "All Branches") before duplicating a quotation'); return }
+    if (!tenantId) return
     const { data: items } = await supabase.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order')
     const { data: qnData } = await supabase.rpc('generate_quote_number', { p_branch_id: branchId })
     const quoteNumber = qnData || `QT-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-DUP`
@@ -637,7 +640,10 @@ export function QuotationsPage() {
   }
 
   async function convertToBooking(q: QuoteRow) {
-    if (!branchId || !tenantId) return
+    // Same silent no-op this page's Save Draft had on "All Branches" --
+    // caught while re-verifying the fix elsewhere on this page.
+    if (!branchId) { toast.error('Select a specific branch (not "All Branches") before converting to a booking'); return }
+    if (!tenantId) return
     const today = new Date().toISOString().split('T')[0]
     const { data: b, error } = await supabase.from('bookings').insert({
       tenant_id: tenantId, branch_id: branchId,
