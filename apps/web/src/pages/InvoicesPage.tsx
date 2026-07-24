@@ -970,15 +970,15 @@ export function InvoicesPage() {
                         <Tag size={13} /> ESP Member -- {espBanner.communityName} (#{espBanner.membershipNumber})
                       </div>
                       <div style={{ fontSize: 12, color: C.text2, marginTop: 2 }}>
-                        {espBanner.vehicleType === 'bike' ? 'Bike' : 'Car'} Division: {espBanner.fullPackagePct}% off Full Package, {espBanner.selectedItemPct}% off selected items
+                        {espBanner.vehicleType === 'bike' ? 'Bike' : 'Car'} Division: {espBanner.fullPackagePct}% off Full Service Package, {espBanner.selectedItemPct}% off Selected Item/Services
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button onClick={() => applyEspDiscount(espBanner.fullPackagePct)} style={{ ...btnOutline, fontSize: 12, padding: '6px 12px' }}>
-                        Apply Full-Package (-{espBanner.fullPackagePct}%)
+                        Apply Full Service Package (-{espBanner.fullPackagePct}%)
                       </button>
                       <button onClick={() => applyEspDiscount(espBanner.selectedItemPct)} style={{ ...btnOutline, fontSize: 12, padding: '6px 12px' }}>
-                        Apply Selected-Item (-{espBanner.selectedItemPct}%)
+                        Apply Selected Item/Services (-{espBanner.selectedItemPct}%)
                       </button>
                     </div>
                   </div>

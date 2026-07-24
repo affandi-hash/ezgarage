@@ -262,13 +262,13 @@ export function EspRegistrationPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
             <div style={{ background: C.surface2, borderRadius: 8, padding: 12 }}>
               <div style={{ fontSize: 11, color: C.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><Bike size={12} /> Bike Division</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: C.orange, marginTop: 4 }}>{config.bike_full_package_discount_pct}% off Full Package</div>
-              <div style={{ fontSize: 11, color: C.textSecondary }}>{config.bike_selected_item_discount_pct}% off selected services/parts</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.orange, marginTop: 4 }}>{config.bike_full_package_discount_pct}% off Full Service Package</div>
+              <div style={{ fontSize: 11, color: C.textSecondary }}>{config.bike_selected_item_discount_pct}% off Selected Item/Services</div>
             </div>
             <div style={{ background: C.surface2, borderRadius: 8, padding: 12 }}>
               <div style={{ fontSize: 11, color: C.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><Car size={12} /> Car Division</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: C.orange, marginTop: 4 }}>{config.car_full_package_discount_pct}% off Full Package</div>
-              <div style={{ fontSize: 11, color: C.textSecondary }}>{config.car_selected_item_discount_pct}% off selected services/parts</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.orange, marginTop: 4 }}>{config.car_full_package_discount_pct}% off Full Service Package</div>
+              <div style={{ fontSize: 11, color: C.textSecondary }}>{config.car_selected_item_discount_pct}% off Selected Item/Services</div>
             </div>
           </div>
           <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 12 }}>

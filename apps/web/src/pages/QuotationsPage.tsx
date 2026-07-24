@@ -551,15 +551,15 @@ function QuoteDrawer({ branchId, tenantId, userId, editQuote, onClose, onSaved }
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: C.orange }}>ESP Member -- {espBanner.communityName} (#{espBanner.membershipNumber})</div>
                   <div style={{ fontSize: 12, color: C.text2, marginTop: 2 }}>
-                    {espBanner.vehicleType === 'bike' ? 'Bike' : 'Car'} Division: {espBanner.fullPackagePct}% off Full Package, {espBanner.selectedItemPct}% off selected items
+                    {espBanner.vehicleType === 'bike' ? 'Bike' : 'Car'} Division: {espBanner.fullPackagePct}% off Full Service Package, {espBanner.selectedItemPct}% off Selected Item/Services
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => applyEspDiscount(espBanner.fullPackagePct)} style={{ background: 'transparent', color: C.text, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    Apply Full-Package (-{espBanner.fullPackagePct}%)
+                    Apply Full Service Package (-{espBanner.fullPackagePct}%)
                   </button>
                   <button onClick={() => applyEspDiscount(espBanner.selectedItemPct)} style={{ background: 'transparent', color: C.text, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    Apply Selected-Item (-{espBanner.selectedItemPct}%)
+                    Apply Selected Item/Services (-{espBanner.selectedItemPct}%)
                   </button>
                 </div>
               </div>

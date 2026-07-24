@@ -125,19 +125,19 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
             <div style={{ fontSize: 12, fontWeight: 700, color: '#A0A0A0', marginBottom: 10 }}>Discount Tiers -- staff apply these manually on quotations/invoices</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
-                <label style={labelStyle}>Bike -- Full Package (%)</label>
+                <label style={labelStyle}>Bike -- Full Service Package (%)</label>
                 <input style={inputStyle} type="number" min={0} max={100} step={0.01} value={form.bike_full_package_discount_pct} onChange={e => set('bike_full_package_discount_pct', Number(e.target.value))} />
               </div>
               <div>
-                <label style={labelStyle}>Bike -- Selected Item (%)</label>
+                <label style={labelStyle}>Bike -- Selected Item/Services (%)</label>
                 <input style={inputStyle} type="number" min={0} max={100} step={0.01} value={form.bike_selected_item_discount_pct} onChange={e => set('bike_selected_item_discount_pct', Number(e.target.value))} />
               </div>
               <div>
-                <label style={labelStyle}>Car -- Full Package (%)</label>
+                <label style={labelStyle}>Car -- Full Service Package (%)</label>
                 <input style={inputStyle} type="number" min={0} max={100} step={0.01} value={form.car_full_package_discount_pct} onChange={e => set('car_full_package_discount_pct', Number(e.target.value))} />
               </div>
               <div>
-                <label style={labelStyle}>Car -- Selected Item (%)</label>
+                <label style={labelStyle}>Car -- Selected Item/Services (%)</label>
                 <input style={inputStyle} type="number" min={0} max={100} step={0.01} value={form.car_selected_item_discount_pct} onChange={e => set('car_selected_item_discount_pct', Number(e.target.value))} />
               </div>
             </div>
