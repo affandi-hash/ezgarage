@@ -5,6 +5,11 @@ import { supabase } from '@/lib/supabase'
 
 const RAUDHAHPAY_CREATE_PAYMENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/raudhahpay-create-payment`
 
+// Disabled -- same stale-webhook-secret risk that disabled FPX in
+// CustomerPortalPage.tsx (see MVG-INV-2026-0075 investigation). Turned off
+// until that's confirmed fixed against the merchant dashboard's current secret.
+const FPX_ENABLED = false
+
 // Same color convention as CustomerPortalPage.tsx / OnlineBookingPage.tsx --
 // there's no shared public-page shell in this codebase, so this is a
 // deliberate copy of the existing pattern for visual consistency.
@@ -385,10 +390,17 @@ function PaymentButtons({ loading, error, onPay }: { loading: 'fpx' | 'duitnow' 
     <div>
       {error && <div style={{ fontSize: 12, color: C.red, marginBottom: 8 }}>{error}</div>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button onClick={() => onPay('fpx')} disabled={loading !== null}
-          style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'fpx' ? 0.6 : 1 }}>
-          {loading === 'fpx' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Landmark size={14} />} FPX
-        </button>
+        {FPX_ENABLED ? (
+          <button onClick={() => onPay('fpx')} disabled={loading !== null}
+            style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'fpx' ? 0.6 : 1 }}>
+            {loading === 'fpx' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Landmark size={14} />} FPX
+          </button>
+        ) : (
+          <div title="FPX is currently unavailable — please use QR or Card instead."
+            style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 13, fontWeight: 700, opacity: 0.5, cursor: 'not-allowed' }}>
+            <Landmark size={14} /> FPX Unavailable
+          </div>
+        )}
         <button onClick={() => onPay('duitnow')} disabled={loading !== null}
           style={{ flex: 1, minWidth: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== 'duitnow' ? 0.6 : 1 }}>
           {loading === 'duitnow' ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <QrCode size={14} />} Pay via QR
