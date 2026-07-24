@@ -185,10 +185,16 @@ export function EspRegistrationPage() {
       return
     }
 
+    // Use the customer's ACTUAL stored phone/IC from the response, never
+    // what was just typed -- resubmitting this form with different details
+    // than a previous attempt does not overwrite an existing customer's
+    // phone/IC (only backfills empty fields), so trusting local form state
+    // here caused a real "Could not verify your identity" failure at
+    // payment time once the two diverged.
     const s: RegistrationSession = {
       memberId: data.member_id, membershipNumber: data.membership_number,
       invoiceId: data.invoice_id, amount: data.amount,
-      phone: phone.trim(), icFirst6: icNumber.replace(/\D/g, '').slice(0, 6),
+      phone: data.customer_phone, icFirst6: data.customer_ic_first6,
     }
     sessionStorage.setItem(sessionKey, JSON.stringify(s))
     setSession(s)
