@@ -97,12 +97,23 @@ Deno.serve(async (req) => {
     if (phone) payload.customer_phone = phone
     if (redirect_url) payload.redirect_url = redirect_url
 
+    // Deterministic, not crypto.randomUUID() -- a fresh random key on every
+    // call means a double-click, a network-retry, or a component remount
+    // each get treated as a brand new payment attempt, creating a separate
+    // RaudhahPay bill every time instead of being deduplicated. Bucketing by
+    // a 5-minute window on (invoice_id, payment_method) collapses those
+    // near-simultaneous duplicates into one bill while still letting a
+    // genuinely new attempt later (e.g. retrying after a bill expired) get
+    // its own key.
+    const idempotencyBucket = Math.floor(Date.now() / (5 * 60 * 1000))
+    const idempotencyKey = `${invoice.id}:${payment_method}:${idempotencyBucket}`
+
     const rpRes = await fetch(RAUDHAHPAY_BASE_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${raudhahpayApiKey}`,
         'Content-Type': 'application/json',
-        'Idempotency-Key': crypto.randomUUID(),
+        'Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify(payload),
     })
