@@ -26,6 +26,7 @@ import {
   TrendingUp,
   Globe2,
   Building2,
+  ShieldCheck,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
@@ -70,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/parts', label: 'Parts', icon: Package, roles: ['super_admin', 'ops_manager', 'parts_admin', 'foreman', 'mechanic'] },
       { to: '/inventory', label: 'Inventory', icon: Archive, roles: ['super_admin', 'ops_manager', 'parts_admin', 'foreman'] },
       { to: '/invoices', label: 'Invoices', icon: FileText, roles: ['super_admin', 'ops_manager', 'front_desk', 'finance', 'foreman'] },
+      { to: '/payment-verifications', label: 'Payment Verifications', icon: ShieldCheck, roles: ['super_admin', 'ops_manager', 'front_desk', 'finance', 'foreman'] },
       { to: '/receipts', label: 'Receipts', icon: Receipt, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/labour-charges', label: 'Labour Charges', icon: Wrench, roles: ['super_admin', 'ops_manager', 'foreman'] },
     ],
@@ -128,11 +130,12 @@ interface ContentProps {
   signOut: () => void
   onNavClick?: () => void
   showCollapseToggle?: boolean
+  pendingProofCount: number
 }
 
 function SidebarContent({
   collapsed, setCollapsed, logoutHover, setLogoutHover,
-  branchLogoUrl, visibleGroups, signOut, onNavClick, showCollapseToggle = true,
+  branchLogoUrl, visibleGroups, signOut, onNavClick, showCollapseToggle = true, pendingProofCount,
 }: ContentProps) {
   return (
     <>
@@ -192,7 +195,10 @@ function SidebarContent({
                     {({ isActive }) => (
                       <>
                         <Icon size={16} color={isActive ? '#F15A22' : '#6A6A6A'} style={{ flexShrink: 0 }} />
-                        {!collapsed && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{item.label}</span>}
+                        {!collapsed && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, flex: 1 }}>{item.label}</span>}
+                        {!collapsed && item.to === '/payment-verifications' && pendingProofCount > 0 && (
+                          <span style={{ background: '#F15A22', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>{pendingProofCount}</span>
+                        )}
                       </>
                     )}
                   </NavLink>
@@ -247,6 +253,13 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
       .then(({ data }) => { if (data?.logo_url) setBranchLogoUrl(data.logo_url) })
   }, [user?.branch_id])
 
+  const [pendingProofCount, setPendingProofCount] = useState(0)
+  useEffect(() => {
+    if (!user || !['super_admin', 'ops_manager', 'front_desk', 'finance', 'foreman'].includes(user.role)) return
+    supabase.from('payment_proof_submissions').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+      .then(({ count }) => setPendingProofCount(count ?? 0))
+  }, [user?.role])
+
   if (!user) return null
 
   const visibleGroups = NAV_GROUPS
@@ -255,7 +268,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
 
   const contentProps: ContentProps = {
     collapsed, setCollapsed, logoutHover, setLogoutHover,
-    branchLogoUrl, visibleGroups, signOut,
+    branchLogoUrl, visibleGroups, signOut, pendingProofCount,
   }
 
   // Mobile: slide-in drawer with backdrop

@@ -443,7 +443,7 @@ export function InvoicesPage() {
   const [payment, setPayment] = useState({ payment_method: 'cash', amount_paid: 0, payment_date: todayStr(), payment_reference: '' })
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [proofFileError, setProofFileError] = useState<string | null>(null)
-  const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; payment_method: string; payment_date: string; proof_url: string | null; voided_at: string | null; void_reason: string | null }[]>([])
+  const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; payment_method: string; payment_date: string; proof_url: string | null; proof_bucket: string | null; voided_at: string | null; void_reason: string | null }[]>([])
   const [viewingProofId, setViewingProofId] = useState<string | null>(null)
   const [voidingId, setVoidingId] = useState<string | null>(null)
   const canVoidPayments = ['super_admin', 'ops_manager', 'foreman'].includes(user?.role ?? '')
@@ -457,7 +457,7 @@ export function InvoicesPage() {
   }
 
   async function loadPaymentHistory(invoiceId: string) {
-    const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url, voided_at, void_reason').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
+    const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url, proof_bucket, voided_at, void_reason').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
     setPaymentHistory(data ?? [])
   }
 
@@ -477,10 +477,10 @@ export function InvoicesPage() {
     }
   }
 
-  async function handleViewProof(proofUrl: string, id: string) {
+  async function handleViewProof(proofUrl: string, id: string, proofBucket?: string | null) {
     setViewingProofId(id)
     try {
-      const { data, error } = await supabase.storage.from('payment-proofs').createSignedUrl(proofUrl, 3600)
+      const { data, error } = await supabase.storage.from(proofBucket ?? 'payment-proofs').createSignedUrl(proofUrl, 3600)
       if (error || !data?.signedUrl) { toast.error('Failed to open proof of payment'); return }
       window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
     } finally {
@@ -1678,7 +1678,7 @@ export function InvoicesPage() {
                           </span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             {r.proof_url && (
-                              <button onClick={() => handleViewProof(r.proof_url!, r.id)} disabled={viewingProofId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: C.orange, cursor: 'pointer', fontSize: 12 }}>
+                              <button onClick={() => handleViewProof(r.proof_url!, r.id, r.proof_bucket)} disabled={viewingProofId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: C.orange, cursor: 'pointer', fontSize: 12 }}>
                                 {viewingProofId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} Proof
                               </button>
                             )}

@@ -38,6 +38,7 @@ import { PrintReceiptPage } from '@/pages/PrintReceiptPage'
 import { EspRegistrationPage } from '@/pages/EspRegistrationPage'
 import { EspCommunitySettingsPage } from '@/pages/EspCommunitySettingsPage'
 import { EspMembersPage } from '@/pages/EspMembersPage'
+import { PaymentVerificationsPage } from '@/pages/PaymentVerificationsPage'
 
 export default function App() {
   const { setUser, setLoading } = useAuthStore()
@@ -177,6 +178,16 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager','front_desk','finance','foreman']}>
                 <InvoicesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Payment Verifications */}
+          <Route
+            path="/payment-verifications"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','front_desk','finance','foreman']}>
+                <PaymentVerificationsPage />
               </ProtectedRoute>
             }
           />

@@ -41,6 +41,7 @@ interface Receipt {
   payment_date: string
   reference_number: string | null
   proof_url: string | null
+  proof_bucket: string | null
   notes: string | null
   voided_at: string | null
   void_reason: string | null
@@ -155,7 +156,7 @@ function DetailPanel({
     if (!r.proof_url) return
     setViewingProofId(r.id)
     try {
-      const { data, error } = await supabase.storage.from('payment-proofs').createSignedUrl(r.proof_url, 3600)
+      const { data, error } = await supabase.storage.from(r.proof_bucket ?? 'payment-proofs').createSignedUrl(r.proof_url, 3600)
       if (error || !data?.signedUrl) { toast('Failed to open proof of payment', 'error'); return }
       window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
     } finally {

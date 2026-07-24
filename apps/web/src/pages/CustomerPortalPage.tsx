@@ -211,6 +211,8 @@ function InvoiceModal({ job, onClose }: { job: PortalJob; onClose: () => void })
 function PaymentUpload({ jobId, jobNumber }: { jobId: string; jobNumber: string }) {
   const [open, setOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
+  const [amount, setAmount] = useState('')
+  const [reference, setReference] = useState('')
   const [uploading, setUploading] = useState(false)
   const [done, setDone] = useState(false)
   const [err, setErr] = useState('')
@@ -223,6 +225,21 @@ function PaymentUpload({ jobId, jobNumber }: { jobId: string; jobNumber: string 
     const path = `${jobId}/payment_proof_${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('portal-uploads').upload(path, file, { upsert: false })
     if (error) { setErr(error.message); setUploading(false); return }
+
+    // The file itself is already safely stored at this point -- don't block
+    // the success state on this RPC. If it fails, staff simply won't see
+    // this submission in their queue yet; surface that quietly rather than
+    // telling the customer their upload failed when it didn't.
+    const { error: rpcErr, data: rpcData } = await supabase.rpc('submit_payment_proof', {
+      p_job_id: jobId,
+      p_storage_path: path,
+      p_claimed_amount: amount ? Number(amount) : null,
+      p_claimed_reference: reference || null,
+    })
+    if (rpcErr || rpcData?.error) {
+      console.error('submit_payment_proof failed', rpcErr ?? rpcData?.error)
+    }
+
     setDone(true); setUploading(false)
   }
 
@@ -260,6 +277,22 @@ function PaymentUpload({ jobId, jobNumber }: { jobId: string; jobNumber: string 
             ) : (
               <div style={{ color: C.textSecondary, fontSize: 13 }}>Tap to choose image or PDF</div>
             )}
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: C.textSecondary, display: 'block', marginBottom: 4 }}>Amount Paid (optional)</label>
+            <input
+              type="number" min={0} step={0.01} value={amount} onChange={e => setAmount(e.target.value)}
+              placeholder="RM"
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, background: C.surface, border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, boxSizing: 'border-box' }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: C.textSecondary, display: 'block', marginBottom: 4 }}>Reference / Note (optional)</label>
+            <input
+              type="text" value={reference} onChange={e => setReference(e.target.value)}
+              placeholder="e.g. bank transfer reference number"
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, background: C.surface, border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, boxSizing: 'border-box' }}
+            />
           </div>
           {err && <div style={{ fontSize: 12, color: C.red }}>{err}</div>}
           <div style={{ display: 'flex', gap: 8 }}>
