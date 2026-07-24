@@ -66,8 +66,13 @@ function previewMembershipNumber(code: string, format: string, nextSeq: number):
     .replace(/\{YY\}/g, yy)
 }
 
-function formatHasSeq(format: string): boolean {
-  return /\{SEQ:?\d*\}/.test(format.trim())
+// Must match the DB CHECK constraint (migration 107) exactly -- {CODE} is
+// required alongside {SEQ} so the generated number can never collide across
+// tenants, now that `code` (unlike slug) has no public-URL exposure of its
+// own to force global uniqueness by itself.
+function formatIsValid(format: string): boolean {
+  const f = format.trim()
+  return /\{SEQ:?\d*\}/.test(f) && /\{CODE\}/.test(f)
 }
 
 function CommunityModal({ initial, branches, onClose, onSaved }: {
@@ -101,8 +106,8 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
       return
     }
     const format = (form.membership_number_format ?? '').trim() || DEFAULT_MEMBERSHIP_FORMAT
-    if (!formatHasSeq(format)) {
-      toast.error('Membership number format must include {SEQ} or {SEQ:N} -- otherwise every member would get the same number.')
+    if (!formatIsValid(format)) {
+      toast.error('Membership number format must include {CODE} and a sequence token ({SEQ} or {SEQ:N}) -- otherwise numbers could collide with another workshop\'s.')
       return
     }
     setSaving(true)
@@ -119,10 +124,10 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
 
     setSaving(false)
     if (error) {
-      // 23505 = unique_violation -- slug is globally unique across all tenants,
-      // code is unique per tenant.
+      // 23505 = unique_violation -- both slug and code are globally unique
+      // across every tenant on the platform (migration 107).
       if (error.code === '23505') { toast.error('That slug or code is already taken -- pick another.'); return }
-      if (error.code === '23514') { toast.error('Membership number format must include {SEQ} or {SEQ:N}.'); return }
+      if (error.code === '23514') { toast.error('Membership number format must include {CODE} and a sequence token ({SEQ} or {SEQ:N}).'); return }
       toast.error(error.message)
       return
     }
@@ -160,6 +165,7 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
               <div>
                 <label style={labelStyle}>Code</label>
                 <input style={inputStyle} value={form.code ?? ''} onChange={e => set('code', e.target.value.toUpperCase())} placeholder="SPM" maxLength={12} />
+                <p style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>Must be unique across every workshop on the platform, not just yours.</p>
               </div>
               <div>
                 <label style={labelStyle}>Number Format</label>
@@ -167,7 +173,7 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
               </div>
             </div>
             <p style={{ fontSize: 11, color: '#6B7280', marginTop: 6 }}>
-              Tokens: <code>{'{CODE}'}</code> <code>{'{YEAR}'}</code> <code>{'{YY}'}</code> <code>{'{SEQ}'}</code> or <code>{'{SEQ:N}'}</code> for N-digit padding. Must include a sequence token.
+              Tokens: <code>{'{CODE}'}</code> <code>{'{YEAR}'}</code> <code>{'{YY}'}</code> <code>{'{SEQ}'}</code> or <code>{'{SEQ:N}'}</code> for N-digit padding. Must include <code>{'{CODE}'}</code> and a sequence token.
             </p>
             <p style={{ fontSize: 12, color: '#F15A22', marginTop: 6 }}>
               Preview (next number): <strong>{previewMembershipNumber(form.code ?? '', form.membership_number_format ?? '', nextSeq)}</strong>
