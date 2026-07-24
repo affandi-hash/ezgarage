@@ -236,10 +236,17 @@ export function EspCommunitySettingsPage() {
   function load() {
     if (!user?.tenant_id) return
     setLoading(true)
-    Promise.all([
-      supabase.from('esp_communities').select('*').eq('tenant_id', user.tenant_id).order('created_at', { ascending: false }),
-      supabase.from('branches').select('id, name').eq('tenant_id', user.tenant_id),
-    ]).then(([c, b]) => {
+    // ESP is locked to branch like Invoices/Jobs -- only super_admin sees
+    // across every branch of the tenant. Branch dropdown is restricted the
+    // same way so non-super_admin staff can't even attempt to pick another
+    // branch as a community's home branch.
+    let communitiesQuery = supabase.from('esp_communities').select('*').eq('tenant_id', user.tenant_id).order('created_at', { ascending: false })
+    let branchesQuery = supabase.from('branches').select('id, name').eq('tenant_id', user.tenant_id)
+    if (user.role !== 'super_admin' && user.branch_id) {
+      communitiesQuery = communitiesQuery.eq('home_branch_id', user.branch_id)
+      branchesQuery = branchesQuery.eq('id', user.branch_id)
+    }
+    Promise.all([communitiesQuery, branchesQuery]).then(([c, b]) => {
       if (c.error) toast.error(c.error.message)
       setCommunities((c.data ?? []) as Community[])
       setBranches(b.data ?? [])

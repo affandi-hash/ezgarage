@@ -128,7 +128,11 @@ export function EspMembersPage() {
   function load() {
     if (!user?.tenant_id) return
     setLoading(true)
-    supabase.from('esp_communities').select('id, name, slug, membership_fee').eq('tenant_id', user.tenant_id).then(({ data }) => {
+    // ESP is locked to branch like Invoices/Jobs -- only super_admin sees
+    // across every branch of the tenant.
+    let communitiesQuery = supabase.from('esp_communities').select('id, name, slug, membership_fee').eq('tenant_id', user.tenant_id)
+    if (user.role !== 'super_admin' && user.branch_id) communitiesQuery = communitiesQuery.eq('home_branch_id', user.branch_id)
+    communitiesQuery.then(({ data }) => {
       setCommunities(data ?? [])
     })
 
@@ -136,6 +140,7 @@ export function EspMembersPage() {
       .select('id, community_id, customer_id, membership_number, status, valid_until, fee_invoice_id, registered_at, customers(full_name, phone)')
       .eq('tenant_id', user.tenant_id)
       .order('registered_at', { ascending: false })
+    if (user.role !== 'super_admin' && user.branch_id) query = query.eq('branch_id', user.branch_id)
     if (communityFilter !== 'all') query = query.eq('community_id', communityFilter)
 
     query.then(async ({ data, error }) => {
