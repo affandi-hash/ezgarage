@@ -48,8 +48,10 @@ function slugify(s: string) {
 
 // Client-side mirror of generate_esp_membership_number() (migration 106) --
 // preview only, for staff to see what a number will actually look like
-// before saving. The real sequence always comes from the DB counter.
-function previewMembershipNumber(code: string, format: string): string {
+// before saving. nextSeq must reflect the REAL counter (fetched by the
+// caller) -- hardcoding 1 here would show "0001" for a community that has
+// already issued members, which is wrong the moment a real registration exists.
+function previewMembershipNumber(code: string, format: string, nextSeq: number): string {
   const now = new Date()
   const year = String(now.getFullYear())
   const yy = year.slice(-2)
@@ -58,7 +60,7 @@ function previewMembershipNumber(code: string, format: string): string {
   const seqMatch = safeFormat.match(/\{SEQ:?(\d*)\}/)
   const width = seqMatch && seqMatch[1] ? parseInt(seqMatch[1], 10) : 4
   return safeFormat
-    .replace(/\{SEQ:?\d*\}/, String(1).padStart(width, '0'))
+    .replace(/\{SEQ:?\d*\}/, String(nextSeq).padStart(width, '0'))
     .replace(/\{CODE\}/g, safeCode)
     .replace(/\{YEAR\}/g, year)
     .replace(/\{YY\}/g, yy)
@@ -78,6 +80,16 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
   const [form, setForm] = useState<CommunityForm>(initial ?? emptyForm(branches[0]?.id ?? ''))
   const [slugTouched, setSlugTouched] = useState(!!initial)
   const [saving, setSaving] = useState(false)
+  // What the *next* generated number would actually be -- 1 for a brand new
+  // community, or the real counter + 1 for one that already has members.
+  const [nextSeq, setNextSeq] = useState(1)
+
+  useEffect(() => {
+    if (!initial) return
+    const year = String(new Date().getFullYear())
+    supabase.from('esp_membership_counters').select('last_seq').eq('community_id', initial.id).eq('year', year).maybeSingle()
+      .then(({ data }) => setNextSeq((data?.last_seq ?? 0) + 1))
+  }, [initial])
 
   function set<K extends keyof CommunityForm>(key: K, value: CommunityForm[K]) {
     setForm(f => ({ ...f, [key]: value }))
@@ -158,7 +170,7 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
               Tokens: <code>{'{CODE}'}</code> <code>{'{YEAR}'}</code> <code>{'{YY}'}</code> <code>{'{SEQ}'}</code> or <code>{'{SEQ:N}'}</code> for N-digit padding. Must include a sequence token.
             </p>
             <p style={{ fontSize: 12, color: '#F15A22', marginTop: 6 }}>
-              Preview: <strong>{previewMembershipNumber(form.code ?? '', form.membership_number_format ?? '')}</strong>
+              Preview (next number): <strong>{previewMembershipNumber(form.code ?? '', form.membership_number_format ?? '', nextSeq)}</strong>
             </p>
           </div>
           <div>
