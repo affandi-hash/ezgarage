@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { FileText, Plus, X, Printer, CreditCard, Check, ChevronRight, Search, Send, Ban, Wrench, Paperclip, Loader2 } from 'lucide-react'
+import { FileText, Plus, X, Printer, CreditCard, Check, ChevronRight, Search, Send, Ban, Wrench, Paperclip, Loader2, Tag } from 'lucide-react'
 import { toast } from '@/components/ui/Toast'
 
 const MAX_PROOF_FILE_BYTES = 10 * 1024 * 1024
@@ -593,6 +593,49 @@ export function InvoicesPage() {
     else setEditInvoice(null)
   }, [selected])
 
+  // ─── ESP discount banner ─────────────────────────────────────────────────
+  // editInvoice has no vehicle_id/vehicle_type of its own (only vehicle_plate/
+  // vehicle_info strings) -- resolve it via job_id -> vehicles, then check
+  // whether that vehicle belongs to an active ESP membership.
+  const [espBanner, setEspBanner] = useState<{
+    membershipNumber: string; vehicleType: 'car' | 'bike'; communityName: string
+    fullPackagePct: number; selectedItemPct: number
+  } | null>(null)
+
+  useEffect(() => {
+    setEspBanner(null)
+    if (!editInvoice?.job_id) return
+    supabase.from('jobs').select('vehicle_id').eq('id', editInvoice.job_id).single().then(({ data: job }) => {
+      if (!job?.vehicle_id) return
+      supabase.from('vehicles').select('vehicle_type, esp_member_id').eq('id', job.vehicle_id).single().then(({ data: veh }) => {
+        if (!veh?.esp_member_id) return
+        supabase.from('esp_members')
+          .select('membership_number, status, esp_communities(name, car_full_package_discount_pct, car_selected_item_discount_pct, bike_full_package_discount_pct, bike_selected_item_discount_pct)')
+          .eq('id', veh.esp_member_id).single().then(({ data: mem }) => {
+            if (!mem || mem.status !== 'active') return
+            const c = mem.esp_communities as unknown as {
+              name: string; car_full_package_discount_pct: number; car_selected_item_discount_pct: number
+              bike_full_package_discount_pct: number; bike_selected_item_discount_pct: number
+            }
+            const vt = veh.vehicle_type as 'car' | 'bike'
+            setEspBanner({
+              membershipNumber: mem.membership_number,
+              vehicleType: vt,
+              communityName: c.name,
+              fullPackagePct: vt === 'bike' ? c.bike_full_package_discount_pct : c.car_full_package_discount_pct,
+              selectedItemPct: vt === 'bike' ? c.bike_selected_item_discount_pct : c.car_selected_item_discount_pct,
+            })
+          })
+      })
+    })
+  }, [editInvoice?.job_id])
+
+  function applyEspDiscount(pct: number) {
+    if (!editInvoice) return
+    const amount = +(editInvoice.subtotal * pct / 100).toFixed(2)
+    setEditInvoice(recalcTotals({ ...editInvoice, discount_amount: amount }, sstRate) as Invoice)
+  }
+
   // ─── Invoice editing ─────────────────────────────────────────────────────────
 
   function handleLineItemChange(index: number, field: keyof LineItem, value: string | number) {
@@ -918,6 +961,28 @@ export function InvoicesPage() {
                     {editInvoice.vehicle_mileage && <div style={{ fontSize: 13, color: C.text2 }}>Mileage: {editInvoice.vehicle_mileage} km</div>}
                   </div>
                 </div>
+
+                {/* ESP discount banner -- staff picks the tier, never auto-applied */}
+                {espBanner && editInvoice.status === 'draft' && (
+                  <div style={{ background: 'rgba(241,90,34,0.08)', border: `1px solid ${C.orange}`, borderRadius: 8, padding: 14, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: C.orange }}>
+                        <Tag size={13} /> ESP Member -- {espBanner.communityName} (#{espBanner.membershipNumber})
+                      </div>
+                      <div style={{ fontSize: 12, color: C.text2, marginTop: 2 }}>
+                        {espBanner.vehicleType === 'bike' ? 'Bike' : 'Car'} Division: {espBanner.fullPackagePct}% off Full Package, {espBanner.selectedItemPct}% off selected items
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => applyEspDiscount(espBanner.fullPackagePct)} style={{ ...btnOutline, fontSize: 12, padding: '6px 12px' }}>
+                        Apply Full-Package (-{espBanner.fullPackagePct}%)
+                      </button>
+                      <button onClick={() => applyEspDiscount(espBanner.selectedItemPct)} style={{ ...btnOutline, fontSize: 12, padding: '6px 12px' }}>
+                        Apply Selected-Item (-{espBanner.selectedItemPct}%)
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Line Items */}
                 <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>

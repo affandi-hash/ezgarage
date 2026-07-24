@@ -35,6 +35,9 @@ import { ExpensesPage } from '@/pages/ExpensesPage'
 import { ChangePasswordPage } from '@/pages/ChangePasswordPage'
 import { PrintInvoicePage } from '@/pages/PrintInvoicePage'
 import { PrintReceiptPage } from '@/pages/PrintReceiptPage'
+import { EspRegistrationPage } from '@/pages/EspRegistrationPage'
+import { EspCommunitySettingsPage } from '@/pages/EspCommunitySettingsPage'
+import { EspMembersPage } from '@/pages/EspMembersPage'
 
 export default function App() {
   const { setUser, setLoading } = useAuthStore()
@@ -83,6 +86,10 @@ export default function App() {
         <Route path="/portal/:tenantSlug" element={<CustomerPortalPage />} />
         <Route path="/book" element={<OnlineBookingPage />} />
         <Route path="/book/:tenantSlug" element={<OnlineBookingPage />} />
+        {/* No bare /esp route at all -- a community slug is always required,
+            never an ambiguous fallback (same bug class 099 fixed for the
+            customer portal's tenant resolution). */}
+        <Route path="/esp/:communitySlug" element={<EspRegistrationPage />} />
         <Route path="/print/invoice/:id" element={<ProtectedRoute><PrintInvoicePage /></ProtectedRoute>} />
         <Route path="/print/receipt/:id" element={<ProtectedRoute><PrintReceiptPage /></ProtectedRoute>} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -260,6 +267,24 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager','front_desk','foreman']}>
                 <QuotationsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ESP Program */}
+          <Route
+            path="/esp/communities"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <EspCommunitySettingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/esp/members"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','front_desk']}>
+                <EspMembersPage />
               </ProtectedRoute>
             }
           />

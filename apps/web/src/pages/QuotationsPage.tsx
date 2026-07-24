@@ -31,6 +31,7 @@ interface QuoteRow {
   vehicle_model: string
   vehicle_year: number | null
   total_amount: number
+  discount_amount: number
   valid_until: string | null
   validity_days: number
   notes: string | null
@@ -164,6 +165,7 @@ function QuoteDrawer({ branchId, tenantId, userId, editQuote, onClose, onSaved }
   const [validityDays, setValidityDays] = useState<string>(editQuote?.validity_days?.toString() ?? '7')
   const [notes, setNotes]             = useState(editQuote?.notes ?? '')
   const [saving, setSaving]           = useState(false)
+  const [discountAmount, setDiscountAmount] = useState<number>(editQuote?.discount_amount ?? 0)
 
   const [items, setItems] = useState<QuoteItem[]>([
     { item_type: 'service', description: '', qty: 1, unit_price: 0 },
@@ -188,7 +190,45 @@ function QuoteDrawer({ branchId, tenantId, userId, editQuote, onClose, onSaved }
     })
   }, [editQuote?.id])
 
-  const total = items.reduce((s, i) => s + i.qty * i.unit_price, 0)
+  const rawSubtotal = items.reduce((s, i) => s + i.qty * i.unit_price, 0)
+  const total = Math.max(0, rawSubtotal - discountAmount)
+
+  // ─── ESP discount banner ──────────────────────────────────────────────
+  // Unlike InvoicesPage, QuoteRow already carries vehicle_id directly --
+  // no extra job/vehicle join needed here.
+  const [espBanner, setEspBanner] = useState<{
+    membershipNumber: string; vehicleType: 'car' | 'bike'; communityName: string
+    fullPackagePct: number; selectedItemPct: number
+  } | null>(null)
+
+  useEffect(() => {
+    setEspBanner(null)
+    if (!vehicleId) return
+    supabase.from('vehicles').select('vehicle_type, esp_member_id').eq('id', vehicleId).single().then(({ data: veh }) => {
+      if (!veh?.esp_member_id) return
+      supabase.from('esp_members')
+        .select('membership_number, status, esp_communities(name, car_full_package_discount_pct, car_selected_item_discount_pct, bike_full_package_discount_pct, bike_selected_item_discount_pct)')
+        .eq('id', veh.esp_member_id).single().then(({ data: mem }) => {
+          if (!mem || mem.status !== 'active') return
+          const c = mem.esp_communities as unknown as {
+            name: string; car_full_package_discount_pct: number; car_selected_item_discount_pct: number
+            bike_full_package_discount_pct: number; bike_selected_item_discount_pct: number
+          }
+          const vt = veh.vehicle_type as 'car' | 'bike'
+          setEspBanner({
+            membershipNumber: mem.membership_number,
+            vehicleType: vt,
+            communityName: c.name,
+            fullPackagePct: vt === 'bike' ? c.bike_full_package_discount_pct : c.car_full_package_discount_pct,
+            selectedItemPct: vt === 'bike' ? c.bike_selected_item_discount_pct : c.car_selected_item_discount_pct,
+          })
+        })
+    })
+  }, [vehicleId])
+
+  function applyEspDiscount(pct: number) {
+    setDiscountAmount(+(rawSubtotal * pct / 100).toFixed(2))
+  }
 
   // Customer search
   useEffect(() => {
@@ -288,6 +328,7 @@ function QuoteDrawer({ branchId, tenantId, userId, editQuote, onClose, onSaved }
           valid_until: validUntil.toISOString().split('T')[0],
           notes: notes.trim() || null,
           total_amount: total,
+          discount_amount: discountAmount,
           status,
           updated_at: new Date().toISOString(),
         }).eq('id', editQuote.id)
@@ -329,6 +370,7 @@ function QuoteDrawer({ branchId, tenantId, userId, editQuote, onClose, onSaved }
           valid_until: validUntil.toISOString().split('T')[0],
           notes: notes.trim() || null,
           total_amount: total,
+          discount_amount: discountAmount,
           created_by: userId,
         }).select('id').single()
         if (error) throw error
@@ -503,8 +545,33 @@ function QuoteDrawer({ branchId, tenantId, userId, editQuote, onClose, onSaved }
                 </button>
               </div>
             </div>
+            {/* ESP discount banner -- staff picks the tier, never auto-applied */}
+            {espBanner && (
+              <div style={{ background: 'rgba(241,90,34,0.08)', border: `1px solid ${C.orange}`, borderRadius: 8, padding: 14, marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.orange }}>ESP Member -- {espBanner.communityName} (#{espBanner.membershipNumber})</div>
+                  <div style={{ fontSize: 12, color: C.text2, marginTop: 2 }}>
+                    {espBanner.vehicleType === 'bike' ? 'Bike' : 'Car'} Division: {espBanner.fullPackagePct}% off Full Package, {espBanner.selectedItemPct}% off selected items
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => applyEspDiscount(espBanner.fullPackagePct)} style={{ background: 'transparent', color: C.text, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    Apply Full-Package (-{espBanner.fullPackagePct}%)
+                  </button>
+                  <button onClick={() => applyEspDiscount(espBanner.selectedItemPct)} style={{ background: 'transparent', color: C.text, border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    Apply Selected-Item (-{espBanner.selectedItemPct}%)
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Total */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, paddingRight: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-end', gap: 20, marginTop: 10, paddingRight: 4 }}>
+              <div style={{ textAlign: 'right' }}>
+                <label style={{ fontSize: 11, color: C.text2, display: 'block', marginBottom: 6 }}>Discount (RM)</label>
+                <input style={{ ...inputStyle, width: 110, textAlign: 'right' }} type="number" min={0} step={0.01}
+                  value={discountAmount} onChange={e => setDiscountAmount(Math.max(0, parseFloat(e.target.value) || 0))} />
+              </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 11, color: C.text2, marginBottom: 2 }}>TOTAL</div>
                 <div style={{ fontSize: 22, fontWeight: 800, color: C.orange }}>{formatRM(total)}</div>
@@ -627,7 +694,7 @@ export function QuotationsPage() {
       vehicle_plate: q.vehicle_plate, vehicle_make: q.vehicle_make,
       vehicle_model: q.vehicle_model, vehicle_year: q.vehicle_year, vehicle_id: q.vehicle_id,
       validity_days: q.validity_days, valid_until: validUntil.toISOString().split('T')[0],
-      notes: q.notes, total_amount: q.total_amount, created_by: user?.id,
+      notes: q.notes, total_amount: q.total_amount, discount_amount: q.discount_amount, created_by: user?.id,
     }).select('id').single()
     if (newQ && items && items.length > 0) {
       await supabase.from('quotation_items').insert(items.map(it => ({
@@ -928,6 +995,14 @@ export function QuotationsPage() {
                       {printItems.reduce((s, it) => s + it.qty * it.unit_price, 0).toFixed(2)}
                     </td>
                   </tr>
+                  {printQuote.discount_amount > 0 && (
+                    <tr style={{ borderBottom: '1px solid #e0e0e0' }}>
+                      <td style={{ padding: '5px 12px', fontSize: 12, color: '#555' }}>DISCOUNT</td>
+                      <td style={{ padding: '5px 12px', textAlign: 'right', fontSize: 12, fontWeight: 600, color: '#c0392b' }}>
+                        -{printQuote.discount_amount.toFixed(2)}
+                      </td>
+                    </tr>
+                  )}
                   <tr style={{ background: '#F15A22', color: '#fff' }}>
                     <td style={{ padding: '7px 12px', fontSize: 13, fontWeight: 800 }}>TOTAL (RM)</td>
                     <td style={{ padding: '7px 12px', textAlign: 'right', fontSize: 14, fontWeight: 800 }}>{(printQuote.total_amount ?? 0).toFixed(2)}</td>

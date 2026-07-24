@@ -25,6 +25,7 @@ import {
   Landmark,
   TrendingUp,
   Globe2,
+  Building2,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
@@ -71,6 +72,13 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/invoices', label: 'Invoices', icon: FileText, roles: ['super_admin', 'ops_manager', 'front_desk', 'finance', 'foreman'] },
       { to: '/receipts', label: 'Receipts', icon: Receipt, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/labour-charges', label: 'Labour Charges', icon: Wrench, roles: ['super_admin', 'ops_manager', 'foreman'] },
+    ],
+  },
+  {
+    label: 'ESP Program',
+    items: [
+      { to: '/esp/members', label: 'ESP Members', icon: Users, roles: ['super_admin', 'ops_manager', 'front_desk'] },
+      { to: '/esp/communities', label: 'ESP Communities', icon: Building2, roles: ['super_admin', 'ops_manager'] },
     ],
   },
   {

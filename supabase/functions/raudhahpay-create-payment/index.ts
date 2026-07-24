@@ -33,24 +33,29 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
-    // Re-verify the same plate + phone + first-6-IC-digits check the portal's
-    // own lookup already gated on -- a bare invoice_id was previously enough
-    // to create a real payment session for it.
-    const { data: verified, error: verifyErr } = await supabase.rpc('portal_verify_invoice_access', {
-      p_invoice_id: invoice_id, p_plate: plate, p_phone: requestPhone, p_ic_first6: ic_first6,
-    })
-    if (verifyErr || !verified) {
-      return new Response(JSON.stringify({ error: 'Could not verify your identity for this invoice' }), { status: 403, headers: corsHeaders })
-    }
-
     const { data: invoice, error: invErr } = await supabase
       .from('invoices')
-      .select('id, invoice_number, tenant_id, branch_id, customer_name, customer_email, customer_phone, total_amount, amount_paid, balance_due, status')
+      .select('id, invoice_number, tenant_id, branch_id, customer_name, customer_email, customer_phone, total_amount, amount_paid, balance_due, status, esp_member_id')
       .eq('id', invoice_id)
       .single()
 
     if (invErr || !invoice) {
       return new Response(JSON.stringify({ error: 'Invoice not found' }), { status: 404, headers: corsHeaders })
+    }
+
+    // Re-verify identity before creating a real payment session -- a bare
+    // invoice_id was previously enough. ESP membership-fee invoices have
+    // job_id = NULL, so they can never satisfy portal_verify_invoice_access's
+    // hard invoices->jobs->vehicles join; use the ESP-specific sibling
+    // (phone + first-6-IC-digits against esp_members->customers, no
+    // plate/vehicle involved) instead. Ordinary job invoices are unaffected.
+    const verifyRpc = invoice.esp_member_id ? 'esp_verify_invoice_access' : 'portal_verify_invoice_access'
+    const verifyArgs = invoice.esp_member_id
+      ? { p_invoice_id: invoice_id, p_phone: requestPhone, p_ic_first6: ic_first6 }
+      : { p_invoice_id: invoice_id, p_plate: plate, p_phone: requestPhone, p_ic_first6: ic_first6 }
+    const { data: verified, error: verifyErr } = await supabase.rpc(verifyRpc, verifyArgs)
+    if (verifyErr || !verified) {
+      return new Response(JSON.stringify({ error: 'Could not verify your identity for this invoice' }), { status: 403, headers: corsHeaders })
     }
 
     // Each tenant can plug in their own RaudhahPay merchant account so their
