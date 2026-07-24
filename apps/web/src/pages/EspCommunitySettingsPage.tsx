@@ -17,6 +17,8 @@ interface Community {
   home_branch_id: string
   name: string
   slug: string
+  code: string | null
+  membership_number_format: string | null
   description: string | null
   is_active: boolean
   membership_fee: number
@@ -29,9 +31,11 @@ interface Community {
 
 type CommunityForm = Omit<Community, 'id' | 'tenant_id' | 'is_active'>
 
+const DEFAULT_MEMBERSHIP_FORMAT = '{CODE}-{YEAR}-{SEQ:4}'
+
 function emptyForm(defaultBranchId: string): CommunityForm {
   return {
-    home_branch_id: defaultBranchId, name: '', slug: '', description: '',
+    home_branch_id: defaultBranchId, name: '', slug: '', code: '', membership_number_format: DEFAULT_MEMBERSHIP_FORMAT, description: '',
     membership_fee: 0, validity_years: 3,
     car_full_package_discount_pct: 0, car_selected_item_discount_pct: 0,
     bike_full_package_discount_pct: 0, bike_selected_item_discount_pct: 0,
@@ -40,6 +44,28 @@ function emptyForm(defaultBranchId: string): CommunityForm {
 
 function slugify(s: string) {
   return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+}
+
+// Client-side mirror of generate_esp_membership_number() (migration 106) --
+// preview only, for staff to see what a number will actually look like
+// before saving. The real sequence always comes from the DB counter.
+function previewMembershipNumber(code: string, format: string): string {
+  const now = new Date()
+  const year = String(now.getFullYear())
+  const yy = year.slice(-2)
+  const safeCode = (code.trim() || 'ESP').toUpperCase()
+  const safeFormat = format.trim() || DEFAULT_MEMBERSHIP_FORMAT
+  const seqMatch = safeFormat.match(/\{SEQ:?(\d*)\}/)
+  const width = seqMatch && seqMatch[1] ? parseInt(seqMatch[1], 10) : 4
+  return safeFormat
+    .replace(/\{SEQ:?\d*\}/, String(1).padStart(width, '0'))
+    .replace(/\{CODE\}/g, safeCode)
+    .replace(/\{YEAR\}/g, year)
+    .replace(/\{YY\}/g, yy)
+}
+
+function formatHasSeq(format: string): boolean {
+  return /\{SEQ:?\d*\}/.test(format.trim())
 }
 
 function CommunityModal({ initial, branches, onClose, onSaved }: {
@@ -62,8 +88,18 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
       toast.error('Name, slug, and home branch are required')
       return
     }
+    const format = (form.membership_number_format ?? '').trim() || DEFAULT_MEMBERSHIP_FORMAT
+    if (!formatHasSeq(format)) {
+      toast.error('Membership number format must include {SEQ} or {SEQ:N} -- otherwise every member would get the same number.')
+      return
+    }
     setSaving(true)
-    const payload = { ...form, slug: slugify(form.slug) }
+    const payload = {
+      ...form,
+      slug: slugify(form.slug),
+      code: form.code?.trim() || null,
+      membership_number_format: format,
+    }
 
     const { error } = initial
       ? await supabase.from('esp_communities').update(payload).eq('id', initial.id)
@@ -71,8 +107,10 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
 
     setSaving(false)
     if (error) {
-      // 23505 = unique_violation -- slug is globally unique across all tenants.
-      if (error.code === '23505') { toast.error('That slug is already taken -- pick another.'); return }
+      // 23505 = unique_violation -- slug is globally unique across all tenants,
+      // code is unique per tenant.
+      if (error.code === '23505') { toast.error('That slug or code is already taken -- pick another.'); return }
+      if (error.code === '23514') { toast.error('Membership number format must include {SEQ} or {SEQ:N}.'); return }
       toast.error(error.message)
       return
     }
@@ -103,6 +141,25 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
           <div>
             <label style={labelStyle}>Description</label>
             <input style={inputStyle} value={form.description ?? ''} onChange={e => set('description', e.target.value)} />
+          </div>
+          <div style={{ borderTop: '1px solid #2A2A2A', paddingTop: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#A0A0A0', marginBottom: 10 }}>Membership Numbering</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Code</label>
+                <input style={inputStyle} value={form.code ?? ''} onChange={e => set('code', e.target.value.toUpperCase())} placeholder="SPM" maxLength={12} />
+              </div>
+              <div>
+                <label style={labelStyle}>Number Format</label>
+                <input style={inputStyle} value={form.membership_number_format ?? ''} onChange={e => set('membership_number_format', e.target.value)} placeholder={DEFAULT_MEMBERSHIP_FORMAT} />
+              </div>
+            </div>
+            <p style={{ fontSize: 11, color: '#6B7280', marginTop: 6 }}>
+              Tokens: <code>{'{CODE}'}</code> <code>{'{YEAR}'}</code> <code>{'{YY}'}</code> <code>{'{SEQ}'}</code> or <code>{'{SEQ:N}'}</code> for N-digit padding. Must include a sequence token.
+            </p>
+            <p style={{ fontSize: 12, color: '#F15A22', marginTop: 6 }}>
+              Preview: <strong>{previewMembershipNumber(form.code ?? '', form.membership_number_format ?? '')}</strong>
+            </p>
           </div>
           <div>
             <label style={labelStyle}>Home Branch * -- where membership fee invoices are recorded</label>
@@ -205,7 +262,7 @@ export function EspCommunitySettingsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #2A2A2A' }}>
-                  {['Community', 'Link', 'Fee', 'Validity', 'Bike Tiers', 'Car Tiers', 'Status', 'Actions'].map(h => (
+                  {['Community', 'Code', 'Link', 'Fee', 'Validity', 'Bike Tiers', 'Car Tiers', 'Status', 'Actions'].map(h => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: '#666', fontWeight: 500, fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -214,6 +271,7 @@ export function EspCommunitySettingsPage() {
                 {communities.map(c => (
                   <tr key={c.id} style={{ borderBottom: '1px solid #1E1E1E' }}>
                     <td style={{ padding: '10px 14px', color: '#F0F0F0', fontWeight: 600 }}>{c.name}</td>
+                    <td style={{ padding: '10px 14px', color: '#A0A0A0', fontFamily: 'monospace' }}>{c.code ?? '—'}</td>
                     <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12 }}>/esp/{c.slug}</td>
                     <td style={{ padding: '10px 14px', color: '#F0F0F0' }}>RM {Number(c.membership_fee).toFixed(2)}</td>
                     <td style={{ padding: '10px 14px', color: '#A0A0A0' }}>{c.validity_years}y</td>
