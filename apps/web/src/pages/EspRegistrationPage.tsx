@@ -138,6 +138,21 @@ export function EspRegistrationPage() {
     if (data?.success) setStatusText({ status: data.status, validUntil: data.valid_until })
   }
 
+  // "Hold payment" -- the member/customer stays registered exactly as-is
+  // (status pending_payment, invoice untouched, still collectible later via
+  // Invoices), this only clears LOCAL UI/session state so staff on a shared
+  // front-desk device can move straight to the next walk-in registration
+  // instead of being stuck on this one's payment screen.
+  function startNewRegistration() {
+    sessionStorage.removeItem(sessionKey)
+    setSession(null)
+    setStatusText(null)
+    setPayError('')
+    setSubmitError('')
+    setFullName(''); setPhone(''); setEmail(''); setIcNumber('')
+    setVehicles([emptyVehicle()])
+  }
+
   function addVehicle() {
     setVehicles(v => [...v, emptyVehicle()])
   }
@@ -305,6 +320,10 @@ export function EspRegistrationPage() {
             {statusText.status === 'pending_payment' && session && (
               <div style={{ marginTop: 16 }}>
                 <PaymentButtons loading={payLoading} error={payError} onPay={startPayment} />
+                <button type="button" onClick={startNewRegistration}
+                  style={{ marginTop: 10, width: '100%', padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  Hold Payment -- Register Another Member
+                </button>
               </div>
             )}
           </div>
@@ -314,6 +333,10 @@ export function EspRegistrationPage() {
             <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 4 }}>Membership #{session.membershipNumber} · RM {session.amount.toFixed(2)}</div>
             <div style={{ marginTop: 16 }}>
               <PaymentButtons loading={payLoading} error={payError} onPay={startPayment} />
+              <button type="button" onClick={startNewRegistration}
+                style={{ marginTop: 10, width: '100%', padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Hold Payment -- Register Another Member
+              </button>
             </div>
           </div>
         ) : (
