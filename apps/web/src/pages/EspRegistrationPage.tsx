@@ -68,7 +68,7 @@ const BIKE_MAKES: Record<string, string[]> = {
   'Yamaha': ['YZF-R15', 'YZF-R25', 'MT-15', 'MT-25', 'NMAX', 'XMAX', 'Y15ZR', 'Lagenda', 'Tenere 700'],
   'Kawasaki': ['Ninja 250', 'Ninja 400', 'Ninja 650', 'Z650', 'Versys 650', 'Vulcan S'],
   'Suzuki': ['GSX-R150', 'GSX-S150', 'V-Strom 250', 'Burgman'],
-  'Harley-Davidson': ['Sportster S', 'Iron 883', 'Forty-Eight', 'Nightster', 'Street Bob', 'Fat Bob', 'Low Rider', 'Low Rider S', 'Breakout', 'Fat Boy', 'Road King', 'Street Glide', 'Road Glide', 'Ultra Limited', 'Pan America'],
+  'Harley-Davidson': ['Sportster S', 'Iron 883', 'Forty-Eight', 'Seventy-Two', 'Nightster', 'Street Bob', 'Fat Bob', 'Low Rider', 'Low Rider S', 'Breakout', 'Fat Boy', 'Road King', 'Street Glide', 'Road Glide', 'Ultra Limited', 'Pan America'],
   'Ducati': ['Monster', 'Scrambler', 'Panigale V2', 'Panigale V4', 'Multistrada', 'Diavel'],
   'BMW Motorrad': ['G 310 R', 'G 310 GS', 'F 850 GS', 'R 1250 GS', 'S 1000 RR'],
   'Royal Enfield': ['Classic 350', 'Meteor 350', 'Himalayan', 'Interceptor 650', 'Continental GT 650'],
