@@ -36,6 +36,7 @@ import { ChangePasswordPage } from '@/pages/ChangePasswordPage'
 import { PrintInvoicePage } from '@/pages/PrintInvoicePage'
 import { PrintReceiptPage } from '@/pages/PrintReceiptPage'
 import { EspRegistrationPage } from '@/pages/EspRegistrationPage'
+import { EspCommunityPickerPage } from '@/pages/EspCommunityPickerPage'
 import { EspCommunitySettingsPage } from '@/pages/EspCommunitySettingsPage'
 import { EspMembersPage } from '@/pages/EspMembersPage'
 import { PaymentVerificationsPage } from '@/pages/PaymentVerificationsPage'
@@ -89,7 +90,11 @@ export default function App() {
         <Route path="/book/:tenantSlug" element={<OnlineBookingPage />} />
         {/* No bare /esp route at all -- a community slug is always required,
             never an ambiguous fallback (same bug class 099 fixed for the
-            customer portal's tenant resolution). */}
+            customer portal's tenant resolution). /esp/join/:tenantSlug is a
+            distinct 3-segment path (not /esp/communities/:tenantSlug) so it
+            never collides with the existing protected staff route at
+            /esp/communities. */}
+        <Route path="/esp/join/:tenantSlug" element={<EspCommunityPickerPage />} />
         <Route path="/esp/:communitySlug" element={<EspRegistrationPage />} />
         <Route path="/print/invoice/:id" element={<ProtectedRoute><PrintInvoicePage /></ProtectedRoute>} />
         <Route path="/print/receipt/:id" element={<ProtectedRoute><PrintReceiptPage /></ProtectedRoute>} />
