@@ -4,6 +4,7 @@ import { Users, Loader2, Plus, RefreshCw, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
+import { OTHER, makeOptionsFor, modelOptionsFor } from '@/lib/vehicleMakes'
 
 const inputStyle: React.CSSProperties = {
   width: '100%', backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#F0F0F0',
@@ -39,7 +40,17 @@ function RegisterMemberModal({ communities, onClose, onSaved }: { communities: C
   const [icNumber, setIcNumber] = useState('')
   const [plate, setPlate] = useState('')
   const [vehicleType, setVehicleType] = useState<'car' | 'bike'>('bike')
+  const [make, setMake] = useState('')
+  const [makeOther, setMakeOther] = useState(false)
+  const [model, setModel] = useState('')
+  const [modelOther, setModelOther] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  function changeVehicleType(t: 'car' | 'bike') {
+    if (t === vehicleType) return
+    setVehicleType(t)
+    setMake(''); setMakeOther(false); setModel(''); setModelOther(false)
+  }
 
   async function submit() {
     const community = communities.find(c => c.id === communityId)
@@ -54,7 +65,7 @@ function RegisterMemberModal({ communities, onClose, onSaved }: { communities: C
       p_phone: phone.trim(),
       p_email: email.trim() || null,
       p_ic_number: icNumber.trim() || null,
-      p_vehicles: [{ plate_number: plate.trim(), vehicle_type: vehicleType }],
+      p_vehicles: [{ plate_number: plate.trim(), vehicle_type: vehicleType, make: make.trim() || null, model: model.trim() || null }],
     })
     setSaving(false)
     if (error) { toast.error(error.message); return }
@@ -102,10 +113,58 @@ function RegisterMemberModal({ communities, onClose, onSaved }: { communities: C
             </div>
             <div>
               <label style={labelStyle}>Type</label>
-              <select style={inputStyle} value={vehicleType} onChange={e => setVehicleType(e.target.value as 'car' | 'bike')}>
+              <select style={inputStyle} value={vehicleType} onChange={e => changeVehicleType(e.target.value as 'car' | 'bike')}>
                 <option value="bike">Bike</option>
                 <option value="car">Car</option>
               </select>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Make</label>
+              {makeOther ? (
+                <div>
+                  <input style={inputStyle} value={make} autoFocus onChange={e => setMake(e.target.value)} />
+                  <button type="button" onClick={() => { setMake(''); setMakeOther(false); setModel(''); setModelOther(false) }}
+                    style={{ background: 'none', border: 'none', color: '#A0A0A0', fontSize: 11, padding: '3px 0', cursor: 'pointer', textDecoration: 'underline' }}>
+                    Choose from list
+                  </button>
+                </div>
+              ) : (
+                <select style={inputStyle} value={make} onChange={e => {
+                  const val = e.target.value
+                  if (val === OTHER) { setMake(''); setMakeOther(true); setModel(''); setModelOther(false) }
+                  else { setMake(val); setModel(''); setModelOther(false) }
+                }}>
+                  <option value="">Select Make</option>
+                  {makeOptionsFor(vehicleType).map(m => <option key={m} value={m}>{m}</option>)}
+                  <option value={OTHER}>Other</option>
+                </select>
+              )}
+            </div>
+            <div>
+              <label style={labelStyle}>Model</label>
+              {makeOther || modelOther ? (
+                <div>
+                  <input style={inputStyle} value={model} onChange={e => setModel(e.target.value)} />
+                  {!makeOther && (
+                    <button type="button" onClick={() => { setModel(''); setModelOther(false) }}
+                      style={{ background: 'none', border: 'none', color: '#A0A0A0', fontSize: 11, padding: '3px 0', cursor: 'pointer', textDecoration: 'underline' }}>
+                      Choose from list
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <select style={inputStyle} value={model} disabled={!make} onChange={e => {
+                  const val = e.target.value
+                  if (val === OTHER) { setModel(''); setModelOther(true) }
+                  else setModel(val)
+                }}>
+                  <option value="">{make ? 'Select Model' : 'Select Make first'}</option>
+                  {modelOptionsFor(vehicleType, make).map(m => <option key={m} value={m}>{m}</option>)}
+                  {make && <option value={OTHER}>Other</option>}
+                </select>
+              )}
             </div>
           </div>
           <button onClick={submit} disabled={saving} style={{ marginTop: 6, padding: '10px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
