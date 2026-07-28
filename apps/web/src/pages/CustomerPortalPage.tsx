@@ -319,11 +319,9 @@ function PaymentUpload({ jobId, jobNumber }: { jobId: string; jobNumber: string 
 // merchant account and a real bill creation call succeeded.
 const CARD_ENABLED = true
 
-// Disabled — a real payment.success webhook was found silently unprocessed
-// (see MVG-INV-2026-0075 investigation), likely a stale RaudhahPay webhook
-// signing secret. Turned off until that's confirmed fixed with the
-// merchant dashboard's current secret.
-const FPX_ENABLED = false
+// Re-enabled for testing (see MVG-INV-2026-0075 investigation for why this
+// was off). Watch webhook_debug_log closely on the next real FPX payment.
+const FPX_ENABLED = true
 
 function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanceDue: number }) {
   const [loading, setLoading] = useState<'duitnow' | 'credit_card' | 'fpx' | null>(null)

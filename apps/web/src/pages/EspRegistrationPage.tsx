@@ -6,10 +6,9 @@ import { OTHER, makeOptionsFor, modelOptionsFor } from '@/lib/vehicleMakes'
 
 const RAUDHAHPAY_CREATE_PAYMENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/raudhahpay-create-payment`
 
-// Disabled -- same stale-webhook-secret risk that disabled FPX in
-// CustomerPortalPage.tsx (see MVG-INV-2026-0075 investigation). Turned off
-// until that's confirmed fixed against the merchant dashboard's current secret.
-const FPX_ENABLED = false
+// Re-enabled for testing (see MVG-INV-2026-0075 investigation for why this
+// was off). Watch webhook_debug_log closely on the next real FPX payment.
+const FPX_ENABLED = true
 
 // Same color convention as CustomerPortalPage.tsx / OnlineBookingPage.tsx --
 // there's no shared public-page shell in this codebase, so this is a
