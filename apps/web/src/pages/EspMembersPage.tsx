@@ -256,7 +256,7 @@ export function EspMembersPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #2A2A2A' }}>
-                  {['Membership #', 'Customer', 'Phone', 'Vehicles', 'Status', 'Valid Until', 'Actions'].map(h => (
+                  {['Community', 'Membership #', 'Customer', 'Phone', 'Vehicles', 'Status', 'Valid Until', 'Actions'].map(h => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: '#666', fontWeight: 500, fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -264,6 +264,7 @@ export function EspMembersPage() {
               <tbody>
                 {members.map(m => (
                   <tr key={m.id} style={{ borderBottom: '1px solid #1E1E1E' }}>
+                    <td style={{ padding: '10px 14px', color: '#A0A0A0' }}>{communities.find(c => c.id === m.community_id)?.name ?? '—'}</td>
                     <td style={{ padding: '10px 14px', color: '#F0F0F0', fontWeight: 600 }}>{m.membership_number}</td>
                     <td style={{ padding: '10px 14px', color: '#F0F0F0' }}>{m.customers?.full_name ?? '—'}</td>
                     <td style={{ padding: '10px 14px', color: '#A0A0A0' }}>{m.customers?.phone ?? '—'}</td>
