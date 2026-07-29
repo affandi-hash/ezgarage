@@ -39,6 +39,7 @@ import { EspRegistrationPage } from '@/pages/EspRegistrationPage'
 import { EspCommunityPickerPage } from '@/pages/EspCommunityPickerPage'
 import { EspCommunitySettingsPage } from '@/pages/EspCommunitySettingsPage'
 import { EspMembersPage } from '@/pages/EspMembersPage'
+import { EspReportsPage } from '@/pages/EspReportsPage'
 import { PaymentVerificationsPage } from '@/pages/PaymentVerificationsPage'
 
 export default function App() {
@@ -301,6 +302,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager','front_desk']}>
                 <EspMembersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/esp/reports"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','finance','foreman']}>
+                <EspReportsPage />
               </ProtectedRoute>
             }
           />

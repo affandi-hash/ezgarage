@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Building2, Loader2, Plus, Power, X } from 'lucide-react'
+import { Building2, Loader2, Plus, Power, X, Copy, Link2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -226,8 +226,17 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
   )
 }
 
+async function copyLink(url: string, label: string) {
+  try {
+    await navigator.clipboard.writeText(url)
+    toast.success(`${label} copied to clipboard`)
+  } catch {
+    toast.error('Could not copy -- your browser blocked clipboard access')
+  }
+}
+
 export function EspCommunitySettingsPage() {
-  const { user } = useAuthStore()
+  const { user, tenant } = useAuthStore()
   const [communities, setCommunities] = useState<Community[]>([])
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -267,10 +276,19 @@ export function EspCommunitySettingsPage() {
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={{ fontSize: 18, fontWeight: 700, color: '#F0F0F0' }}>ESP Communities</h1>
-        <button onClick={() => setModalFor('new')} disabled={branches.length === 0}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-          <Plus size={14} /> New Community
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {tenant?.slug && (
+            <button onClick={() => copyLink(`${window.location.origin}/esp/join/${tenant.slug}`, 'Community picker link')}
+              title="Copy the link members use to pick their community before registering"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: '#1E1E1E', color: '#A0A0A0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              <Link2 size={14} /> Copy Join Link
+            </button>
+          )}
+          <button onClick={() => setModalFor('new')} disabled={branches.length === 0}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+            <Plus size={14} /> New Community
+          </button>
+        </div>
       </div>
 
       <div style={cardStyle}>
@@ -297,7 +315,13 @@ export function EspCommunitySettingsPage() {
                   <tr key={c.id} style={{ borderBottom: '1px solid #1E1E1E' }}>
                     <td style={{ padding: '10px 14px', color: '#F0F0F0', fontWeight: 600 }}>{c.name}</td>
                     <td style={{ padding: '10px 14px', color: '#A0A0A0', fontFamily: 'monospace' }}>{c.code ?? '—'}</td>
-                    <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12 }}>/esp/{c.slug}</td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <button onClick={() => copyLink(`${window.location.origin}/esp/${c.slug}`, `${c.name}'s registration link`)}
+                        title={`/esp/${c.slug}`}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 8px', borderRadius: 6, fontSize: 11, backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#A0A0A0', cursor: 'pointer' }}>
+                        <Copy size={11} /> /esp/{c.slug}
+                      </button>
+                    </td>
                     <td style={{ padding: '10px 14px', color: '#F0F0F0' }}>RM {Number(c.membership_fee).toFixed(2)}</td>
                     <td style={{ padding: '10px 14px', color: '#A0A0A0' }}>{c.validity_years}y</td>
                     <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12 }}>{c.bike_full_package_discount_pct}% / {c.bike_selected_item_discount_pct}%</td>
