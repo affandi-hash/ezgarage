@@ -79,8 +79,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'ESP Program',
     items: [
-      { to: '/esp/members', label: 'ESP Members', icon: Users, roles: ['super_admin', 'ops_manager', 'front_desk'] },
-      { to: '/esp/communities', label: 'ESP Communities', icon: Building2, roles: ['super_admin', 'ops_manager'] },
+      { to: '/esp/members', label: 'ESP Members', icon: Users, roles: ['super_admin', 'ops_manager', 'front_desk', 'foreman'] },
+      { to: '/esp/communities', label: 'ESP Communities', icon: Building2, roles: ['super_admin', 'ops_manager', 'foreman'] },
       { to: '/esp/reports', label: 'ESP Reports', icon: BarChart3, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
     ],
   },

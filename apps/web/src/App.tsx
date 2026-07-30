@@ -292,7 +292,7 @@ export default function App() {
           <Route
             path="/esp/communities"
             element={
-              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','foreman']}>
                 <EspCommunitySettingsPage />
               </ProtectedRoute>
             }
@@ -300,7 +300,7 @@ export default function App() {
           <Route
             path="/esp/members"
             element={
-              <ProtectedRoute allowedRoles={['super_admin','ops_manager','front_desk']}>
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','front_desk','foreman']}>
                 <EspMembersPage />
               </ProtectedRoute>
             }
