@@ -78,13 +78,14 @@ Deno.serve(async (req) => {
 
   const rawBody = await req.text()
 
-  // TEMPORARY DIAGNOSTIC — remove once signature verification is confirmed working.
+  const debugClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  let debugLogId: string | null = null
   try {
-    const debugClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-    await debugClient.from('webhook_debug_log').insert({
+    const { data: debugRow } = await debugClient.from('webhook_debug_log').insert({
       headers: Object.fromEntries(req.headers.entries()),
       raw_body: rawBody,
-    })
+    }).select('id').single()
+    debugLogId = (debugRow as { id?: string } | null)?.id ?? null
   } catch (e) {
     console.error('debug log insert failed', e)
   }
@@ -119,21 +120,54 @@ Deno.serve(async (req) => {
   // own). This can only be done after parsing the body, so the signature
   // check happens here instead of before parsing, unlike a single-secret
   // setup would allow.
-  const supabaseForLookup = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
   const lookupInvoiceId = (data.order_no as string) || (data.metadata as { invoice_id?: string })?.invoice_id
   let webhookSecret = Deno.env.get('RAUDHAHPAY_WEBHOOK_SECRET')!
-  if (lookupInvoiceId) {
-    const { data: invoiceForSecret } = await supabaseForLookup
+
+  // MVG-INV-2026-0075 was (almost certainly) this fallback silently picking
+  // the wrong secret for a tenant that actually has their own, with nothing
+  // recording that it happened. Track *why* we ended up with the secret we
+  // did so that's no longer invisible.
+  let secretSource: 'tenant' | 'project_default_no_tenant_secret' | 'project_default_lookup_failed' | 'project_default_no_reference'
+  if (!lookupInvoiceId) {
+    secretSource = 'project_default_no_reference'
+  } else {
+    const { data: invoiceForSecret } = await debugClient
       .from('invoices')
       .select('tenant_id, tenants(raudhahpay_webhook_secret)')
       .eq('id', lookupInvoiceId)
       .single()
     const tenantSecret = (invoiceForSecret as { tenants?: { raudhahpay_webhook_secret?: string | null } } | null)?.tenants?.raudhahpay_webhook_secret
-    if (tenantSecret) webhookSecret = tenantSecret
+    if (invoiceForSecret == null) {
+      secretSource = 'project_default_lookup_failed'
+    } else if (tenantSecret) {
+      webhookSecret = tenantSecret
+      secretSource = 'tenant'
+    } else {
+      secretSource = 'project_default_no_tenant_secret'
+    }
   }
 
   const expected = await hmacSha256Hex(webhookSecret, `${timestamp}.${rawBody}`)
-  if (!constantTimeEqual(expected, signature)) {
+  const signatureValid = constantTimeEqual(expected, signature)
+
+  // The two "suspicious" reasons mean we couldn't confirm this tenant has no
+  // secret of their own — paired with a failed signature, that's almost
+  // certainly the wrong-secret failure mode, not a forged request. Worth a
+  // loud log rather than blending into routine 401s.
+  const suspiciousFallback = secretSource === 'project_default_lookup_failed' || secretSource === 'project_default_no_reference'
+  if (suspiciousFallback && !signatureValid) {
+    console.error(`RaudhahPay webhook: signature failed after falling back to the project-default secret via "${secretSource}" (lookupInvoiceId=${lookupInvoiceId ?? 'none'}) — likely a per-tenant secret mismatch, not a forged request.`)
+  }
+
+  if (debugLogId) {
+    await debugClient.from('webhook_debug_log').update({
+      resolved_invoice_id: lookupInvoiceId ?? null,
+      secret_source: secretSource,
+      signature_valid: signatureValid,
+    }).eq('id', debugLogId)
+  }
+
+  if (!signatureValid) {
     return new Response('Invalid signature', { status: 401 })
   }
 

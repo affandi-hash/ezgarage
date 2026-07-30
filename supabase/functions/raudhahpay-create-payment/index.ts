@@ -123,6 +123,21 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: rpData?.message || rpData?.error || 'RaudhahPay request failed' }), { status: rpRes.status, headers: corsHeaders })
     }
 
+    // Persist the bill reference now, while we know it, not just whenever
+    // (if ever) a webhook happens to arrive -- this is what lets the
+    // reconciliation job ask RaudhahPay directly about a bill whose webhook
+    // never showed up, instead of the invoice staying unpaid with no trace
+    // a payment attempt even happened. Best-effort: a failure here shouldn't
+    // block the customer from reaching checkout.
+    const { error: refUpdateErr } = await supabase.from('invoices').update({
+      raudhahpay_bill_id: rpData.bill_id ?? null,
+      raudhahpay_payment_session_id: rpData.payment_session_id ?? null,
+      raudhahpay_reference_number: rpData.gateway_bill_no ?? null,
+      raudhahpay_bill_created_at: new Date().toISOString(),
+      raudhahpay_payment_method: payment_method,
+    }).eq('id', invoice.id)
+    if (refUpdateErr) console.error(`Failed to persist RaudhahPay bill reference for invoice ${invoice.id}`, refUpdateErr)
+
     return new Response(JSON.stringify({
       payment_url: rpData.payment_url,
       qr: rpData.qr ?? null,
