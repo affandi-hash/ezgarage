@@ -175,6 +175,8 @@ export function ReportsPage() {
   const [overviewData, setOverviewData] = useState<{
     totalJobs: number
     revenue: number
+    revenueAll: number
+    revenueUnpaid: number
     avgDays: number
     topMechanic: string
     topJobType: string
@@ -263,24 +265,31 @@ export function ReportsPage() {
       // range should still count, and one invoiced outside this range
       // shouldn't just because its job happened to start inside it.
       let revenue = 0
+      let revenueAll = 0
+      let revenueUnpaid = 0
       let paidJobCount = 0
       let totalParts = 0
       let totalLabour = 0
-      // "Revenue" is labeled and read as cash actually collected -- it was
+      // "Revenue" (paid) is read as cash actually collected -- it was
       // previously summing paid + sent + overdue invoices (an accrual-style
-      // total), which overstated real collections by ~2.7x. Scope strictly
-      // to paid invoices so the figure matches what it says it is.
+      // total), which overstated real collections by ~2.7x. Fetch every
+      // committed invoice in range (excludes draft -- not yet issued -- and
+      // void -- not a real bill), then split by status client-side so
+      // "All Statuses" = "Paid" + "Unpaid" always holds exactly. COGS/gross
+      // profit stay paid-only, unchanged from before.
       let invQ = supabase
         .from('invoices')
         .select('job_id, line_items, status, total_amount, subtotal')
         .gte('issue_date', bounds.start)
         .lte('issue_date', bounds.end)
-        .eq('status', 'paid')
+        .in('status', ['sent', 'overdue', 'paid'])
       if (branchFilter) invQ = invQ.eq('branch_id', branchFilter)
       const { data: invRows } = await invQ
       type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number; cost_price?: number }
       invRows?.forEach((inv: { job_id: string; line_items: LineItem[] | null; status: string; total_amount: number | null; subtotal: number | null }) => {
         const invTotal = inv.total_amount ?? inv.subtotal ?? 0
+        revenueAll += invTotal
+        if (inv.status !== 'paid') { revenueUnpaid += invTotal; return }
         revenue += invTotal
         paidJobCount++
         ;(inv.line_items ?? []).forEach((li) => {
@@ -311,6 +320,8 @@ export function ReportsPage() {
       setOverviewData({
         totalJobs,
         revenue,
+        revenueAll,
+        revenueUnpaid,
         avgDays: daysCount > 0 ? Math.round((daysSum / daysCount) * 10) / 10 : 0,
         topMechanic,
         topJobType,
@@ -648,6 +659,9 @@ export function ReportsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 14, marginBottom: 24 }}>
               <StatCard label="Total Jobs" value={overviewData.totalJobs} icon={Wrench} sub="In selected period" />
               <StatCard label="Revenue" value={formatRM(overviewData.revenue)} icon={DollarSign} sub="Paid invoices" />
+              <StatCard label="Total Revenue (All Statuses)" value={formatRM(overviewData.revenueAll)} icon={DollarSign} sub="Sent + overdue + paid" />
+              <StatCard label="Total Revenue (Paid)" value={formatRM(overviewData.revenue)} icon={DollarSign} sub="Paid invoices" />
+              <StatCard label="Total Revenue (Unpaid)" value={formatRM(overviewData.revenueUnpaid)} icon={DollarSign} sub="Sent + overdue" />
               <StatCard label="Total Parts" value={formatRM(overviewData.totalParts)} icon={ShoppingCart} sub={overviewData.totalParts > 0 ? 'From invoice lines' : 'No parts invoiced'} />
               <StatCard label="Total Labour" value={formatRM(overviewData.totalLabour)} icon={Wrench} sub={overviewData.totalLabour > 0 ? 'From labour charges' : 'No labour invoiced'} />
               <StatCard label="COGS" value={formatRM(overviewData.cogs)} icon={ShoppingCart} sub="Parts + Labour" />
