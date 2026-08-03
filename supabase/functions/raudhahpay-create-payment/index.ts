@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
 
     const { data: invoice, error: invErr } = await supabase
       .from('invoices')
-      .select('id, invoice_number, tenant_id, branch_id, customer_name, customer_email, customer_phone, total_amount, amount_paid, balance_due, status, esp_member_id')
+      .select('id, invoice_number, tenant_id, branch_id, customer_id, customer_name, customer_email, customer_phone, total_amount, amount_paid, balance_due, status, esp_member_id')
       .eq('id', invoice_id)
       .single()
 
@@ -79,7 +79,18 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Invalid amount' }), { status: 400, headers: corsHeaders })
     }
 
-    const email = invoice.customer_email?.trim() || `invoice-${invoice.id}@no-email.motoverse.local`
+    // invoices.customer_email is a snapshot taken when the invoice was
+    // created -- if staff added the customer's email to their profile
+    // afterward (as happened on MVG-INV-2026-0053), that snapshot stays
+    // blank forever and RaudhahPay gets a fake @no-email.motoverse.local
+    // address instead. Prefer the live customers.email, falling back to
+    // the invoice's own snapshot, then the placeholder as a last resort.
+    let liveCustomerEmail: string | null = null
+    if (invoice.customer_id) {
+      const { data: customerRow } = await supabase.from('customers').select('email').eq('id', invoice.customer_id).single()
+      liveCustomerEmail = customerRow?.email?.trim() || null
+    }
+    const email = liveCustomerEmail || invoice.customer_email?.trim() || `invoice-${invoice.id}@no-email.motoverse.local`
     const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/raudhahpay-webhook`
 
     const payload: Record<string, unknown> = {
