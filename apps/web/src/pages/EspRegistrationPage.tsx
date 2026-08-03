@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Wrench, Loader2, AlertCircle, CheckCircle, Plus, Trash2, CreditCard, QrCode, Landmark, Car, Bike } from 'lucide-react'
+import { Wrench, Loader2, AlertCircle, CheckCircle, Plus, Trash2, CreditCard, QrCode, Landmark, Car, Bike, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { OTHER, makeOptionsFor, modelOptionsFor } from '@/lib/vehicleMakes'
 
 const RAUDHAHPAY_CREATE_PAYMENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/raudhahpay-create-payment`
+const ESP_RECEIPT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/esp-receipt`
 
 // Re-enabled for testing (see MVG-INV-2026-0075 investigation for why this
 // was off). Watch webhook_debug_log closely on the next real FPX payment.
@@ -100,6 +101,10 @@ export function EspRegistrationPage() {
   const [payLoading, setPayLoading] = useState<'fpx' | 'duitnow' | 'credit_card' | null>(null)
   const [payError, setPayError] = useState('')
 
+  const [receipt, setReceipt] = useState<{ url: string; amount: number; paymentDate: string; paymentMethod: string; invoiceNumber: string } | null>(null)
+  const [receiptLoading, setReceiptLoading] = useState(false)
+  const [receiptError, setReceiptError] = useState('')
+
   const sessionKey = `esp_registration_${communitySlug}`
 
   useEffect(() => {
@@ -137,20 +142,28 @@ export function EspRegistrationPage() {
     if (data?.success) setStatusText({ status: data.status, validUntil: data.valid_until })
   }
 
-  // "Hold payment" -- the member/customer stays registered exactly as-is
-  // (status pending_payment, invoice untouched, still collectible later via
-  // Invoices), this only clears LOCAL UI/session state so staff on a shared
-  // front-desk device can move straight to the next walk-in registration
-  // instead of being stuck on this one's payment screen.
-  function startNewRegistration() {
-    sessionStorage.removeItem(sessionKey)
-    setSession(null)
-    setStatusText(null)
-    setPayError('')
-    setSubmitError('')
-    setFullName(''); setPhone(''); setEmail(''); setIcNumber('')
-    setVehicles([emptyVehicle()])
-  }
+  // Once membership goes active, fetch the receipt raudhahpay-webhook already
+  // generated -- there was previously no way for this public, unauthenticated
+  // page to reach it (payment-proofs/portal-uploads are both
+  // authenticated-only), so paid members never saw any proof of payment here.
+  useEffect(() => {
+    if (statusText?.status !== 'active' || !session || receipt || receiptLoading) return
+    setReceiptLoading(true)
+    setReceiptError('')
+    fetch(ESP_RECEIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+      body: JSON.stringify({ membership_number: session.membershipNumber, phone: session.phone }),
+    })
+      .then(res => res.json().then(data => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) { setReceiptError(data.error === 'no_receipt' ? '' : 'Could not load receipt.'); return }
+        setReceipt({ url: data.url, amount: data.amount, paymentDate: data.payment_date, paymentMethod: data.payment_method, invoiceNumber: data.invoice_number })
+      })
+      .catch(() => setReceiptError('Could not load receipt.'))
+      .finally(() => setReceiptLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusText?.status, session])
 
   function addVehicle() {
     setVehicles(v => [...v, emptyVehicle()])
@@ -319,10 +332,22 @@ export function EspRegistrationPage() {
             {statusText.status === 'pending_payment' && session && (
               <div style={{ marginTop: 16 }}>
                 <PaymentButtons loading={payLoading} error={payError} onPay={startPayment} />
-                <button type="button" onClick={startNewRegistration}
-                  style={{ marginTop: 10, width: '100%', padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                  Hold Payment -- Register Another Member
-                </button>
+              </div>
+            )}
+            {statusText.status === 'active' && (
+              <div style={{ marginTop: 16 }}>
+                {receiptLoading && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 12, color: C.textSecondary }}>
+                    <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Loading receipt…
+                  </div>
+                )}
+                {receiptError && <div style={{ fontSize: 12, color: C.red }}>{receiptError}</div>}
+                {receipt && (
+                  <a href={receipt.url} target="_blank" rel="noreferrer"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+                    <FileText size={14} /> View Receipt -- RM {receipt.amount.toFixed(2)}
+                  </a>
+                )}
               </div>
             )}
           </div>
@@ -332,10 +357,6 @@ export function EspRegistrationPage() {
             <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 4 }}>Membership #{session.membershipNumber} · RM {session.amount.toFixed(2)}</div>
             <div style={{ marginTop: 16 }}>
               <PaymentButtons loading={payLoading} error={payError} onPay={startPayment} />
-              <button type="button" onClick={startNewRegistration}
-                style={{ marginTop: 10, width: '100%', padding: '9px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                Hold Payment -- Register Another Member
-              </button>
             </div>
           </div>
         ) : (
