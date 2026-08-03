@@ -135,6 +135,24 @@ export function EspRegistrationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communitySlug])
 
+  // A single checkStatus() right after the RaudhahPay redirect can easily
+  // land before the webhook has actually processed the payment (or, on a bad
+  // day, before staff manually reconcile it) -- the page then sits on a
+  // stale "Payment Pending" forever with nothing telling the customer to
+  // reload. Poll for up to ~2 minutes while pending, stop as soon as it
+  // flips (or the window closes).
+  useEffect(() => {
+    if (!session || statusText?.status !== 'pending_payment') return
+    let attempts = 0
+    const interval = setInterval(() => {
+      attempts += 1
+      if (attempts > 30) { clearInterval(interval); return }
+      checkStatus(session)
+    }, 4000)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, statusText?.status])
+
   async function checkStatus(s: RegistrationSession) {
     const { data } = await supabase.rpc('esp_check_status', {
       p_membership_number: s.membershipNumber, p_phone: s.phone,
