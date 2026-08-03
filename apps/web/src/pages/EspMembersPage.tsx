@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, Loader2, Plus, RefreshCw, X } from 'lucide-react'
+import { Users, Loader2, Plus, RefreshCw, X, ArrowLeftRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -176,6 +176,54 @@ function RegisterMemberModal({ communities, onClose, onSaved }: { communities: C
   )
 }
 
+function MoveMemberModal({ member, communities, onClose, onSaved }: { member: Member; communities: Community[]; onClose: () => void; onSaved: () => void }) {
+  const otherCommunities = communities.filter(c => c.id !== member.community_id)
+  const [communityId, setCommunityId] = useState(otherCommunities[0]?.id ?? '')
+  const [saving, setSaving] = useState(false)
+
+  async function submit() {
+    if (!communityId) return
+    setSaving(true)
+    const { data, error } = await supabase.rpc('esp_move_member_community', {
+      p_member_id: member.id, p_new_community_id: communityId,
+    })
+    setSaving(false)
+    if (error) { toast.error(error.message); return }
+    if (data?.error) { toast.error(data.error.replace(/_/g, ' ')); return }
+    toast.success(`Moved to ${data.new_community_name} -- now #${data.new_membership_number}`)
+    onSaved()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 14, width: '100%', maxWidth: 420 }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #2A2A2A', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#F0F0F0' }}>Move to a Different Community</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer' }}><X size={16} /></button>
+        </div>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 12, color: '#A0A0A0' }}>
+            {member.customers?.full_name ?? 'This member'} is currently registered under <strong style={{ color: '#F0F0F0' }}>{communities.find(c => c.id === member.community_id)?.name ?? '—'}</strong> (#{member.membership_number}). Their membership number will be regenerated to match the new community.
+          </div>
+          {otherCommunities.length === 0 ? (
+            <div style={{ fontSize: 12, color: '#A0A0A0' }}>No other communities available to move to.</div>
+          ) : (
+            <div>
+              <label style={labelStyle}>Move To *</label>
+              <select style={inputStyle} value={communityId} onChange={e => setCommunityId(e.target.value)}>
+                {otherCommunities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
+          <button onClick={submit} disabled={saving || !communityId} style={{ marginTop: 6, padding: '10px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 700, cursor: (saving || !communityId) ? 'not-allowed' : 'pointer', opacity: (saving || !communityId) ? 0.6 : 1 }}>
+            {saving ? 'Moving…' : 'Confirm Move'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function EspMembersPage() {
   const { user } = useAuthStore()
   const [communities, setCommunities] = useState<Community[]>([])
@@ -183,6 +231,7 @@ export function EspMembersPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [showRegister, setShowRegister] = useState(false)
+  const [moveMember, setMoveMember] = useState<Member | null>(null)
 
   function load() {
     if (!user?.tenant_id) return
@@ -287,6 +336,9 @@ export function EspMembersPage() {
                             <RefreshCw size={12} /> Renew
                           </button>
                         )}
+                        <button onClick={() => setMoveMember(m)} title="Registered under the wrong community?" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, fontSize: 11, backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#A0A0A0', cursor: 'pointer' }}>
+                          <ArrowLeftRight size={12} /> Move
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -299,6 +351,10 @@ export function EspMembersPage() {
 
       {showRegister && (
         <RegisterMemberModal communities={communities} onClose={() => setShowRegister(false)} onSaved={() => { setShowRegister(false); load() }} />
+      )}
+
+      {moveMember && (
+        <MoveMemberModal member={moveMember} communities={communities} onClose={() => setMoveMember(null)} onSaved={() => { setMoveMember(null); load() }} />
       )}
     </div>
   )

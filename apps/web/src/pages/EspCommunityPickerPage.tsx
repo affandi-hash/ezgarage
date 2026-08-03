@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { Wrench, Loader2, AlertCircle, ChevronRight, Users } from 'lucide-react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { Wrench, Loader2, AlertCircle, ChevronRight, Users, ArrowLeft } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 // Same public-page color convention as EspRegistrationPage.tsx / CustomerPortalPage.tsx.
@@ -30,10 +30,17 @@ interface PickerConfig {
 
 export function EspCommunityPickerPage() {
   const { tenantSlug } = useParams<{ tenantSlug: string }>()
+  const navigate = useNavigate()
 
   const [config, setConfig] = useState<PickerConfig | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+
+  // A confirmation step here, not an instant navigate-on-click -- with ~30
+  // similarly-named communities in one list (several real members have
+  // already registered under the wrong one by mistake), a single tap is too
+  // easy to get wrong on a phone with no way to notice before submitting.
+  const [pending, setPending] = useState<CommunitySummary | null>(null)
 
   useEffect(() => {
     if (!tenantSlug) return
@@ -88,33 +95,56 @@ export function EspCommunityPickerPage() {
       </div>
 
       <div style={{ maxWidth: 560, margin: '0 auto', padding: '24px 24px 60px' }}>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Choose Your Community</div>
-          <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 4 }}>
-            Select the club or community you're registering your ESP membership under.
-          </div>
-        </div>
-
-        {config.communities.length === 0 ? (
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: C.textSecondary, fontSize: 13 }}>
-            No communities are open for registration right now. Please check back later or contact the workshop directly.
+        {pending ? (
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, textAlign: 'center' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 10, background: C.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+              <Users size={20} color={C.orange} />
+            </div>
+            <div style={{ fontSize: 13, color: C.textSecondary }}>You're registering under</div>
+            <div style={{ fontSize: 19, fontWeight: 700, marginTop: 4 }}>{pending.name}</div>
+            {pending.description && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 6 }}>{pending.description}</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 20 }}>
+              <button type="button" onClick={() => navigate(`/esp/${pending.slug}`)}
+                style={{ padding: '12px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                Yes, this is my community
+              </button>
+              <button type="button" onClick={() => setPending(null)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <ArrowLeft size={13} /> Not this one, go back
+              </button>
+            </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {config.communities.map(c => (
-              <Link key={c.id} to={`/esp/${c.slug}`}
-                style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 16px', textDecoration: 'none', color: 'inherit' }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: C.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Users size={15} color={C.orange} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>{c.name}</div>
-                  {c.description && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>{c.description}</div>}
-                </div>
-                <ChevronRight size={16} color={C.textSecondary} />
-              </Link>
-            ))}
-          </div>
+          <>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>Choose Your Community</div>
+              <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 4 }}>
+                Select the club or community you're registering your ESP membership under.
+              </div>
+            </div>
+
+            {config.communities.length === 0 ? (
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: C.textSecondary, fontSize: 13 }}>
+                No communities are open for registration right now. Please check back later or contact the workshop directly.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {config.communities.map(c => (
+                  <button key={c.id} type="button" onClick={() => setPending(c)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 16px', textAlign: 'left', color: 'inherit', cursor: 'pointer', width: '100%' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: C.surface2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Users size={15} color={C.orange} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{c.name}</div>
+                      {c.description && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>{c.description}</div>}
+                    </div>
+                    <ChevronRight size={16} color={C.textSecondary} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
