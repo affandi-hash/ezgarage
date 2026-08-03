@@ -3,11 +3,12 @@ import { useParams } from 'react-router-dom'
 import {
   Search, CheckCircle, Clock, Wrench, Car, Loader2, AlertCircle,
   FileText, Upload, ThumbsUp, MessageCircle, ChevronDown, ChevronUp, X,
-  CreditCard, QrCode, Landmark,
+  CreditCard, QrCode, Landmark, ImageIcon,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const RAUDHAHPAY_CREATE_PAYMENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/raudhahpay-create-payment`
+const PORTAL_JOB_PHOTOS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/portal-job-photos`
 
 const C = {
   bg: '#0E0E0E',
@@ -44,6 +45,15 @@ interface PortalJob {
   inv_paid: number | null
   inv_status: string | null
   inv_lines: Array<{ description: string; qty: number; unit_price: number; total: number }> | null
+  has_photos: boolean
+}
+
+interface PortalJobPhoto {
+  id: string
+  url: string
+  caption: string | null
+  category: string | null
+  created_at: string
 }
 
 interface PortalResult {
@@ -411,6 +421,107 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
   )
 }
 
+// ─── Photo Gallery ─────────────────────────────────────────────────────────────
+
+function PhotoLightbox({ photos, index, onClose, onNav }: { photos: PortalJobPhoto[]; index: number; onClose: () => void; onNav: (i: number) => void }) {
+  const photo = photos[index]
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 110, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', cursor: 'pointer', color: '#fff', padding: 6 }}>
+        <X size={22} />
+      </button>
+      {photos.length > 1 && (
+        <button
+          onClick={() => onNav((index - 1 + photos.length) % photos.length)}
+          style={{ position: 'absolute', left: 12, background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 999, cursor: 'pointer', color: '#fff', padding: 10 }}
+        >
+          ‹
+        </button>
+      )}
+      <div style={{ maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+        <img src={photo.url} alt={photo.caption ?? 'Job photo'} style={{ maxWidth: '90vw', maxHeight: '75vh', objectFit: 'contain', borderRadius: 8 }} />
+        {(photo.caption || photo.category) && (
+          <div style={{ color: C.textPrimary, fontSize: 13, textAlign: 'center' }}>
+            {photo.category && <span style={{ color: C.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11, marginRight: 8 }}>{photo.category}</span>}
+            {photo.caption}
+          </div>
+        )}
+      </div>
+      {photos.length > 1 && (
+        <button
+          onClick={() => onNav((index + 1) % photos.length)}
+          style={{ position: 'absolute', right: 12, background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 999, cursor: 'pointer', color: '#fff', padding: 10 }}
+        >
+          ›
+        </button>
+      )}
+    </div>
+  )
+}
+
+function PhotoGallery({ jobId, plate, phone, icFirst6 }: { jobId: string; plate: string; phone: string; icFirst6: string }) {
+  const [photos, setPhotos] = useState<PortalJobPhoto[] | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(PORTAL_JOB_PHOTOS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+          body: JSON.stringify({ job_id: jobId, plate, phone, ic_first6: icFirst6 }),
+        })
+        const data = await res.json()
+        if (cancelled) return
+        if (!res.ok) { setError(data.error || 'Could not load photos.'); setLoading(false); return }
+        setPhotos(data.photos ?? [])
+      } catch {
+        if (!cancelled) setError('Network error loading photos.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [jobId, plate, phone, icFirst6])
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.textSecondary }}>
+        <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Loading photos…
+      </div>
+    )
+  }
+  if (error) {
+    return <div style={{ fontSize: 12, color: C.red }}>{error}</div>
+  }
+  if (!photos || photos.length === 0) return null
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.textSecondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+        <ImageIcon size={12} /> Photos
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {photos.map((p, i) => (
+          <div
+            key={p.id}
+            onClick={() => setLightboxIndex(i)}
+            style={{ width: 84, height: 84, borderRadius: 8, overflow: 'hidden', cursor: 'pointer', border: `1px solid ${C.border}`, flexShrink: 0 }}
+          >
+            <img src={p.url} alt={p.caption ?? 'Job photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+        ))}
+      </div>
+      {lightboxIndex !== null && (
+        <PhotoLightbox photos={photos} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onNav={setLightboxIndex} />
+      )}
+    </div>
+  )
+}
+
 // ─── Job Card ─────────────────────────────────────────────────────────────────
 
 function JobCard({ job, plate, phone, icFirst6, tenantSlug }: { job: PortalJob; plate: string; phone: string; icFirst6: string; tenantSlug?: string }) {
@@ -509,6 +620,10 @@ function JobCard({ job, plate, phone, icFirst6, tenantSlug }: { job: PortalJob; 
                 </div>
               )}
             </div>
+
+            {job.has_photos && (
+              <PhotoGallery jobId={job.id} plate={plate} phone={phone} icFirst6={icFirst6} />
+            )}
 
             {/* Estimate Approval */}
             {canApproveEstimate && (
