@@ -142,6 +142,24 @@ export function EspRegistrationPage() {
     if (data?.success) setStatusText({ status: data.status, validUntil: data.valid_until })
   }
 
+  // The only way back to a blank form once a session is cached -- without
+  // this, anyone reopening the same link on the same device (a shared
+  // front-desk tablet handling walk-ins, or just revisiting later) is stuck
+  // staring at their earlier registration's payment/status screen forever.
+  // This only clears local session state; the registered member and their
+  // invoice are untouched and still collectible later via Invoices.
+  function startNewRegistration() {
+    sessionStorage.removeItem(sessionKey)
+    setSession(null)
+    setStatusText(null)
+    setReceipt(null)
+    setReceiptError('')
+    setPayError('')
+    setSubmitError('')
+    setFullName(''); setPhone(''); setEmail(''); setIcNumber('')
+    setVehicles([emptyVehicle()])
+  }
+
   // Once membership goes active, fetch the receipt raudhahpay-webhook already
   // generated -- there was previously no way for this public, unauthenticated
   // page to reach it (payment-proofs/portal-uploads are both
@@ -472,6 +490,13 @@ export function EspRegistrationPage() {
               {submitting ? 'Registering…' : `Register -- RM ${config.membership_fee.toFixed(2)}`}
             </button>
           </form>
+        )}
+
+        {session && (
+          <button type="button" onClick={startNewRegistration}
+            style={{ marginTop: 14, width: '100%', background: 'transparent', border: 'none', color: C.textSecondary, fontSize: 12, textDecoration: 'underline', cursor: 'pointer' }}>
+            Not you? Start a new registration
+          </button>
         )}
       </div>
     </div>
