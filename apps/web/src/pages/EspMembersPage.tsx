@@ -224,6 +224,57 @@ function MoveMemberModal({ member, communities, onClose, onSaved }: { member: Me
   )
 }
 
+function AssignNumberModal({ member, onClose, onSaved }: { member: Member; onClose: () => void; onSaved: () => void }) {
+  const [last4, setLast4] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function submit() {
+    if (!/^[0-9]{1,6}$/.test(last4)) { setErr('Enter digits only.'); return }
+    setSaving(true); setErr('')
+    const { data, error } = await supabase.rpc('esp_assign_membership_number', {
+      p_member_id: member.id, p_new_last4: last4,
+    })
+    setSaving(false)
+    if (error) { setErr(error.message); return }
+    if (data?.error) {
+      const msgs: Record<string, string> = {
+        number_taken: 'That number is already taken by another member.',
+        invalid_number: 'Enter digits only.',
+        same_number: 'That is already this member\'s number.',
+      }
+      setErr(msgs[data.error] ?? data.error.replace(/_/g, ' '))
+      return
+    }
+    toast.success(`Renumbered to ${data.new_membership_number}`)
+    onSaved()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 14, width: '100%', maxWidth: 380 }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #2A2A2A', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#F0F0F0' }}>Assign a Specific Number</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer' }}><X size={16} /></button>
+        </div>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 12, color: '#A0A0A0' }}>
+            {member.customers?.full_name ?? 'This member'} is currently <strong style={{ color: '#F0F0F0' }}>#{member.membership_number}</strong>. Enter the new number (community/year stay the same).
+          </div>
+          <div>
+            <label style={labelStyle}>New Number *</label>
+            <input style={inputStyle} value={last4} onChange={e => setLast4(e.target.value.replace(/\D/g, ''))} placeholder="e.g. 0035" maxLength={6} />
+          </div>
+          {err && <div style={{ fontSize: 12, color: '#EF4444' }}>{err}</div>}
+          <button onClick={submit} disabled={saving || !last4} style={{ marginTop: 6, padding: '10px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 700, cursor: (saving || !last4) ? 'not-allowed' : 'pointer', opacity: (saving || !last4) ? 0.6 : 1 }}>
+            {saving ? 'Saving…' : 'Confirm'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function EspMembersPage() {
   const { user } = useAuthStore()
   const [communities, setCommunities] = useState<Community[]>([])
@@ -232,6 +283,7 @@ export function EspMembersPage() {
   const [loading, setLoading] = useState(true)
   const [showRegister, setShowRegister] = useState(false)
   const [moveMember, setMoveMember] = useState<Member | null>(null)
+  const [assignNumberMember, setAssignNumberMember] = useState<Member | null>(null)
 
   function load() {
     if (!user?.tenant_id) return
@@ -339,6 +391,9 @@ export function EspMembersPage() {
                         <button onClick={() => setMoveMember(m)} title="Registered under the wrong community?" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, fontSize: 11, backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#A0A0A0', cursor: 'pointer' }}>
                           <ArrowLeftRight size={12} /> Move
                         </button>
+                        <button onClick={() => setAssignNumberMember(m)} title="Assign a specific membership number" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, fontSize: 11, backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#A0A0A0', cursor: 'pointer' }}>
+                          # Number
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -355,6 +410,10 @@ export function EspMembersPage() {
 
       {moveMember && (
         <MoveMemberModal member={moveMember} communities={communities} onClose={() => setMoveMember(null)} onSaved={() => { setMoveMember(null); load() }} />
+      )}
+
+      {assignNumberMember && (
+        <AssignNumberModal member={assignNumberMember} onClose={() => setAssignNumberMember(null)} onSaved={() => { setAssignNumberMember(null); load() }} />
       )}
     </div>
   )
