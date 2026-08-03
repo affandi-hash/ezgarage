@@ -39,7 +39,10 @@ interface VehicleWithRelations {
   customer_id: string
   is_internal_fleet?: boolean
   created_at: string
-  customers: { full_name: string; phone: string }
+  // Supabase's embed API returns this as a single object for an unambiguous
+  // many-to-one FK, but as an array in some join configurations -- handle
+  // both defensively rather than assume the single-object shape always holds.
+  customers: { full_name: string; phone: string } | { full_name: string; phone: string }[] | null
   jobs: Array<{
     id: string
     job_number: string
@@ -93,6 +96,12 @@ const LONG_DUE_DAYS = 7
 
 function getActiveJob(jobs: VehicleWithRelations['jobs']) {
   return jobs.find((j) => ACTIVE_STATUSES.includes(j.status)) ?? null
+}
+
+function getCustomer(v: VehicleWithRelations): { full_name: string; phone: string } | null {
+  const c = v.customers
+  if (!c) return null
+  return Array.isArray(c) ? (c[0] ?? null) : c
 }
 
 function getDaysInGarage(checkedInAt: string): number {
@@ -872,7 +881,7 @@ function VehicleListItem({
             {vehicle.year ? ` (${vehicle.year})` : ''}
           </p>
           <p style={{ fontSize: 12, color: '#A0A0A0', margin: 0, marginTop: 2 }}>
-            {vehicle.customers?.full_name ?? '—'}
+            {getCustomer(vehicle)?.full_name ?? '—'}
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -919,7 +928,7 @@ function OverviewTab({
       label: 'Customer',
       value: (
         <span style={{ fontWeight: 500, color: '#F15A22' }}>
-          {vehicle.customers?.full_name ?? '—'}
+          {getCustomer(vehicle)?.full_name ?? '—'}
         </span>
       ),
     },
@@ -1352,7 +1361,7 @@ function VehicleDetail({
         <p style={{ fontSize: 14, color: '#A0A0A0', margin: 0 }}>
           {vehicle.make} {vehicle.model}
           {vehicle.year ? ` · ${vehicle.year}` : ''} ·{' '}
-          <span style={{ color: '#F15A22' }}>{vehicle.customers?.full_name ?? '—'}</span>
+          <span style={{ color: '#F15A22' }}>{getCustomer(vehicle)?.full_name ?? '—'}</span>
         </p>
       </div>
 
@@ -1477,10 +1486,12 @@ export function VehiclesPage() {
     return vehicles.filter((v) => {
       if (search.trim()) {
         const q = search.trim().toLowerCase()
+        const customer = getCustomer(v)
         const matchPlate = v.plate_number.toLowerCase().includes(q)
-        const matchCustomer = v.customers?.full_name?.toLowerCase().includes(q)
+        const matchCustomer = !!customer?.full_name?.toLowerCase().includes(q)
+        const matchPhone = !!customer?.phone?.includes(q)
         const matchModel = `${v.make} ${v.model}`.toLowerCase().includes(q)
-        if (!matchPlate && !matchCustomer && !matchModel) return false
+        if (!matchPlate && !matchCustomer && !matchPhone && !matchModel) return false
       }
 
       if (typeFilter !== 'all' && v.vehicle_type !== typeFilter) return false
@@ -1548,7 +1559,7 @@ export function VehiclesPage() {
             <Search size={14} style={{ color: '#A0A0A0', flexShrink: 0 }} />
             <input
               type="text"
-              placeholder="Plate, customer, model…"
+              placeholder="Plate, customer, phone, model…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 14, color: '#F0F0F0' }}
