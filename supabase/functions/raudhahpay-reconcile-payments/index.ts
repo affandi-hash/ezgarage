@@ -95,21 +95,27 @@ Deno.serve(async (req) => {
         const apiKey = inv.tenants?.raudhahpay_api_key || Deno.env.get('RAUDHAHPAY_API_KEY')!
         const webhookSecret = inv.tenants?.raudhahpay_webhook_secret || Deno.env.get('RAUDHAHPAY_WEBHOOK_SECRET')!
 
-        const queryPayload = inv.raudhahpay_payment_session_id
-          ? { action: 'get-payment', payment_session_id: inv.raudhahpay_payment_session_id }
-          : { action: 'get-payment-by-reference', reference_number: inv.raudhahpay_reference_number }
-
+        // RaudhahPay's published docs describe get-payment/get-payment-by-
+        // reference/list-payments -- none of those exist on the live API.
+        // Its own 400 response for an unknown action self-documents the
+        // real one: check-bill, keyed by bill_id (the one identifier that
+        // reliably populates -- payment_session_id never comes back from
+        // create-bill despite being in the documented response schema).
         const statusRes = await fetch(RAUDHAHPAY_BASE_URL, {
           method: 'POST',
           headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(queryPayload),
+          body: JSON.stringify({ action: 'check-bill', bill_id: inv.raudhahpay_bill_id }),
         })
         if (!statusRes.ok) {
-          errors.push({ invoice_id: inv.id, error: `status query failed: ${statusRes.status}` })
+          const statusErrBody = await statusRes.text().catch(() => '')
+          errors.push({ invoice_id: inv.id, error: `status query failed: ${statusRes.status} ${statusErrBody}`.slice(0, 300) })
           continue
         }
         const statusData = await statusRes.json()
-        if (statusData.status !== 'success') continue // still pending, or genuinely failed/expired -- nothing to reconcile
+        // Real webhook deliveries (see webhook_debug_log) use status "paid"
+        // for a successful charge, not the documented "success" -- going by
+        // observed reality here too, not the docs.
+        if (statusData.status !== 'paid') continue // still pending, or genuinely failed/expired -- nothing to reconcile
 
         // Replay through the real webhook handler rather than duplicating
         // its receipt-writing/PDF/invoice-update logic here. Sign it
