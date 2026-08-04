@@ -153,6 +153,7 @@ interface JobRow extends Job {
   plate_number?: string | null
   customer_name?: string | null
   tenant_id?: string | null
+  invoice_id?: string | null
 }
 
 interface CustomerOption { id: string; full_name: string; phone: string }
@@ -1511,6 +1512,7 @@ interface VehicleCardProps {
   onAddNote: (job: JobRow) => void
   onView: (job: JobRow) => void
   onDeliver: (job: JobRow) => void
+  onRevertToReady: (job: JobRow) => void
 }
 
 function useElapsed(checkedInAt: string | null) {
@@ -1531,7 +1533,7 @@ function useElapsed(checkedInAt: string | null) {
   return `${mins}m`
 }
 
-function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, onUpdateStatus, onAddNote, onView, onDeliver }: VehicleCardProps) {
+function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, onUpdateStatus, onAddNote, onView, onDeliver, onRevertToReady }: VehicleCardProps) {
   const plate = job.vehicles?.plate_number ?? '—'
   const make = job.vehicles?.make ?? ''
   const model = job.vehicles?.model ?? ''
@@ -1630,6 +1632,12 @@ function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, o
             Delivered
           </button>
         )}
+        {job.status === 'delivered' && !job.invoice_id && (
+          <button onClick={() => onRevertToReady(job)} title="No invoice was created for this job -- move it back to Ready to invoice it"
+            style={{ flex: 1, padding: '5px 0', border: '1px solid #F59E0B', borderRadius: 6, backgroundColor: 'rgba(245,158,11,0.1)', color: '#F59E0B', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+            Revert to Ready
+          </button>
+        )}
         <button onClick={() => onAddNote(job)}
           style={{ flex: 1, padding: '5px 0', border: '1px solid #2A2A2A', borderRadius: 6, backgroundColor: 'transparent', color: '#A0A0A0', fontSize: 11, cursor: 'pointer' }}>
           Add Note
@@ -1647,7 +1655,7 @@ function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, o
 // ---------------------------------------------------------------------------
 // Kanban column
 // ---------------------------------------------------------------------------
-function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap, onUpdateStatus, onAddNote, onView, onDeliver }: {
+function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap, onUpdateStatus, onAddNote, onView, onDeliver, onRevertToReady }: {
   status: JobStatus; jobs: JobRow[]; userId: string; userRole: string
   pendingMap: Map<string, StatusChangeRequest>
   rejectedMap: Map<string, StatusChangeRequest>
@@ -1655,6 +1663,7 @@ function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap,
   onAddNote: (job: JobRow) => void
   onView: (job: JobRow) => void
   onDeliver: (job: JobRow) => void
+  onRevertToReady: (job: JobRow) => void
 }) {
   const cfg = STATUS_CONFIG[status]
   const count = jobs.length
@@ -1677,6 +1686,7 @@ function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap,
               pendingRequest={pendingMap.get(job.id) ?? null}
               rejectedRequest={rejectedMap.get(job.id) ?? null}
               onUpdateStatus={onUpdateStatus} onAddNote={onAddNote} onView={onView} onDeliver={onDeliver}
+              onRevertToReady={onRevertToReady}
             />
           ))
         )}
@@ -1783,7 +1793,7 @@ export function WorkshopBoardPage() {
           internal_notes, next_action, checked_in_at, estimated_cost, status_updated_at,
           customer_complaint, diagnosis_summary, branch_id, tenant_id, customer_id, vehicle_id,
           assigned_foreman_id, assigned_mechanic_id, mechanic_ids, source, arrival_mode, payment_status,
-          archived_at, archived_by,
+          archived_at, archived_by, invoice_id,
           customers!customer_id(full_name, phone),
           vehicles!vehicle_id(plate_number, make, model, year, vehicle_type, is_internal_fleet),
           assigned_foreman:users!assigned_foreman_id(full_name),
@@ -2047,10 +2057,32 @@ export function WorkshopBoardPage() {
   }
 
   const handleDeliver = async (job: JobRow) => {
+    // A job left this gate entirely before -- 'ready'->'delivered' was the
+    // only status transition in the whole board with no invoice check and
+    // no approval gate, and real jobs slipped through it uninvoiced (going
+    // back weeks) before anyone noticed. Block outright rather than just
+    // warn -- an invoice is easy to create from here and near-impossible to
+    // backfill once the job drops out of the ready list.
+    if (!job.invoice_id) {
+      toast('This job has no invoice yet. Create one from Invoices before marking it Delivered.', 'error')
+      return
+    }
     if (!confirm(`Mark ${job.plate_number} as Delivered?`)) return
     await supabase.from('jobs').update({ status: 'delivered', updated_at: new Date().toISOString() }).eq('id', job.id)
     logAudit({ action: 'status_change:delivered', module: 'Job', record_id: job.id, record_type: 'job', details: { job_number: job.job_number, plate: job.plate_number, customer: job.customer_name, from_status: 'ready', to_status: 'delivered' }, branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id })
     setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'delivered' } : j))
+  }
+
+  // Recovery path for jobs that already slipped through before the guard
+  // above existed -- moves a delivered-but-uninvoiced job back to Ready so
+  // it reappears in Invoices' job picker (which only lists 'ready' jobs).
+  const handleRevertToReady = async (job: JobRow) => {
+    if (!confirm(`Move ${job.plate_number} back to Ready so it can be invoiced?`)) return
+    const { error } = await supabase.from('jobs').update({ status: 'ready', updated_at: new Date().toISOString() }).eq('id', job.id)
+    if (error) { toast(error.message, 'error'); return }
+    logAudit({ action: 'status_change:revert_to_ready', module: 'Job', record_id: job.id, record_type: 'job', details: { job_number: job.job_number, plate: job.plate_number, customer: job.customer_name, from_status: 'delivered', to_status: 'ready', reason: 'delivered_without_invoice' }, branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id })
+    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'ready' } : j))
+    toast('Moved back to Ready')
   }
 
   const filteredJobs = jobs.filter((j) => {
@@ -2133,6 +2165,7 @@ export function WorkshopBoardPage() {
                   onAddNote={setNoteModal}
                   onView={handleViewJob}
                   onDeliver={handleDeliver}
+                  onRevertToReady={handleRevertToReady}
                 />
               ))}
             </div>
