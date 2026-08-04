@@ -60,6 +60,12 @@ interface Job {
   final_amount?: number
 }
 
+interface EspMembershipInfo {
+  membership_number: string
+  status: string
+  community_name: string
+}
+
 type StatusFilter = 'all' | 'active' | 'inactive'
 type TypeFilter = 'all' | 'individual' | 'corporate'
 type DetailTab = 'overview' | 'vehicles' | 'jobs' | 'notes'
@@ -213,10 +219,12 @@ function Avatar({ name, size = 36 }: { name: string; size?: number }) {
 
 function CustomerRow({
   customer,
+  esp,
   selected,
   onClick,
 }: {
   customer: Customer
+  esp?: EspMembershipInfo
   selected: boolean
   onClick: () => void
 }) {
@@ -262,6 +270,14 @@ function CustomerRow({
           >
             {typeLabel(customer.customer_type)}
           </span>
+          {esp && (
+            <span
+              title={`${esp.community_name} -- #${esp.membership_number}`}
+              style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, background: esp.status === 'active' ? '#14532d' : '#3f2d0a', color: esp.status === 'active' ? '#86efac' : '#fbbf24' }}
+            >
+              ESP{esp.status !== 'active' ? ' (pending)' : ''}
+            </span>
+          )}
         </div>
       </div>
       <ChevronRight size={14} style={{ color: '#2A2A2A' }} />
@@ -295,10 +311,12 @@ function InfoField({
 
 function OverviewTab({
   customer,
+  esp,
   onUpdate,
   onDelete,
 }: {
   customer: Customer
+  esp?: EspMembershipInfo
   onUpdate: (updated: Customer) => void
   onDelete: () => void
 }) {
@@ -432,6 +450,21 @@ function OverviewTab({
             >
               {customer.customer_status === 'active' ? 'Active' : 'Inactive'}
             </span>
+            {esp && (
+              <span
+                title={`Membership #${esp.membership_number}`}
+                style={{
+                  fontSize: 12,
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  fontWeight: 500,
+                  background: esp.status === 'active' ? '#14532d' : '#3f2d0a',
+                  color: esp.status === 'active' ? '#86efac' : '#fbbf24',
+                }}
+              >
+                ESP Member -- {esp.community_name}{esp.status !== 'active' ? ' (pending)' : ''}
+              </span>
+            )}
           </div>
         </div>
         {!editing && (
@@ -1002,11 +1035,13 @@ function NotesTab({
 
 function CustomerDetail({
   customer,
+  esp,
   branchId,
   onUpdate,
   onDelete,
 }: {
   customer: Customer
+  esp?: EspMembershipInfo
   branchId: string
   onUpdate: (c: Customer) => void
   onDelete: () => void
@@ -1053,7 +1088,7 @@ function CustomerDetail({
 
       {/* Tab content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-        {tab === 'overview' && <OverviewTab customer={customer} onUpdate={onUpdate} onDelete={onDelete} />}
+        {tab === 'overview' && <OverviewTab customer={customer} esp={esp} onUpdate={onUpdate} onDelete={onDelete} />}
         {tab === 'vehicles' && <VehiclesTab customerId={customer.id} branchId={branchId} />}
         {tab === 'jobs' && <JobsTab customerId={customer.id} />}
         {tab === 'notes' && <NotesTab customer={customer} onUpdate={onUpdate} />}
@@ -1311,6 +1346,23 @@ export function CustomersPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showNewPanel, setShowNewPanel] = useState(false)
+  const [espByCustomer, setEspByCustomer] = useState<Record<string, EspMembershipInfo>>({})
+
+  async function loadEspMemberships(customerIds: string[]) {
+    if (customerIds.length === 0) return
+    const { data } = await supabase
+      .from('esp_members')
+      .select('customer_id, membership_number, status, esp_communities(name)')
+      .in('customer_id', customerIds)
+    if (!data) return
+    setEspByCustomer(prev => {
+      const next = { ...prev }
+      for (const row of data as unknown as { customer_id: string; membership_number: string; status: string; esp_communities: { name: string } | null }[]) {
+        next[row.customer_id] = { membership_number: row.membership_number, status: row.status, community_name: row.esp_communities?.name ?? '' }
+      }
+      return next
+    })
+  }
 
   const loadCustomers = useCallback(async () => {
     if (!branchId) return
@@ -1328,6 +1380,7 @@ export function CustomersPage() {
     const rows = (data as Customer[]) ?? []
     setCustomers(rows)
     setHasMore(rows.length === PAGE_SIZE)
+    loadEspMemberships(rows.map(r => r.id))
   }, [branchId])
 
   async function loadMore() {
@@ -1345,6 +1398,7 @@ export function CustomersPage() {
     setCustomers(cs => [...cs, ...rows])
     setPage(nextPage)
     setHasMore(rows.length === PAGE_SIZE)
+    loadEspMemberships(rows.map(r => r.id))
   }
 
   useEffect(() => {
@@ -1501,6 +1555,7 @@ export function CustomersPage() {
             <CustomerRow
               key={c.id}
               customer={c}
+              esp={espByCustomer[c.id]}
               selected={selectedId === c.id}
               onClick={() => setSelectedId(c.id)}
             />
@@ -1529,6 +1584,7 @@ export function CustomersPage() {
           <CustomerDetail
             key={selectedCustomer.id}
             customer={selectedCustomer}
+            esp={espByCustomer[selectedCustomer.id]}
             branchId={branchId}
             onUpdate={handleCustomerUpdate}
             onDelete={handleCustomerDeleted}
