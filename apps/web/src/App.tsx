@@ -37,6 +37,7 @@ import { PrintInvoicePage } from '@/pages/PrintInvoicePage'
 import { PrintReceiptPage } from '@/pages/PrintReceiptPage'
 import { EspRegistrationPage } from '@/pages/EspRegistrationPage'
 import { EspCommunityPickerPage } from '@/pages/EspCommunityPickerPage'
+import { EspMemberLoginPage } from '@/pages/EspMemberLoginPage'
 import { EspCommunitySettingsPage } from '@/pages/EspCommunitySettingsPage'
 import { EspMembersPage } from '@/pages/EspMembersPage'
 import { EspReportsPage } from '@/pages/EspReportsPage'
@@ -96,6 +97,7 @@ export default function App() {
             never collides with the existing protected staff route at
             /esp/communities. */}
         <Route path="/esp/join/:tenantSlug" element={<EspCommunityPickerPage />} />
+        <Route path="/esp/login/:tenantSlug" element={<EspMemberLoginPage />} />
         <Route path="/esp/:communitySlug" element={<EspRegistrationPage />} />
         <Route path="/print/invoice/:id" element={<ProtectedRoute><PrintInvoicePage /></ProtectedRoute>} />
         <Route path="/print/receipt/:id" element={<ProtectedRoute><PrintReceiptPage /></ProtectedRoute>} />

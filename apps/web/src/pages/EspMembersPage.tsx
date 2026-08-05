@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, Loader2, Plus, RefreshCw, X, ArrowLeftRight, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react'
+import { Users, Loader2, Plus, RefreshCw, X, ArrowLeftRight, ArrowUp, ArrowDown, ChevronsUpDown, KeyRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -350,6 +350,18 @@ export function EspMembersPage() {
     load()
   }
 
+  // The only way back in after a forgotten portal password -- verify the
+  // member's identity yourself (in person, or IC digits over a call) before
+  // doing this. Nulls the password so they can set a new one via "First
+  // time logging in?" on the member login page.
+  async function resetPassword(m: Member) {
+    if (!confirm(`Reset the portal password for ${m.customers?.full_name ?? m.membership_number}? Make sure you've verified their identity first.`)) return
+    const { data, error } = await supabase.rpc('esp_reset_member_password', { p_member_id: m.id })
+    if (error) { toast.error(error.message); return }
+    if (data?.error) { toast.error(data.error.replace(/_/g, ' ')); return }
+    toast.success('Password reset -- they can set a new one via "First time logging in?"')
+  }
+
   function sortValue(m: Member, key: SortKey): string {
     switch (key) {
       case 'community': return communities.find(c => c.id === m.community_id)?.name ?? ''
@@ -447,6 +459,9 @@ export function EspMembersPage() {
                         </button>
                         <button onClick={() => setAssignNumberMember(m)} title="Assign a specific membership number" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, fontSize: 11, backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#A0A0A0', cursor: 'pointer' }}>
                           # Number
+                        </button>
+                        <button onClick={() => resetPassword(m)} title="Reset their member portal password (verify identity first)" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, fontSize: 11, backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#A0A0A0', cursor: 'pointer' }}>
+                          <KeyRound size={12} /> Reset Password
                         </button>
                       </div>
                     </td>
