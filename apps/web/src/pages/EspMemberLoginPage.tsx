@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle } from 'lucide-react'
+import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+
+const RAUDHAHPAY_CREATE_PAYMENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/raudhahpay-create-payment`
+const ESP_RECEIPT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/esp-receipt`
 
 // Same public-page color convention as EspRegistrationPage.tsx / CustomerPortalPage.tsx.
 const C = {
@@ -13,6 +16,7 @@ const C = {
   textPrimary: '#F0F0F0',
   textSecondary: '#A0A0A0',
   green: '#22C55E',
+  blue: '#3B82F6',
   red: '#EF4444',
 }
 
@@ -22,11 +26,48 @@ interface TenantConfig {
   whatsapp_number: string | null
 }
 
+interface Discounts {
+  car_full_pct: number
+  car_selected_pct: number
+  bike_full_pct: number
+  bike_selected_pct: number
+}
+
+interface Vehicle {
+  id: string
+  plate_number: string
+  make: string | null
+  model: string | null
+  vehicle_type: 'car' | 'bike'
+}
+
+interface ServiceRecord {
+  job_number: string
+  service_type: string
+  status: string
+  checked_in_at: string
+  final_amount: number | null
+  plate_number: string
+}
+
+interface ReceiptMeta {
+  receipt_id: string
+  amount: number
+  payment_date: string
+  payment_method: string
+  invoice_number: string
+}
+
 interface Membership {
   membership_number: string
   status: string
   valid_until: string | null
   community_name: string
+  community_slug: string
+  discounts: Discounts
+  vehicles: Vehicle[]
+  service_history: ServiceRecord[]
+  receipts: ReceiptMeta[]
 }
 
 interface Session {
@@ -44,6 +85,260 @@ function inputStyle(): React.CSSProperties {
 function labelStyle(): React.CSSProperties {
   return { display: 'block', fontSize: 11, color: C.textSecondary, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }
 }
+function sectionLabelStyle(): React.CSSProperties {
+  return { fontSize: 11, color: C.textSecondary, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }
+}
+function formatDate(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+function daysUntil(iso: string | null): number | null {
+  if (!iso) return null
+  return Math.ceil((new Date(iso).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+}
+
+// ─── Add Vehicle ────────────────────────────────────────────────────────────
+
+function AddVehicleForm({ membershipNumber, phone, password, tenantSlug, onAdded }: { membershipNumber: string; phone: string; password: string; tenantSlug?: string; onAdded: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [plate, setPlate] = useState('')
+  const [vehicleType, setVehicleType] = useState<'car' | 'bike'>('bike')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function submit() {
+    if (!plate.trim()) return
+    setSaving(true); setErr('')
+    const { data, error } = await supabase.rpc('esp_member_add_vehicle', {
+      p_phone: phone, p_password: password, p_membership_number: membershipNumber,
+      p_plate_number: plate.trim(), p_vehicle_type: vehicleType, p_tenant_slug: tenantSlug || null,
+    })
+    setSaving(false)
+    if (error) { setErr('Something went wrong.'); return }
+    if (data?.error) {
+      const msgs: Record<string, string> = { plate_already_registered_to_another_customer: 'That plate is already registered to someone else.' }
+      setErr(msgs[data.error] ?? 'Could not add vehicle.')
+      return
+    }
+    setPlate(''); setOpen(false)
+    onAdded()
+  }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px dashed ${C.border}`, borderRadius: 8, color: C.textSecondary, fontSize: 12, padding: '7px 12px', cursor: 'pointer' }}>
+        <Plus size={13} /> Add Vehicle
+      </button>
+    )
+  }
+  return (
+    <div style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input style={{ ...inputStyle(), flex: 2 }} value={plate} onChange={e => setPlate(e.target.value.toUpperCase())} placeholder="Plate Number" />
+        <select style={{ ...inputStyle(), flex: 1 }} value={vehicleType} onChange={e => setVehicleType(e.target.value as 'car' | 'bike')}>
+          <option value="bike">Bike</option>
+          <option value="car">Car</option>
+        </select>
+      </div>
+      {err && <div style={{ fontSize: 12, color: C.red }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" onClick={submit} disabled={saving} style={{ flex: 1, padding: '8px 0', borderRadius: 6, background: C.orange, border: 'none', color: '#fff', fontSize: 12, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer' }}>
+          {saving ? 'Adding…' : 'Save'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} style={{ padding: '8px 14px', borderRadius: 6, background: 'transparent', border: `1px solid ${C.border}`, color: C.textSecondary, fontSize: 12, cursor: 'pointer' }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Membership Card ────────────────────────────────────────────────────────
+
+function MembershipCard({ m, phone, password, tenantSlug, onChanged }: { m: Membership; phone: string; password: string; tenantSlug?: string; onChanged: () => void }) {
+  const [receiptUrls, setReceiptUrls] = useState<Record<string, string> | null>(null)
+  const [receiptsLoading, setReceiptsLoading] = useState(false)
+  const [renewing, setRenewing] = useState(false)
+  const [renewError, setRenewError] = useState('')
+
+  const daysLeft = daysUntil(m.valid_until)
+  const expiringSoon = m.status === 'active' && daysLeft !== null && daysLeft <= 30
+  const expired = m.status === 'expired'
+  const lastService = m.service_history[0]
+  const daysSinceService = lastService ? Math.floor((Date.now() - new Date(lastService.checked_in_at).getTime()) / (1000 * 60 * 60 * 24)) : null
+  const dueForCheckup = daysSinceService !== null && daysSinceService > 90
+
+  async function loadReceipts() {
+    if (receiptUrls || receiptsLoading || m.receipts.length === 0) return
+    setReceiptsLoading(true)
+    try {
+      const res = await fetch(ESP_RECEIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ phone, password }),
+      })
+      const data = await res.json()
+      if (res.ok && data.receipts) {
+        const map: Record<string, string> = {}
+        for (const r of data.receipts) map[r.receipt_id] = r.url
+        setReceiptUrls(map)
+      }
+    } finally {
+      setReceiptsLoading(false)
+    }
+  }
+
+  async function renew() {
+    setRenewing(true); setRenewError('')
+    const { data, error } = await supabase.rpc('esp_member_renew', {
+      p_phone: phone, p_password: password, p_membership_number: m.membership_number, p_tenant_slug: tenantSlug || null,
+    })
+    if (error || data?.error) {
+      setRenewing(false)
+      setRenewError(data?.error === 'community_inactive' ? 'This community is no longer accepting renewals.' : 'Could not create renewal invoice.')
+      return
+    }
+    try {
+      const res = await fetch(RAUDHAHPAY_CREATE_PAYMENT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ invoice_id: data.invoice_id, payment_method: 'duitnow', redirect_url: window.location.href, phone, password }),
+      })
+      const payData = await res.json()
+      if (!res.ok) { setRenewing(false); setRenewError(payData.error || 'Could not start payment.'); return }
+      window.location.href = payData.payment_url
+    } catch {
+      setRenewing(false)
+      setRenewError('Network error starting payment.')
+    }
+  }
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+      {/* Membership card header */}
+      <div style={{ padding: 20, background: `linear-gradient(135deg, ${C.orange}22, transparent)` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 13, color: C.textSecondary }}>{m.community_name}</div>
+            <div style={{ fontSize: 19, fontWeight: 700, marginTop: 2, letterSpacing: 0.5 }}>#{m.membership_number}</div>
+          </div>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: 0.5, background: m.status === 'active' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', color: m.status === 'active' ? C.green : '#F59E0B' }}>
+            {m.status === 'active' && <CheckCircle size={11} />}
+            {m.status.replace('_', ' ')}
+          </span>
+        </div>
+        {m.valid_until && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 10 }}>Valid until {formatDate(m.valid_until)}</div>}
+      </div>
+
+      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Expiry / maintenance banner */}
+        {(expiringSoon || expired || dueForCheckup) && (
+          <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#F59E0B' }}>
+            {expired ? 'Your membership has expired -- renew to keep enjoying your discounts.'
+              : expiringSoon ? `Your membership expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'} -- renew below to avoid a gap.`
+              : `It's been ${daysSinceService} days since your last service -- might be due for a checkup.`}
+          </div>
+        )}
+
+        {/* Discounts */}
+        <div>
+          <div style={sectionLabelStyle()}>Your Discounts</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ background: C.surface2, borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 11, color: C.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><Bike size={12} /> Bike</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.orange, marginTop: 4 }}>{m.discounts.bike_full_pct}% off Full Service</div>
+              <div style={{ fontSize: 11, color: C.textSecondary }}>{m.discounts.bike_selected_pct}% off Selected Items</div>
+            </div>
+            <div style={{ background: C.surface2, borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 11, color: C.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><Car size={12} /> Car</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.orange, marginTop: 4 }}>{m.discounts.car_full_pct}% off Full Service</div>
+              <div style={{ fontSize: 11, color: C.textSecondary }}>{m.discounts.car_selected_pct}% off Selected Items</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Vehicles */}
+        <div>
+          <div style={sectionLabelStyle()}>Your Vehicles</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+            {m.vehicles.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.textSecondary }}>No vehicles on file yet.</div>
+            ) : m.vehicles.map(v => (
+              <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.surface2, borderRadius: 8, padding: '8px 12px' }}>
+                {v.vehicle_type === 'bike' ? <Bike size={13} color={C.textSecondary} /> : <Car size={13} color={C.textSecondary} />}
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{v.plate_number}</span>
+                {(v.make || v.model) && <span style={{ fontSize: 12, color: C.textSecondary }}>{v.make} {v.model}</span>}
+              </div>
+            ))}
+          </div>
+          <AddVehicleForm membershipNumber={m.membership_number} phone={phone} password={password} tenantSlug={tenantSlug} onAdded={onChanged} />
+        </div>
+
+        {/* Service history */}
+        <div>
+          <div style={sectionLabelStyle()}><WrenchIcon size={12} /> Service History</div>
+          {m.service_history.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.textSecondary }}>No service records yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {m.service_history.map(j => (
+                <div key={j.job_number} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, borderRadius: 8, padding: '8px 12px' }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{j.plate_number} · {j.service_type}</div>
+                    <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(j.checked_in_at)} · {j.job_number}</div>
+                  </div>
+                  {j.final_amount != null && <div style={{ fontSize: 12, fontWeight: 600, color: C.textPrimary }}>RM {j.final_amount.toFixed(2)}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Receipts */}
+        <div>
+          <div style={sectionLabelStyle()}><FileText size={12} /> Receipts</div>
+          {m.receipts.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.textSecondary }}>No receipts yet.</div>
+          ) : receiptUrls === null ? (
+            <button type="button" onClick={loadReceipts} disabled={receiptsLoading} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.textSecondary, fontSize: 12, padding: '8px 12px', cursor: 'pointer' }}>
+              {receiptsLoading ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <FileText size={13} />}
+              {receiptsLoading ? 'Loading…' : `View ${m.receipts.length} receipt${m.receipts.length > 1 ? 's' : ''}`}
+            </button>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {m.receipts.map(r => (
+                <a key={r.receipt_id} href={receiptUrls[r.receipt_id]} target="_blank" rel="noreferrer"
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, borderRadius: 8, padding: '8px 12px', textDecoration: 'none', color: 'inherit' }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{r.invoice_number}</div>
+                    <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(r.payment_date)} · {r.payment_method}</div>
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.orange }}>RM {r.amount.toFixed(2)}</div>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Actions: renew + book */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(expiringSoon || expired) && (
+            <button type="button" onClick={renew} disabled={renewing} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: renewing ? 'not-allowed' : 'pointer', opacity: renewing ? 0.7 : 1 }}>
+              <RefreshCw size={14} /> {renewing ? 'Starting payment…' : 'Renew Membership'}
+            </button>
+          )}
+          {renewError && <div style={{ fontSize: 12, color: C.red }}>{renewError}</div>}
+          <a href={`/book/${tenantSlug ?? ''}?esp=${encodeURIComponent(m.membership_number)}&phone=${encodeURIComponent(phone)}${m.vehicles[0] ? `&plate=${encodeURIComponent(m.vehicles[0].plate_number)}` : ''}`}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.blue}`, color: C.blue, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+            <CalendarPlus size={14} /> Book Appointment (Priority)
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Page ─────────────────────────────────────────────────────────────
 
 export function EspMemberLoginPage() {
   const { tenantSlug } = useParams<{ tenantSlug: string }>()
@@ -154,7 +449,7 @@ export function EspMemberLoginPage() {
       <style>{'@keyframes spin { to { transform: rotate(360deg) } }'}</style>
 
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: '16px 24px' }}>
-        <div style={{ maxWidth: 480, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ maxWidth: 560, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 14 }}>
           {config?.logo_url ? (
             <img src={config.logo_url} alt={config.name} style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'contain', background: '#fff' }} />
           ) : (
@@ -169,7 +464,7 @@ export function EspMemberLoginPage() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 480, margin: '0 auto', padding: '32px 24px 60px' }}>
+      <div style={{ maxWidth: 560, margin: '0 auto', padding: '32px 24px 60px' }}>
         {session ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -188,26 +483,12 @@ export function EspMemberLoginPage() {
               </div>
             ) : (
               session.memberships.map(m => (
-                <div key={m.membership_number} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ fontSize: 13, color: C.textSecondary }}>{m.community_name}</div>
-                      <div style={{ fontSize: 17, fontWeight: 700, marginTop: 2 }}>#{m.membership_number}</div>
-                    </div>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: 0.5, background: m.status === 'active' ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', color: m.status === 'active' ? C.green : '#F59E0B' }}>
-                      {m.status === 'active' && <CheckCircle size={11} />}
-                      {m.status.replace('_', ' ')}
-                    </span>
-                  </div>
-                  {m.valid_until && (
-                    <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 10 }}>Valid until {m.valid_until}</div>
-                  )}
-                </div>
+                <MembershipCard key={m.membership_number} m={m} phone={session.phone} password={session.password} tenantSlug={tenantSlug} onChanged={() => doLogin(session.phone, session.password, true)} />
               ))
             )}
           </div>
         ) : mode === 'login' ? (
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, maxWidth: 420, margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
               <Lock size={18} color={C.orange} />
               <div style={{ fontSize: 15, fontWeight: 700 }}>Member Log In</div>
@@ -243,7 +524,7 @@ export function EspMemberLoginPage() {
             </div>
           </div>
         ) : (
-          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, maxWidth: 420, margin: '0 auto' }}>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Set Up Your Password</div>
             <div style={{ fontSize: 12, color: C.textSecondary, marginBottom: 18 }}>Enter your membership number and the phone number you registered with, then choose a password.</div>
             {setupDone ? (

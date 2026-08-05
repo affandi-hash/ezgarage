@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { invoice_id, payment_method, amount: requestedAmount, redirect_url, plate, phone: requestPhone, ic_first6 } = await req.json()
+    const { invoice_id, payment_method, amount: requestedAmount, redirect_url, plate, phone: requestPhone, ic_first6, password } = await req.json()
 
     if (!invoice_id || !['fpx', 'duitnow', 'credit_card'].includes(payment_method)) {
       return new Response(JSON.stringify({ error: 'invoice_id and payment_method ("fpx", "duitnow", or "credit_card") are required' }), { status: 400, headers: corsHeaders })
@@ -49,9 +49,18 @@ Deno.serve(async (req) => {
     // hard invoices->jobs->vehicles join; use the ESP-specific sibling
     // (phone + first-6-IC-digits against esp_members->customers, no
     // plate/vehicle involved) instead. Ordinary job invoices are unaffected.
-    const verifyRpc = invoice.esp_member_id ? 'esp_verify_invoice_access' : 'portal_verify_invoice_access'
+    //
+    // ESP members logged into the password-based member portal (119/120)
+    // may not have an IC on file at all (optional at registration) -- for
+    // them, verify via esp_verify_invoice_access_by_password instead, using
+    // the same password already checked at login rather than asking for IC.
+    const verifyRpc = invoice.esp_member_id
+      ? (password ? 'esp_verify_invoice_access_by_password' : 'esp_verify_invoice_access')
+      : 'portal_verify_invoice_access'
     const verifyArgs = invoice.esp_member_id
-      ? { p_invoice_id: invoice_id, p_phone: requestPhone, p_ic_first6: ic_first6 }
+      ? (password
+          ? { p_invoice_id: invoice_id, p_phone: requestPhone, p_password: password }
+          : { p_invoice_id: invoice_id, p_phone: requestPhone, p_ic_first6: ic_first6 })
       : { p_invoice_id: invoice_id, p_plate: plate, p_phone: requestPhone, p_ic_first6: ic_first6 }
     const { data: verified, error: verifyErr } = await supabase.rpc(verifyRpc, verifyArgs)
     if (verifyErr || !verified) {

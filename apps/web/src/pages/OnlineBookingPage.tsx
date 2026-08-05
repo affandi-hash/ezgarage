@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { CalendarDays, CheckCircle, Loader2, Wrench } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { DatePickerInput, TimePickerInput } from '@/components/ui/DateTimePickers'
@@ -69,7 +69,23 @@ function todayStr() {
 
 export function OnlineBookingPage() {
   const { tenantSlug } = useParams()
-  const [form, setForm] = useState<FormData>(EMPTY_FORM)
+  const [searchParams] = useSearchParams()
+  const [form, setForm] = useState<FormData>(() => {
+    // Pre-filled and tagged as priority when linked from the ESP member
+    // portal's "Book Appointment" button -- there's no schema-level
+    // priority flag (bookings.source/notes exist but create_portal_booking
+    // doesn't expose them), so this just makes it visible to staff in the
+    // one free-text field that does reach the booking.
+    const espMembership = searchParams.get('esp')
+    const phone = searchParams.get('phone')
+    const plate = searchParams.get('plate')
+    return {
+      ...EMPTY_FORM,
+      customer_phone: phone ?? '',
+      vehicle_plate: plate ?? '',
+      notes: espMembership ? `[ESP Member #${espMembership}] ` : '',
+    }
+  })
   const [branches, setBranches] = useState<Branch[]>([])
   const [tenantId, setTenantId] = useState('')
   const [submitting, setSubmitting] = useState(false)
