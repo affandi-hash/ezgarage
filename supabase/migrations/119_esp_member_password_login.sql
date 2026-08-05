@@ -47,9 +47,13 @@ BEGIN
   v_tenant_id := resolve_portal_tenant(p_tenant_slug);
   IF v_tenant_id IS NULL THEN RETURN json_build_object('error', 'tenant_not_found'); END IF;
 
+  -- Hyphen position varies per community's own numbering template (106),
+  -- so normalize both sides (strip anything that isn't a letter/digit)
+  -- rather than require the member to type the exact stored format.
   SELECT id, customer_id INTO v_member
     FROM esp_members
-   WHERE membership_number = p_membership_number AND tenant_id = v_tenant_id
+   WHERE regexp_replace(upper(membership_number), '[^A-Z0-9]', '', 'g') = regexp_replace(upper(p_membership_number), '[^A-Z0-9]', '', 'g')
+     AND tenant_id = v_tenant_id
    LIMIT 1;
   IF NOT FOUND THEN RETURN json_build_object('error', 'not_found'); END IF;
 
