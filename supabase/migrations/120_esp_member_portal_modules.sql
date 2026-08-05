@@ -173,6 +173,7 @@ $$;
 GRANT EXECUTE ON FUNCTION esp_member_renew(text, text, text, text) TO anon, authenticated;
 
 -- ── esp_member_add_vehicle ───────────────────────────────────────────────
+DROP FUNCTION IF EXISTS public.esp_member_add_vehicle(text, text, text, text, text, text, text, text);
 CREATE OR REPLACE FUNCTION public.esp_member_add_vehicle(
   p_phone            text,
   p_password         text,
@@ -181,6 +182,7 @@ CREATE OR REPLACE FUNCTION public.esp_member_add_vehicle(
   p_vehicle_type     text,
   p_make             text DEFAULT NULL,
   p_model            text DEFAULT NULL,
+  p_year             text DEFAULT NULL,
   p_tenant_slug      text DEFAULT NULL
 )
 RETURNS json
@@ -191,6 +193,7 @@ DECLARE
   v_customer  RECORD;
   v_member    RECORD;
   v_plate     TEXT := upper(regexp_replace(p_plate_number, '\s+', '', 'g'));
+  v_year      INTEGER := NULLIF(p_year, '')::INTEGER;
 BEGIN
   v_tenant_id := resolve_portal_tenant(p_tenant_slug);
   IF v_tenant_id IS NULL THEN RETURN json_build_object('error', 'tenant_not_found'); END IF;
@@ -225,8 +228,8 @@ BEGIN
     RETURN json_build_object('error', 'plate_already_registered_to_another_customer');
   END IF;
 
-  INSERT INTO vehicles (tenant_id, branch_id, customer_id, esp_member_id, plate_number, vehicle_type, make, model)
-  VALUES (v_tenant_id, v_member.branch_id, v_customer.id, v_member.id, v_plate, p_vehicle_type, p_make, p_model)
+  INSERT INTO vehicles (tenant_id, branch_id, customer_id, esp_member_id, plate_number, vehicle_type, make, model, year)
+  VALUES (v_tenant_id, v_member.branch_id, v_customer.id, v_member.id, v_plate, p_vehicle_type, p_make, p_model, v_year)
   ON CONFLICT DO NOTHING;
 
   -- Plate already existed for this same customer -- just attach it to this
@@ -240,7 +243,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION esp_member_add_vehicle(text, text, text, text, text, text, text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION esp_member_add_vehicle(text, text, text, text, text, text, text, text, text) TO anon, authenticated;
 
 -- ── esp_get_receipt_paths ────────────────────────────────────────────────
 -- Superseded esp_get_receipt (116, single-most-recent-receipt) now that the

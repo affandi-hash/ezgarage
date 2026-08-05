@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { OTHER, makeOptionsFor, modelOptionsFor } from '@/lib/vehicleMakes'
 
 const RAUDHAHPAY_CREATE_PAYMENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/raudhahpay-create-payment`
 const ESP_RECEIPT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/esp-receipt`
@@ -103,15 +104,28 @@ function AddVehicleForm({ membershipNumber, phone, password, tenantSlug, onAdded
   const [open, setOpen] = useState(false)
   const [plate, setPlate] = useState('')
   const [vehicleType, setVehicleType] = useState<'car' | 'bike'>('bike')
+  const [make, setMake] = useState('')
+  const [makeOther, setMakeOther] = useState(false)
+  const [model, setModel] = useState('')
+  const [modelOther, setModelOther] = useState(false)
+  const [year, setYear] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+
+  function changeVehicleType(t: 'car' | 'bike') {
+    if (t === vehicleType) return
+    setVehicleType(t)
+    setMake(''); setMakeOther(false); setModel(''); setModelOther(false)
+  }
 
   async function submit() {
     if (!plate.trim()) return
     setSaving(true); setErr('')
     const { data, error } = await supabase.rpc('esp_member_add_vehicle', {
       p_phone: phone, p_password: password, p_membership_number: membershipNumber,
-      p_plate_number: plate.trim(), p_vehicle_type: vehicleType, p_tenant_slug: tenantSlug || null,
+      p_plate_number: plate.trim(), p_vehicle_type: vehicleType,
+      p_make: make.trim() || null, p_model: model.trim() || null, p_year: year.trim() || null,
+      p_tenant_slug: tenantSlug || null,
     })
     setSaving(false)
     if (error) { setErr('Something went wrong.'); return }
@@ -120,7 +134,7 @@ function AddVehicleForm({ membershipNumber, phone, password, tenantSlug, onAdded
       setErr(msgs[data.error] ?? 'Could not add vehicle.')
       return
     }
-    setPlate(''); setOpen(false)
+    setPlate(''); setMake(''); setModel(''); setYear(''); setMakeOther(false); setModelOther(false); setOpen(false)
     onAdded()
   }
 
@@ -135,11 +149,55 @@ function AddVehicleForm({ membershipNumber, phone, password, tenantSlug, onAdded
     <div style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 8 }}>
         <input style={{ ...inputStyle(), flex: 2 }} value={plate} onChange={e => setPlate(e.target.value.toUpperCase())} placeholder="Plate Number" />
-        <select style={{ ...inputStyle(), flex: 1 }} value={vehicleType} onChange={e => setVehicleType(e.target.value as 'car' | 'bike')}>
+        <select style={{ ...inputStyle(), flex: 1 }} value={vehicleType} onChange={e => changeVehicleType(e.target.value as 'car' | 'bike')}>
           <option value="bike">Bike</option>
           <option value="car">Car</option>
         </select>
       </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {makeOther ? (
+          <div>
+            <input style={inputStyle()} value={make} autoFocus onChange={e => setMake(e.target.value)} placeholder="Make" />
+            <button type="button" onClick={() => { setMake(''); setMakeOther(false); setModel(''); setModelOther(false) }}
+              style={{ background: 'none', border: 'none', color: C.textSecondary, fontSize: 11, padding: '3px 0', cursor: 'pointer', textDecoration: 'underline' }}>
+              Choose from list
+            </button>
+          </div>
+        ) : (
+          <select style={inputStyle()} value={make} onChange={e => {
+            const val = e.target.value
+            if (val === OTHER) { setMake(''); setMakeOther(true); setModel(''); setModelOther(false) }
+            else { setMake(val); setModel(''); setModelOther(false) }
+          }}>
+            <option value="">Select Make</option>
+            {makeOptionsFor(vehicleType).map(m => <option key={m} value={m}>{m}</option>)}
+            <option value={OTHER}>Other</option>
+          </select>
+        )}
+
+        {makeOther || modelOther ? (
+          <div>
+            <input style={inputStyle()} value={model} onChange={e => setModel(e.target.value)} placeholder="Model" />
+            {!makeOther && (
+              <button type="button" onClick={() => { setModel(''); setModelOther(false) }}
+                style={{ background: 'none', border: 'none', color: C.textSecondary, fontSize: 11, padding: '3px 0', cursor: 'pointer', textDecoration: 'underline' }}>
+                Choose from list
+              </button>
+            )}
+          </div>
+        ) : (
+          <select style={inputStyle()} value={model} disabled={!make} onChange={e => {
+            const val = e.target.value
+            if (val === OTHER) { setModel(''); setModelOther(true) }
+            else setModel(val)
+          }}>
+            <option value="">{make ? 'Select Model' : 'Select Make first'}</option>
+            {modelOptionsFor(vehicleType, make).map(m => <option key={m} value={m}>{m}</option>)}
+            {make && <option value={OTHER}>Other</option>}
+          </select>
+        )}
+      </div>
+      <input style={inputStyle()} type="number" value={year} onChange={e => setYear(e.target.value)} placeholder="Year (optional)" min={1900} max={2100} />
       {err && <div style={{ fontSize: 12, color: C.red }}>{err}</div>}
       <div style={{ display: 'flex', gap: 8 }}>
         <button type="button" onClick={submit} disabled={saving} style={{ flex: 1, padding: '8px 0', borderRadius: 6, background: C.orange, border: 'none', color: '#fff', fontSize: 12, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer' }}>
