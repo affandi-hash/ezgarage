@@ -1472,6 +1472,12 @@ export function FinancePage() {
       return b.created_at.localeCompare(a.created_at)
     })
 
+  // Sum of the Total column exactly as shown in the table, for whatever the
+  // user currently has filtered (status tab + supplier + date range) -- not
+  // outstanding balance, which is a separate figure shown in the summary
+  // tiles above.
+  const filteredTotal = filtered.reduce((sum, inv) => sum + inv.total_amount, 0)
+
   async function handlePriorityChange(inv: SupplierInvoice, priority: SupplierInvoice['payment_priority']) {
     setInvoices((prev) => prev.map((i) => (i.id === inv.id ? { ...i, payment_priority: priority } : i)))
     const { error } = await supabase.from('supplier_invoices').update({ payment_priority: priority, updated_at: new Date().toISOString() }).eq('id', inv.id)
@@ -1726,6 +1732,15 @@ export function FinancePage() {
               </button>
             )}
           </div>
+
+          {filtered.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 12 }}>
+              <span style={{ fontSize: 12, color: '#A0A0A0' }}>
+                Total ({filtered.length} {filtered.length === 1 ? 'invoice' : 'invoices'}):
+              </span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: '#F0F0F0' }}>{formatRM(filteredTotal)}</span>
+            </div>
+          )}
         </div>
 
         {/* ── Table ── */}
