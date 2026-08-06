@@ -494,6 +494,18 @@ interface VehicleLogJob {
   photo_count: number
 }
 
+interface VehicleMaintenanceItem {
+  item_id: string; name: string
+  next_due_at: string | null; next_due_mileage: number | null
+  status: 'ok' | 'due_soon' | 'overdue'
+}
+
+function maintenanceStatusColor(status: string) {
+  if (status === 'overdue') return '#EF4444'
+  if (status === 'due_soon') return '#EAB308'
+  return '#22C55E'
+}
+
 function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, onClose }: { vehicleId: string; plateNumber: string; phone: string; password: string; tenantSlug?: string; onClose: () => void }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -502,6 +514,7 @@ function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, 
   const [openPhotosJobId, setOpenPhotosJobId] = useState<string | null>(null)
   const [photoUrls, setPhotoUrls] = useState<Record<string, { url: string; caption: string | null }[]>>({})
   const [photosLoading, setPhotosLoading] = useState(false)
+  const [maintenance, setMaintenance] = useState<VehicleMaintenanceItem[]>([])
 
   useEffect(() => {
     supabase.rpc('esp_get_vehicle_log', { p_phone: phone, p_password: password, p_vehicle_id: vehicleId, p_tenant_slug: tenantSlug || null })
@@ -511,6 +524,8 @@ function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, 
         setJobs(data.jobs ?? [])
         setVehicleInfo(data.vehicle)
       })
+    supabase.rpc('esp_get_vehicle_maintenance', { p_phone: phone, p_password: password, p_vehicle_id: vehicleId, p_tenant_slug: tenantSlug || null })
+      .then(({ data }) => { if (data?.success) setMaintenance(data.items ?? []) })
   }, [vehicleId, phone, password, tenantSlug])
 
   async function togglePhotos(jobId: string) {
@@ -544,6 +559,24 @@ function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, 
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textSecondary, cursor: 'pointer' }}><X size={16} /></button>
         </div>
         <div style={{ padding: 20 }}>
+          {maintenance.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.textSecondary, letterSpacing: '0.05em', marginBottom: 8 }}>MAINTENANCE</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {maintenance.map(m => (
+                  <div key={m.item_id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: maintenanceStatusColor(m.status), flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, flex: 1 }}>{m.name}</span>
+                    <span style={{ fontSize: 11, color: C.textSecondary }}>
+                      {m.status === 'overdue' ? 'Overdue' : m.status === 'due_soon' ? 'Due soon' : 'OK'}
+                      {m.next_due_mileage != null ? ` · ${m.next_due_mileage.toLocaleString()} km` : ''}
+                      {m.next_due_at ? ` · ${formatDate(m.next_due_at)}` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {loading ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} color={C.textSecondary} /></div>
           ) : error ? (

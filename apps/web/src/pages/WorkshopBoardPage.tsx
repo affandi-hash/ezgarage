@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Wrench, RefreshCw, Plus, X, ChevronDown, Search, MessageCircle, Camera, CheckCircle, XCircle, Clock, AlertTriangle, Trash2, Archive, ArchiveRestore } from 'lucide-react'
+import { Wrench, RefreshCw, Plus, X, ChevronDown, Search, MessageCircle, Camera, CheckCircle, XCircle, Clock, AlertTriangle, Trash2, Archive, ArchiveRestore, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -144,7 +144,8 @@ interface StatusChangeRequest {
 
 interface JobRow extends Job {
   customers?: { full_name: string; phone: string } | null
-  vehicles?: { plate_number: string; make: string; model: string; year: number | null; vehicle_type: string; is_internal_fleet?: boolean } | null
+  vehicles?: { plate_number: string; make: string; model: string; year: number | null; vehicle_type: string; is_internal_fleet?: boolean; esp_member_id?: string | null } | null
+  mileage_in?: number | null
   assigned_foreman?: { full_name: string } | null
   assigned_mechanic?: { full_name: string } | null
   mechanic_ids?: string[] | null
@@ -584,6 +585,86 @@ function AddNoteModal({ job, onClose, onSave }: { job: JobRow; onClose: () => vo
 }
 
 // ---------------------------------------------------------------------------
+// ESP Vehicle Maintenance tick-off -- only rendered when the job's vehicle
+// belongs to an ESP member. Deliberately a manual tick against a fixed
+// item list (esp_vehicle_maintenance_status), not inferred from
+// service_type free text -- see migration 125 for why.
+// ---------------------------------------------------------------------------
+interface MaintenanceStatusItem {
+  item_id: string; name: string; status: 'ok' | 'due_soon' | 'overdue'
+  next_due_at: string | null; next_due_mileage: number | null
+}
+
+function maintenanceStatusColor(status: string) {
+  if (status === 'overdue') return '#EF4444'
+  if (status === 'due_soon') return '#EAB308'
+  return '#22C55E'
+}
+
+function MaintenanceChecklistPanel({ vehicleId, jobId, mileageIn, tenantId, branchId }: {
+  vehicleId: string; jobId: string; mileageIn: number | null; tenantId: string; branchId: string
+}) {
+  const { user } = useAuthStore()
+  const [items, setItems] = useState<MaintenanceStatusItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    supabase.rpc('esp_vehicle_maintenance_status', { p_vehicle_id: vehicleId }).then(({ data }) => {
+      setItems((data ?? []) as MaintenanceStatusItem[])
+      setLoading(false)
+    })
+  }, [vehicleId])
+
+  useEffect(() => { load() }, [load])
+
+  function toggle(itemId: string) {
+    setSelected(s => { const next = new Set(s); next.has(itemId) ? next.delete(itemId) : next.add(itemId); return next })
+  }
+
+  async function saveTicks() {
+    if (selected.size === 0) return
+    setSaving(true)
+    const rows = Array.from(selected).map(item_id => ({
+      tenant_id: tenantId, branch_id: branchId, vehicle_id: vehicleId, item_id,
+      done_mileage: mileageIn, job_id: jobId, created_by: user?.id ?? null,
+    }))
+    const { error } = await supabase.from('esp_vehicle_maintenance_log').insert(rows)
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast(`${rows.length} maintenance item${rows.length > 1 ? 's' : ''} marked done`)
+    setSelected(new Set())
+    load()
+  }
+
+  if (loading) return <div style={{ padding: 12, textAlign: 'center' }}><Loader2 size={16} className="animate-spin" color="#666" /></div>
+  if (items.length === 0) return <p style={{ color: '#666', fontSize: 12, margin: 0, fontStyle: 'italic' }}>No maintenance schedule set for this vehicle's community yet.</p>
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+        {items.map(it => (
+          <label key={it.item_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', backgroundColor: '#0E0E0E', borderRadius: 6, cursor: 'pointer' }}>
+            <input type="checkbox" checked={selected.has(it.item_id)} onChange={() => toggle(it.item_id)} />
+            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: maintenanceStatusColor(it.status), flexShrink: 0 }} />
+            <span style={{ color: '#F0F0F0', fontSize: 13, flex: 1 }}>{it.name}</span>
+            <span style={{ color: '#666', fontSize: 11 }}>
+              {it.status === 'overdue' ? 'Overdue' : it.status === 'due_soon' ? 'Due soon' : 'OK'}
+            </span>
+          </label>
+        ))}
+      </div>
+      <button onClick={saveTicks} disabled={saving || selected.size === 0}
+        style={{ padding: '7px 14px', borderRadius: 6, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 12, fontWeight: 700, cursor: (saving || selected.size === 0) ? 'not-allowed' : 'pointer', opacity: (saving || selected.size === 0) ? 0.5 : 1 }}>
+        {saving ? 'Saving…' : `Mark ${selected.size || ''} Done Today`}
+      </button>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Job Detail Drawer
 // ---------------------------------------------------------------------------
 function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
@@ -1018,6 +1099,22 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
             </p>
             <PhotoUploader jobId={job.id} branchId={job.branch_id ?? ''} tenantId={user?.tenant_id ?? ''} uploadedBy={user?.id ?? ''} currentStatus={job.status} />
           </div>
+
+          {/* ESP Vehicle Maintenance -- only for ESP members' vehicles */}
+          {job.vehicles?.esp_member_id && job.vehicle_id && (
+            <div style={{ backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 10, padding: 16, marginTop: 16 }}>
+              <p style={{ color: '#A0A0A0', fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Wrench size={13} /> ESP MAINTENANCE -- MARK ITEMS DONE THIS VISIT
+              </p>
+              <MaintenanceChecklistPanel
+                vehicleId={job.vehicle_id}
+                jobId={job.id}
+                mileageIn={job.mileage_in ?? null}
+                tenantId={job.tenant_id ?? user?.tenant_id ?? ''}
+                branchId={job.branch_id ?? ''}
+              />
+            </div>
+          )}
         </div>
 
         {/* Sticky footer */}
@@ -1166,6 +1263,7 @@ function NewJobModal({ branchId, onClose, onCreated }: NewJobModalProps) {
   const [savingVehicle, setSavingVehicle] = useState(false)
   const [vehicleError, setVehicleError] = useState('')
   const [serviceType, setServiceType] = useState<ServiceType>('service')
+  const [mileageIn, setMileageIn] = useState('')
   const [arrivalMode, setArrivalMode] = useState<ArrivalMode>('walk_in')
   const [complaint, setComplaint] = useState('')
   const [estimatedCost, setEstimatedCost] = useState('')
@@ -1254,6 +1352,7 @@ function NewJobModal({ branchId, onClose, onCreated }: NewJobModalProps) {
         customer_id: selectedCustomer.id, vehicle_id: selectedVehicle.id,
         service_type: serviceType, arrival_mode: arrivalMode,
         status: 'checked_in', vehicle_type: 'car', source: 'walk_in',
+        mileage_in: mileageIn.trim() ? parseInt(mileageIn, 10) : null,
         customer_complaint: complaint || null,
         estimated_cost: estimatedCost ? parseFloat(estimatedCost) : null,
         assigned_foreman_id: foremanId || null,
@@ -1441,6 +1540,13 @@ function NewJobModal({ branchId, onClose, onCreated }: NewJobModalProps) {
               </div>
             </div>
           </div>
+
+          {selectedVehicle && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ color: '#A0A0A0', fontSize: 11, display: 'block', marginBottom: 5 }}>CURRENT MILEAGE (KM) -- OPTIONAL, KEEPS SERVICE DUE-DATES ACCURATE</label>
+              <input type="number" min={0} value={mileageIn} onChange={(e) => setMileageIn(e.target.value)} placeholder="e.g. 45000" style={inputStyle} />
+            </div>
+          )}
 
           {/* Staff */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
@@ -1793,9 +1899,9 @@ export function WorkshopBoardPage() {
           internal_notes, next_action, checked_in_at, estimated_cost, status_updated_at,
           customer_complaint, diagnosis_summary, branch_id, tenant_id, customer_id, vehicle_id,
           assigned_foreman_id, assigned_mechanic_id, mechanic_ids, source, arrival_mode, payment_status,
-          archived_at, archived_by, invoice_id,
+          archived_at, archived_by, invoice_id, mileage_in,
           customers!customer_id(full_name, phone),
-          vehicles!vehicle_id(plate_number, make, model, year, vehicle_type, is_internal_fleet),
+          vehicles!vehicle_id(plate_number, make, model, year, vehicle_type, is_internal_fleet, esp_member_id),
           assigned_foreman:users!assigned_foreman_id(full_name),
           assigned_mechanic:users!assigned_mechanic_id(full_name)`)
         .not('status', 'eq', 'closed')

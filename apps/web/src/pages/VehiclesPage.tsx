@@ -825,14 +825,33 @@ function EditVehiclePanel({
 
 // ─── Vehicle List Item ────────────────────────────────────────────────────────
 
+interface MaintenanceBadge { worst_status: string; headline: string }
+
+// Same color language as FleetPage's NextServiceCard/service alerts --
+// overdue=red, due_soon=amber -- so staff read this the same way across
+// both the company fleet and ESP member vehicles.
+function MaintenancePill({ badge }: { badge: MaintenanceBadge }) {
+  const overdue = badge.worst_status === 'overdue'
+  return (
+    <span
+      title={`${overdue ? 'Overdue' : 'Due soon'}: ${badge.headline}`}
+      style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, color: overdue ? '#EF4444' : '#EAB308', backgroundColor: overdue ? 'rgba(239,68,68,0.12)' : 'rgba(234,179,8,0.12)', border: `1px solid ${overdue ? 'rgba(239,68,68,0.3)' : 'rgba(234,179,8,0.3)'}` }}
+    >
+      {overdue ? 'Overdue' : 'Due Soon'}: {badge.headline}
+    </span>
+  )
+}
+
 function VehicleListItem({
   vehicle,
   selected,
   onClick,
+  maintenanceBadge,
 }: {
   vehicle: VehicleWithRelations
   selected: boolean
   onClick: () => void
+  maintenanceBadge?: MaintenanceBadge
 }) {
   const activeJob = getActiveJob(vehicle.jobs)
   const days = activeJob ? getDaysInGarage(activeJob.checked_in_at) : null
@@ -883,6 +902,7 @@ function VehicleListItem({
           <p style={{ fontSize: 12, color: '#A0A0A0', margin: 0, marginTop: 2 }}>
             {getCustomer(vehicle)?.full_name ?? '—'}
           </p>
+          {maintenanceBadge && <div style={{ marginTop: 4 }}><MaintenancePill badge={maintenanceBadge} /></div>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {vehicle.is_internal_fleet && (
@@ -1450,9 +1470,16 @@ export function VehiclesPage() {
   const [internalOnly, setInternalOnly] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<VehicleWithRelations | null>(null)
+  const [maintenanceBadges, setMaintenanceBadges] = useState<Map<string, MaintenanceBadge>>(new Map())
 
   const branchId: string = user?.branch_id ?? ''
   const tenantId: string = user?.tenant_id ?? ''
+
+  useEffect(() => {
+    supabase.rpc('esp_maintenance_badges_for_tenant').then(({ data }) => {
+      setMaintenanceBadges(new Map((data ?? []).map((r: { vehicle_id: string; worst_status: string; headline: string }) => [r.vehicle_id, { worst_status: r.worst_status, headline: r.headline }])))
+    })
+  }, [branchId])
 
   const fetchVehicles = useCallback(async () => {
     if (!branchId) return
@@ -1668,6 +1695,7 @@ export function VehiclesPage() {
                 vehicle={v}
                 selected={v.id === selectedId}
                 onClick={() => setSelectedId(v.id)}
+                maintenanceBadge={maintenanceBadges.get(v.id)}
               />
             ))}
         </div>

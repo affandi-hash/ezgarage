@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Building2, Loader2, Plus, Power, X, Copy, Link2 } from 'lucide-react'
+import { Building2, Loader2, Plus, Power, X, Copy, Link2, Trash2, Wrench } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -73,6 +73,113 @@ function previewMembershipNumber(code: string, format: string, nextSeq: number):
 function formatIsValid(format: string): boolean {
   const f = format.trim()
   return /\{SEQ:?\d*\}/.test(f) && /\{CODE\}/.test(f)
+}
+
+interface MaintenanceItemRow {
+  key: string          // client-side stable key -- id once saved, random until then
+  id: string | null
+  vehicle_type: 'car' | 'bike'
+  name: string
+  interval_km: string
+  interval_months: string
+  sort_order: number
+}
+
+function rowFromDb(r: { id: string; vehicle_type: string; name: string; interval_km: number | null; interval_months: number | null; sort_order: number }): MaintenanceItemRow {
+  return { key: r.id, id: r.id, vehicle_type: r.vehicle_type as 'car' | 'bike', name: r.name, interval_km: r.interval_km?.toString() ?? '', interval_months: r.interval_months?.toString() ?? '', sort_order: r.sort_order }
+}
+
+function blankRow(vehicle_type: 'car' | 'bike', sort_order: number): MaintenanceItemRow {
+  return { key: `new-${Math.random().toString(36).slice(2)}`, id: null, vehicle_type, name: '', interval_km: '', interval_months: '', sort_order }
+}
+
+// Editable per-community maintenance schedule -- what "due for service"
+// means for this club's bikes/cars. Only usable once the community exists
+// (needs a real community_id to attach items to), same constraint as the
+// membership-number-preview above.
+function MaintenanceItemsEditor({ communityId }: { communityId: string }) {
+  const [rows, setRows] = useState<MaintenanceItemRow[]>([])
+  const [deletedIds, setDeletedIds] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    supabase.from('esp_maintenance_items').select('id, vehicle_type, name, interval_km, interval_months, sort_order')
+      .eq('community_id', communityId).order('vehicle_type').order('sort_order')
+      .then(({ data }) => { setRows((data ?? []).map(rowFromDb)); setLoading(false) })
+  }, [communityId])
+
+  function update(key: string, patch: Partial<MaintenanceItemRow>) {
+    setRows(rs => rs.map(r => r.key === key ? { ...r, ...patch } : r))
+  }
+
+  function addRow(vehicle_type: 'car' | 'bike') {
+    setRows(rs => [...rs, blankRow(vehicle_type, rs.filter(r => r.vehicle_type === vehicle_type).length)])
+  }
+
+  function removeRow(row: MaintenanceItemRow) {
+    if (row.id) setDeletedIds(ids => [...ids, row.id!])
+    setRows(rs => rs.filter(r => r.key !== row.key))
+  }
+
+  async function save() {
+    const withContent = rows.filter(r => r.name.trim())
+    for (const r of withContent) {
+      if (!r.interval_km.trim() && !r.interval_months.trim()) {
+        toast.error(`"${r.name}" needs at least a km or month interval`)
+        return
+      }
+    }
+    setSaving(true)
+    if (deletedIds.length) {
+      const { error } = await supabase.from('esp_maintenance_items').delete().in('id', deletedIds)
+      if (error) { setSaving(false); toast.error(error.message); return }
+    }
+    const payload = withContent.map(r => ({
+      ...(r.id ? { id: r.id } : {}),
+      community_id: communityId, vehicle_type: r.vehicle_type, name: r.name.trim(),
+      interval_km: r.interval_km.trim() ? parseInt(r.interval_km, 10) : null,
+      interval_months: r.interval_months.trim() ? parseInt(r.interval_months, 10) : null,
+      sort_order: r.sort_order,
+    }))
+    if (payload.length) {
+      const { error } = await supabase.from('esp_maintenance_items').upsert(payload)
+      if (error) { setSaving(false); toast.error(error.message); return }
+    }
+    setSaving(false)
+    setDeletedIds([])
+    toast.success('Maintenance schedule saved')
+  }
+
+  if (loading) return <div style={{ padding: 12, textAlign: 'center', color: '#666' }}><Loader2 className="animate-spin" size={16} /></div>
+
+  const byType = (t: 'car' | 'bike') => rows.filter(r => r.vehicle_type === t)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {(['bike', 'car'] as const).map(type => (
+        <div key={type}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: 6 }}>{type === 'bike' ? 'Bike' : 'Car'} Items</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {byType(type).map(row => (
+              <div key={row.key} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 6, alignItems: 'center' }}>
+                <input style={inputStyle} value={row.name} onChange={e => update(row.key, { name: e.target.value })} placeholder="e.g. Engine Oil" />
+                <input style={inputStyle} type="number" min={0} value={row.interval_km} onChange={e => update(row.key, { interval_km: e.target.value })} placeholder="km" />
+                <input style={inputStyle} type="number" min={0} value={row.interval_months} onChange={e => update(row.key, { interval_months: e.target.value })} placeholder="months" />
+                <button onClick={() => removeRow(row)} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', padding: 6 }}><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => addRow(type)} style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: '1px dashed #2A2A2A', borderRadius: 6, padding: '5px 10px', color: '#A0A0A0', fontSize: 11, cursor: 'pointer' }}>
+            <Plus size={11} /> Add {type} item
+          </button>
+        </div>
+      ))}
+      <button onClick={save} disabled={saving} style={{ padding: '8px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: '#1E1E1E', color: '#F0F0F0', fontSize: 12, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+        {saving ? 'Saving…' : 'Save Maintenance Schedule'}
+      </button>
+    </div>
+  )
 }
 
 function CommunityModal({ initial, branches, onClose, onSaved }: {
@@ -220,6 +327,15 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
           <button onClick={submit} disabled={saving} style={{ padding: '10px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
             {saving ? 'Saving…' : initial ? 'Save Changes' : 'Create Community'}
           </button>
+          {initial && (
+            <div style={{ borderTop: '1px solid #2A2A2A', paddingTop: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                <Wrench size={13} color="#F15A22" />
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#A0A0A0' }}>Maintenance Schedule -- what "due for service" means for this club's vehicles</span>
+              </div>
+              <MaintenanceItemsEditor communityId={initial.id} />
+            </div>
+          )}
         </div>
       </div>
     </div>
