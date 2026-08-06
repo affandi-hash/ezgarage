@@ -78,15 +78,37 @@ Deno.serve(async (req) => {
 
   const rawBody = await req.text()
 
-  // TEMPORARY DIAGNOSTIC — remove once signature verification is confirmed working.
+  // Logs every incoming POST before any verification, for diagnostic
+  // visibility (this is how the 2026-08-03/08-06 stale-secret incidents
+  // were actually diagnosed) -- but that means it also logs genuinely
+  // unauthenticated/forged requests. signature_valid is set explicitly
+  // below on every exit path so reconcile_missed_raudhahpay_webhooks()
+  // (121) has a real, code-enforced way to tell "RaudhahPay actually said
+  // this succeeded" apart from "someone POSTed a payload that merely
+  // claims to" -- treating an unverified row as trustworthy would let
+  // anyone mark any invoice paid for free by POSTing straight to this
+  // public URL.
+  const debugClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  let debugLogId: string | null = null
   try {
-    const debugClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-    await debugClient.from('webhook_debug_log').insert({
+    const { data: logRow } = await debugClient.from('webhook_debug_log').insert({
       headers: Object.fromEntries(req.headers.entries()),
       raw_body: rawBody,
-    })
+    }).select('id').single()
+    debugLogId = logRow?.id ?? null
   } catch (e) {
     console.error('debug log insert failed', e)
+  }
+
+  async function markVerification(valid: boolean, secretSource: string, resolvedInvoiceId: string | null) {
+    if (!debugLogId) return
+    try {
+      await debugClient.from('webhook_debug_log')
+        .update({ signature_valid: valid, secret_source: secretSource, resolved_invoice_id: resolvedInvoiceId })
+        .eq('id', debugLogId)
+    } catch (e) {
+      console.error('debug log verification update failed', e)
+    }
   }
 
   // RaudhahPay signs webhooks with a dedicated webhook secret, not the API
@@ -94,8 +116,12 @@ Deno.serve(async (req) => {
   const timestamp = req.headers.get('x-webhook-timestamp') ?? ''
   const signature = req.headers.get('x-webhook-signature') ?? ''
 
-  if (!timestamp || !signature) return new Response('Missing signature headers', { status: 401 })
+  if (!timestamp || !signature) {
+    await markVerification(false, 'n/a', null)
+    return new Response('Missing signature headers', { status: 401 })
+  }
   if (Math.abs(Date.now() / 1000 - Number(timestamp)) > MAX_CLOCK_SKEW_SECONDS) {
+    await markVerification(false, 'n/a', null)
     return new Response('Timestamp too old', { status: 401 })
   }
 
@@ -103,6 +129,7 @@ Deno.serve(async (req) => {
   try {
     event = JSON.parse(rawBody)
   } catch {
+    await markVerification(false, 'n/a', null)
     return new Response('Invalid JSON', { status: 400 })
   }
 
@@ -122,6 +149,7 @@ Deno.serve(async (req) => {
   const supabaseForLookup = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
   const lookupInvoiceId = (data.order_no as string) || (data.metadata as { invoice_id?: string })?.invoice_id
   let webhookSecret = Deno.env.get('RAUDHAHPAY_WEBHOOK_SECRET')!
+  let secretSource = 'project_default'
   if (lookupInvoiceId) {
     const { data: invoiceForSecret } = await supabaseForLookup
       .from('invoices')
@@ -129,13 +157,15 @@ Deno.serve(async (req) => {
       .eq('id', lookupInvoiceId)
       .single()
     const tenantSecret = (invoiceForSecret as { tenants?: { raudhahpay_webhook_secret?: string | null } } | null)?.tenants?.raudhahpay_webhook_secret
-    if (tenantSecret) webhookSecret = tenantSecret
+    if (tenantSecret) { webhookSecret = tenantSecret; secretSource = 'tenant_override' }
   }
 
   const expected = await hmacSha256Hex(webhookSecret, `${timestamp}.${rawBody}`)
   if (!constantTimeEqual(expected, signature)) {
+    await markVerification(false, secretSource, lookupInvoiceId ?? null)
     return new Response('Invalid signature', { status: 401 })
   }
+  await markVerification(true, secretSource, lookupInvoiceId ?? null)
 
   const REFUND_EVENTS = new Set(['payment.refunded', 'payment.partial_refunded'])
 
