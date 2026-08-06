@@ -79,6 +79,7 @@ interface Session {
 }
 
 const sessionKey = 'esp_member_login'
+const pendingRenewalKey = 'esp_pending_renewal'
 
 function inputStyle(): React.CSSProperties {
   return { width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.textPrimary, padding: '10px 14px', fontSize: 14, boxSizing: 'border-box', outline: 'none' }
@@ -264,6 +265,11 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged }: { m: Memb
       })
       const payData = await res.json()
       if (!res.ok) { setRenewing(false); setRenewError(payData.error || 'Could not start payment.'); return }
+      // So the page knows, on the redirect back, exactly which invoice to
+      // actively confirm -- renewals don't flip esp_members.status the way
+      // a first-time registration does (the member's already active), so
+      // there's no status field alone that means "waiting on this renewal".
+      sessionStorage.setItem(pendingRenewalKey, JSON.stringify({ invoiceId: data.invoice_id, membershipNumber: m.membership_number }))
       window.location.href = payData.payment_url
     } catch {
       setRenewing(false)
@@ -439,6 +445,46 @@ export function EspMemberLoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantSlug])
 
+  // Renewals don't flip esp_members.status the way a first-time
+  // registration does (the member's already active before renewing), so
+  // there's no status field alone that means "waiting on this specific
+  // renewal payment" -- pendingRenewal (stashed in sessionStorage right
+  // before the RaudhahPay redirect) is what the "Confirming your renewal"
+  // banner keys off, independent of membership status. Actively triggers
+  // reconcile_invoice_now() each tick rather than passively waiting on the
+  // cron backstop, same reasoning as EspRegistrationPage.tsx.
+  const [pendingRenewal, setPendingRenewal] = useState<{ invoiceId: string; membershipNumber: string } | null>(null)
+  const [renewalPollAttempts, setRenewalPollAttempts] = useState(0)
+  const [renewalConfirmed, setRenewalConfirmed] = useState(false)
+
+  useEffect(() => {
+    const cached = sessionStorage.getItem(pendingRenewalKey)
+    if (!cached) return
+    try { setPendingRenewal(JSON.parse(cached)) } catch { sessionStorage.removeItem(pendingRenewalKey) }
+  }, [])
+
+  useEffect(() => {
+    if (!pendingRenewal || !session) return
+    setRenewalPollAttempts(0)
+    let attempts = 0
+    const interval = setInterval(async () => {
+      attempts += 1
+      setRenewalPollAttempts(attempts)
+      const { data } = await supabase.rpc('reconcile_invoice_now', { p_invoice_id: pendingRenewal.invoiceId })
+      if (data?.status === 'paid') {
+        clearInterval(interval)
+        sessionStorage.removeItem(pendingRenewalKey)
+        setRenewalConfirmed(true)
+        await doLogin(session.phone, session.password, true)
+        setTimeout(() => { setPendingRenewal(null); setRenewalConfirmed(false) }, 4000)
+        return
+      }
+      if (attempts > 40) clearInterval(interval)
+    }, 3000)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRenewal, session])
+
   async function doLogin(phone: string, password: string, silent = false) {
     if (!silent) { setLoginLoading(true); setLoginError('') }
     const { data, error } = await supabase.rpc('esp_login', {
@@ -490,7 +536,9 @@ export function EspMemberLoginPage() {
 
   function logout() {
     sessionStorage.removeItem(sessionKey)
+    sessionStorage.removeItem(pendingRenewalKey)
     setSession(null)
+    setPendingRenewal(null)
     setLoginPhone(''); setLoginPassword('')
   }
 
@@ -534,6 +582,28 @@ export function EspMemberLoginPage() {
                 <LogOut size={13} /> Log Out
               </button>
             </div>
+
+            {pendingRenewal && (
+              <div style={{ background: renewalConfirmed ? 'rgba(34,197,94,0.08)' : 'rgba(241,90,34,0.08)', border: `1px solid ${renewalConfirmed ? 'rgba(34,197,94,0.25)' : 'rgba(241,90,34,0.25)'}`, borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {renewalConfirmed ? <CheckCircle size={16} color={C.green} /> : <Loader2 size={16} color={C.orange} style={{ animation: 'spin 1s linear infinite' }} />}
+                  <div style={{ fontSize: 12, color: renewalConfirmed ? C.green : C.textPrimary }}>
+                    {renewalConfirmed
+                      ? 'Renewal confirmed!'
+                      : renewalPollAttempts < 20
+                        ? "Confirming your renewal payment — if you've already paid, this usually only takes a few seconds."
+                        : "Still confirming — if your bank or e-wallet already showed success, you're covered, this is just taking a little longer than usual."}
+                  </div>
+                </div>
+                {!renewalConfirmed && renewalPollAttempts >= 20 && config?.whatsapp_number && (
+                  <a href={`https://wa.me/${config.whatsapp_number}?text=${encodeURIComponent(`Hi, I already paid for my ESP membership renewal (#${pendingRenewal.membershipNumber}) but it still shows Pending on my end.`)}`}
+                    target="_blank" rel="noreferrer"
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSecondary, textDecoration: 'none', marginLeft: 26 }}>
+                    <MessageCircle size={13} /> Already paid? Contact us on WhatsApp
+                  </a>
+                )}
+              </div>
+            )}
 
             {session.memberships.length === 0 ? (
               <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: C.textSecondary, fontSize: 13 }}>

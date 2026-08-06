@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Wrench, Loader2, AlertCircle, CheckCircle, Plus, Trash2, CreditCard, QrCode, Landmark, Car, Bike, FileText } from 'lucide-react'
+import { Wrench, Loader2, AlertCircle, CheckCircle, Plus, Trash2, CreditCard, QrCode, Landmark, Car, Bike, FileText, MessageCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { OTHER, makeOptionsFor, modelOptionsFor } from '@/lib/vehicleMakes'
 
@@ -40,6 +40,7 @@ interface CommunityConfig {
   tenant_name: string
   tenant_logo_url: string | null
   tenant_phone: string | null
+  tenant_whatsapp_number: string | null
 }
 
 interface VehicleRow {
@@ -140,20 +141,31 @@ export function EspRegistrationPage() {
   // day, before staff manually reconcile it) -- the page then sits on a
   // stale "Payment Pending" forever with nothing telling the customer to
   // reload. Poll for up to ~2 minutes while pending, stop as soon as it
-  // flips (or the window closes).
+  // flips (or the window closes). Each tick also actively triggers
+  // reconcile_invoice_now() first -- rather than just passively re-reading
+  // our own possibly-stale status, this asks "is there a genuinely verified
+  // RaudhahPay success sitting unrecorded for this exact invoice?" and
+  // fixes it on the spot if so, instead of waiting on the once-a-minute
+  // cron backstop (122). At scale, most customers who paid successfully
+  // should see this flip within a few seconds, not sit on an alarming
+  // "Pending" screen.
+  const [pollAttempts, setPollAttempts] = useState(0)
   useEffect(() => {
     if (!session || statusText?.status !== 'pending_payment') return
+    setPollAttempts(0)
     let attempts = 0
     const interval = setInterval(() => {
       attempts += 1
-      if (attempts > 30) { clearInterval(interval); return }
+      setPollAttempts(attempts)
+      if (attempts > 40) { clearInterval(interval); return }
       checkStatus(session)
-    }, 4000)
+    }, 3000)
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, statusText?.status])
 
   async function checkStatus(s: RegistrationSession) {
+    await supabase.rpc('reconcile_invoice_now', { p_invoice_id: s.invoiceId }).catch(() => { /* best-effort -- the cron backstop still covers this */ })
     const { data } = await supabase.rpc('esp_check_status', {
       p_membership_number: s.membershipNumber, p_phone: s.phone,
     })
@@ -359,15 +371,39 @@ export function EspRegistrationPage() {
 
         {statusText ? (
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, textAlign: 'center' }}>
-            <CheckCircle size={32} color={statusText.status === 'active' ? C.green : C.textSecondary} style={{ marginBottom: 10 }} />
+            {statusText.status === 'pending_payment' && pollAttempts < 20 ? (
+              <Loader2 size={32} color={C.orange} style={{ marginBottom: 10, animation: 'spin 1s linear infinite' }} />
+            ) : (
+              <CheckCircle size={32} color={statusText.status === 'active' ? C.green : C.textSecondary} style={{ marginBottom: 10 }} />
+            )}
             <div style={{ fontSize: 15, fontWeight: 700 }}>
-              {statusText.status === 'active' ? 'Membership Active' : 'Payment Pending'}
+              {statusText.status === 'active' ? 'Membership Active'
+                : pollAttempts < 20 ? 'Confirming your payment…'
+                : 'Payment Pending'}
             </div>
+            {statusText.status === 'pending_payment' && (
+              <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 6, maxWidth: 320, marginLeft: 'auto', marginRight: 'auto' }}>
+                {pollAttempts < 20
+                  ? "If you've already paid, this usually takes just a few seconds -- no need to pay again or refresh."
+                  : "Still not showing? If your bank or e-wallet already confirmed the payment, you're covered -- we're just taking a little longer than usual to update here."}
+              </div>
+            )}
             {session && <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 4 }}>Membership #{session.membershipNumber}</div>}
             {statusText.validUntil && <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 2 }}>Valid until {statusText.validUntil}</div>}
             {statusText.status === 'pending_payment' && session && (
               <div style={{ marginTop: 16 }}>
-                <PaymentButtons loading={payLoading} error={payError} onPay={startPayment} />
+                {pollAttempts >= 20 && (
+                  <>
+                    <PaymentButtons loading={payLoading} error={payError} onPay={startPayment} />
+                    {config?.tenant_whatsapp_number && (
+                      <a href={`https://wa.me/${config.tenant_whatsapp_number}?text=${encodeURIComponent(`Hi, I already paid for ESP membership #${session.membershipNumber} but it still shows Pending on my end.`)}`}
+                        target="_blank" rel="noreferrer"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, fontSize: 12, color: C.textSecondary, textDecoration: 'none' }}>
+                        <MessageCircle size={13} /> Already paid? Contact us on WhatsApp
+                      </a>
+                    )}
+                  </>
+                )}
               </div>
             )}
             {statusText.status === 'active' && (
