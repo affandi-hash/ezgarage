@@ -19,6 +19,8 @@ import {
   Eye,
   EyeOff,
   Copy,
+  Loader2,
+  X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -1167,6 +1169,7 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
   const [showKey, setShowKey] = useState(false)
   const [showRpKey, setShowRpKey] = useState(false)
   const [showRpSecret, setShowRpSecret] = useState(false)
+  const [keyTest, setKeyTest] = useState<{ status: 'idle' | 'checking' | 'valid' | 'invalid'; message?: string }>({ status: 'idle' })
 
   useEffect(() => {
     if (!tenantId) { setLoading(false); return }
@@ -1202,6 +1205,20 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
 
   const set = (key: keyof TenantPortalSettings, val: string) =>
     setForm(f => ({ ...f, [key]: val }))
+
+  const testApiKey = async () => {
+    const candidate = form.raudhahpay_api_key?.trim()
+    if (!candidate) return
+    setKeyTest({ status: 'checking' })
+    const { data, error } = await supabase.functions.invoke('raudhahpay-verify-credentials', {
+      body: { api_key: candidate },
+    })
+    if (error || !data?.valid) {
+      setKeyTest({ status: 'invalid', message: data?.error || error?.message || 'Could not verify this key.' })
+      return
+    }
+    setKeyTest({ status: 'valid' })
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -1399,21 +1416,50 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
             </div>
             <div style={fieldStyle}>
               <label style={labelStyle}>RaudhahPay API Key</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type={showRpKey ? 'text' : 'password'}
-                  style={{ ...inputStyle, paddingRight: 40 }}
-                  placeholder="rp_live_sk_…"
-                  value={form.raudhahpay_api_key ?? ''}
-                  onChange={e => set('raudhahpay_api_key', e.target.value)}
-                />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <input
+                    type={showRpKey ? 'text' : 'password'}
+                    style={{ ...inputStyle, paddingRight: 40 }}
+                    placeholder="rp_live_sk_…"
+                    value={form.raudhahpay_api_key ?? ''}
+                    onChange={e => { set('raudhahpay_api_key', e.target.value); setKeyTest({ status: 'idle' }) }}
+                  />
+                  <button
+                    onClick={() => setShowRpKey(v => !v)}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#666', padding: 4 }}
+                  >
+                    {showRpKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
                 <button
-                  onClick={() => setShowRpKey(v => !v)}
-                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#666', padding: 4 }}
+                  onClick={testApiKey}
+                  disabled={!form.raudhahpay_api_key?.trim() || keyTest.status === 'checking'}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', borderRadius: 8,
+                    background: '#1A1A1A', border: '1px solid #2A2A2A', color: '#A0A0A0', fontSize: 12, fontWeight: 600,
+                    cursor: (!form.raudhahpay_api_key?.trim() || keyTest.status === 'checking') ? 'not-allowed' : 'pointer',
+                    opacity: (!form.raudhahpay_api_key?.trim() || keyTest.status === 'checking') ? 0.5 : 1,
+                    whiteSpace: 'nowrap',
+                  }}
                 >
-                  {showRpKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                  {keyTest.status === 'checking' ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : null}
+                  Test Key
                 </button>
               </div>
+              {keyTest.status === 'valid' && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#22C55E', marginTop: 4 }}>
+                  <Check size={12} /> RaudhahPay accepted this key.
+                </span>
+              )}
+              {keyTest.status === 'invalid' && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#EF4444', marginTop: 4 }}>
+                  <X size={12} /> {keyTest.message}
+                </span>
+              )}
+              <span style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
+                Test before saving — this only checks the key authenticates with RaudhahPay, not that it's saved yet.
+              </span>
             </div>
             <div style={fieldStyle}>
               <label style={labelStyle}>RaudhahPay Webhook Secret</label>
@@ -1433,7 +1479,10 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
                 </button>
               </div>
               <span style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>
-                Used to verify that incoming payment webhooks really came from RaudhahPay.
+                Used to verify that incoming payment webhooks really came from RaudhahPay. There's no
+                way to test this ahead of time — RaudhahPay only signs with it on real deliveries — but
+                a mismatch now shows up immediately in the webhook logs instead of silently, so a wrong
+                paste here surfaces on the first payment attempt rather than going unnoticed.
               </span>
             </div>
           </div>

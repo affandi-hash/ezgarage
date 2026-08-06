@@ -329,8 +329,11 @@ function PaymentUpload({ jobId, jobNumber }: { jobId: string; jobNumber: string 
 // merchant account and a real bill creation call succeeded.
 const CARD_ENABLED = true
 
-// Re-enabled for testing (see MVG-INV-2026-0075 investigation for why this
-// was off). Watch webhook_debug_log closely on the next real FPX payment.
+// Re-enabled — MVG-INV-2026-0075 was a webhook silently rejected due to a
+// secret-resolution edge case with no visibility into what happened. The
+// webhook now logs its secret-resolution outcome per delivery (see
+// raudhahpay-webhook/index.ts) and a reconciliation job backstops any
+// delivery that still gets dropped, so a repeat won't go unnoticed.
 const FPX_ENABLED = true
 
 function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanceDue: number }) {
