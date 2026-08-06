@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon } from 'lucide-react'
+import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon, X, UserCog, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { OTHER, makeOptionsFor, modelOptionsFor } from '@/lib/vehicleMakes'
 
@@ -75,6 +75,9 @@ interface Session {
   phone: string
   password: string
   fullName: string
+  email: string
+  icNumber: string
+  fullAddress: string
   memberships: Membership[]
 }
 
@@ -214,7 +217,7 @@ function AddVehicleForm({ membershipNumber, phone, password, tenantSlug, onAdded
 
 // ─── Membership Card ────────────────────────────────────────────────────────
 
-function MembershipCard({ m, phone, password, tenantSlug, onChanged }: { m: Membership; phone: string; password: string; tenantSlug?: string; onChanged: () => void }) {
+function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehicle }: { m: Membership; phone: string; password: string; tenantSlug?: string; onChanged: () => void; onViewVehicle: (vehicleId: string, plateNumber: string) => void }) {
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string> | null>(null)
   const [receiptsLoading, setReceiptsLoading] = useState(false)
   const [renewing, setRenewing] = useState(false)
@@ -328,11 +331,13 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged }: { m: Memb
             {m.vehicles.length === 0 ? (
               <div style={{ fontSize: 12, color: C.textSecondary }}>No vehicles on file yet.</div>
             ) : m.vehicles.map(v => (
-              <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.surface2, borderRadius: 8, padding: '8px 12px' }}>
+              <button key={v.id} onClick={() => onViewVehicle(v.id, v.plate_number)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.surface2, border: 'none', borderRadius: 8, padding: '8px 12px', width: '100%', textAlign: 'left', cursor: 'pointer' }}>
                 {v.vehicle_type === 'bike' ? <Bike size={13} color={C.textSecondary} /> : <Car size={13} color={C.textSecondary} />}
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{v.plate_number}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary }}>{v.plate_number}</span>
                 {(v.make || v.model) && <span style={{ fontSize: 12, color: C.textSecondary }}>{v.make} {v.model}</span>}
-              </div>
+                <ChevronRight size={13} color={C.textSecondary} style={{ marginLeft: 'auto' }} />
+              </button>
             ))}
           </div>
           <AddVehicleForm membershipNumber={m.membership_number} phone={phone} password={password} tenantSlug={tenantSlug} onAdded={onChanged} />
@@ -402,6 +407,192 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged }: { m: Memb
   )
 }
 
+// ─── Personal Details ───────────────────────────────────────────────────────
+
+function PersonalDetailsModal({ session, tenantSlug, onClose, onSaved }: { session: Session; tenantSlug?: string; onClose: () => void; onSaved: (s: { fullName: string; phone: string; email: string; icNumber: string; fullAddress: string }) => void }) {
+  const [fullName, setFullName] = useState(session.fullName)
+  const [phone, setPhone] = useState(session.phone)
+  const [email, setEmail] = useState(session.email)
+  const [icNumber, setIcNumber] = useState(session.icNumber)
+  const [fullAddress, setFullAddress] = useState(session.fullAddress)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function submit() {
+    if (!fullName.trim() || !phone.trim()) { setErr('Name and phone number are required.'); return }
+    setSaving(true); setErr('')
+    const { data, error } = await supabase.rpc('esp_member_update_profile', {
+      p_phone: session.phone, p_password: session.password,
+      p_full_name: fullName.trim(), p_new_phone: phone.trim(),
+      p_email: email.trim() || null, p_ic_number: icNumber.trim() || null, p_full_address: fullAddress.trim() || null,
+      p_tenant_slug: tenantSlug || null,
+    })
+    setSaving(false)
+    if (error) { setErr('Something went wrong. Please try again.'); return }
+    if (data?.error) {
+      const msgs: Record<string, string> = {
+        phone_already_in_use: 'That phone number is already used by another account.',
+        full_name_required: 'Name is required.',
+        phone_required: 'Phone number is required.',
+        invalid_credentials: 'Session expired -- please log in again.',
+      }
+      setErr(msgs[data.error] ?? 'Could not save changes.')
+      return
+    }
+    onSaved({ fullName: fullName.trim(), phone: phone.trim(), email: email.trim(), icNumber: icNumber.trim(), fullAddress: fullAddress.trim() })
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, width: '100%', maxWidth: 420, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>Personal Details</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textSecondary, cursor: 'pointer' }}><X size={16} /></button>
+        </div>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={labelStyle()}>Full Name *</label>
+            <input style={inputStyle()} value={fullName} onChange={e => setFullName(e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle()}>Phone Number *</label>
+            <input style={inputStyle()} value={phone} onChange={e => setPhone(e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle()}>Email</label>
+            <input style={inputStyle()} type="email" value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle()}>IC Number</label>
+            <input style={inputStyle()} value={icNumber} onChange={e => setIcNumber(e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle()}>Address</label>
+            <textarea style={{ ...inputStyle(), minHeight: 64, resize: 'vertical' }} value={fullAddress} onChange={e => setFullAddress(e.target.value)} />
+          </div>
+          {err && <div style={{ fontSize: 12, color: C.red }}>{err}</div>}
+          <button onClick={submit} disabled={saving} style={{ padding: '11px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Vehicle Log ────────────────────────────────────────────────────────────
+
+interface VehicleLogJob {
+  job_id: string
+  job_number: string
+  service_type: string
+  status: string
+  checked_in_at: string
+  customer_complaint: string | null
+  diagnosis_summary: string | null
+  final_amount: number | null
+  photo_count: number
+}
+
+function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, onClose }: { vehicleId: string; plateNumber: string; phone: string; password: string; tenantSlug?: string; onClose: () => void }) {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [jobs, setJobs] = useState<VehicleLogJob[]>([])
+  const [vehicleInfo, setVehicleInfo] = useState<{ make: string | null; model: string | null; year: number | null; current_mileage: number | null } | null>(null)
+  const [openPhotosJobId, setOpenPhotosJobId] = useState<string | null>(null)
+  const [photoUrls, setPhotoUrls] = useState<Record<string, { url: string; caption: string | null }[]>>({})
+  const [photosLoading, setPhotosLoading] = useState(false)
+
+  useEffect(() => {
+    supabase.rpc('esp_get_vehicle_log', { p_phone: phone, p_password: password, p_vehicle_id: vehicleId, p_tenant_slug: tenantSlug || null })
+      .then(({ data, error: rpcErr }) => {
+        setLoading(false)
+        if (rpcErr || data?.error) { setError('Could not load vehicle history.'); return }
+        setJobs(data.jobs ?? [])
+        setVehicleInfo(data.vehicle)
+      })
+  }, [vehicleId, phone, password, tenantSlug])
+
+  async function togglePhotos(jobId: string) {
+    if (openPhotosJobId === jobId) { setOpenPhotosJobId(null); return }
+    setOpenPhotosJobId(jobId)
+    if (photoUrls[jobId]) return
+    setPhotosLoading(true)
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/esp-vehicle-photos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ phone, password, job_id: jobId }),
+      })
+      const data = await res.json()
+      if (res.ok && data.photos) setPhotoUrls(prev => ({ ...prev, [jobId]: data.photos }))
+    } finally {
+      setPhotosLoading(false)
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, width: '100%', maxWidth: 480, maxHeight: '85vh', overflowY: 'auto' }}>
+        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{plateNumber}</div>
+            {vehicleInfo && (vehicleInfo.make || vehicleInfo.model) && (
+              <div style={{ fontSize: 12, color: C.textSecondary }}>{vehicleInfo.make} {vehicleInfo.model} {vehicleInfo.year ?? ''}</div>
+            )}
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textSecondary, cursor: 'pointer' }}><X size={16} /></button>
+        </div>
+        <div style={{ padding: 20 }}>
+          {loading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} color={C.textSecondary} /></div>
+          ) : error ? (
+            <div style={{ fontSize: 13, color: C.red }}>{error}</div>
+          ) : jobs.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.textSecondary, textAlign: 'center' }}>No service history yet for this vehicle.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {jobs.map(j => (
+                <div key={j.job_id} style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{j.service_type} · {j.job_number}</div>
+                      <div style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>{formatDate(j.checked_in_at)} · {j.status.replace('_', ' ')}</div>
+                    </div>
+                    {j.final_amount != null && <div style={{ fontSize: 13, fontWeight: 700 }}>RM {j.final_amount.toFixed(2)}</div>}
+                  </div>
+                  {j.customer_complaint && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 8 }}><strong style={{ color: C.textPrimary }}>Complaint:</strong> {j.customer_complaint}</div>}
+                  {j.diagnosis_summary && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 4 }}><strong style={{ color: C.textPrimary }}>Diagnosis:</strong> {j.diagnosis_summary}</div>}
+                  {j.photo_count > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <button onClick={() => togglePhotos(j.job_id)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textSecondary, fontSize: 11, padding: '5px 10px', cursor: 'pointer' }}>
+                        <FileText size={11} /> {openPhotosJobId === j.job_id ? 'Hide' : 'View'} {j.photo_count} photo{j.photo_count > 1 ? 's' : ''}
+                      </button>
+                      {openPhotosJobId === j.job_id && (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                          {photosLoading ? (
+                            <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} color={C.textSecondary} />
+                          ) : (
+                            (photoUrls[j.job_id] ?? []).map((p, i) => (
+                              <a key={i} href={p.url} target="_blank" rel="noreferrer" style={{ width: 64, height: 64, borderRadius: 6, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+                                <img src={p.url} alt={p.caption ?? 'Job photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              </a>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 export function EspMemberLoginPage() {
@@ -453,6 +644,9 @@ export function EspMemberLoginPage() {
   // banner keys off, independent of membership status. Actively triggers
   // reconcile_invoice_now() each tick rather than passively waiting on the
   // cron backstop, same reasoning as EspRegistrationPage.tsx.
+  const [showPersonalDetails, setShowPersonalDetails] = useState(false)
+  const [viewingVehicle, setViewingVehicle] = useState<{ id: string; plateNumber: string } | null>(null)
+
   const [pendingRenewal, setPendingRenewal] = useState<{ invoiceId: string; membershipNumber: string } | null>(null)
   const [renewalPollAttempts, setRenewalPollAttempts] = useState(0)
   const [renewalConfirmed, setRenewalConfirmed] = useState(false)
@@ -496,7 +690,11 @@ export function EspMemberLoginPage() {
       else sessionStorage.removeItem(sessionKey)
       return
     }
-    const s: Session = { phone, password, fullName: data.full_name, memberships: data.memberships }
+    const s: Session = {
+      phone, password, fullName: data.full_name,
+      email: data.email ?? '', icNumber: data.ic_number ?? '', fullAddress: data.full_address ?? '',
+      memberships: data.memberships,
+    }
     sessionStorage.setItem(sessionKey, JSON.stringify(s))
     setSession(s)
   }
@@ -578,9 +776,14 @@ export function EspMemberLoginPage() {
                 <div style={{ fontSize: 18, fontWeight: 700 }}>Hi, {session.fullName}</div>
                 <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>Your ESP membership{session.memberships.length > 1 ? 's' : ''}</div>
               </div>
-              <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.textSecondary, fontSize: 12, padding: '7px 12px', cursor: 'pointer' }}>
-                <LogOut size={13} /> Log Out
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setShowPersonalDetails(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.textSecondary, fontSize: 12, padding: '7px 12px', cursor: 'pointer' }}>
+                  <UserCog size={13} /> Details
+                </button>
+                <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.textSecondary, fontSize: 12, padding: '7px 12px', cursor: 'pointer' }}>
+                  <LogOut size={13} /> Log Out
+                </button>
+              </div>
             </div>
 
             {pendingRenewal && (
@@ -611,7 +814,7 @@ export function EspMemberLoginPage() {
               </div>
             ) : (
               session.memberships.map(m => (
-                <MembershipCard key={m.membership_number} m={m} phone={session.phone} password={session.password} tenantSlug={tenantSlug} onChanged={() => doLogin(session.phone, session.password, true)} />
+                <MembershipCard key={m.membership_number} m={m} phone={session.phone} password={session.password} tenantSlug={tenantSlug} onChanged={() => doLogin(session.phone, session.password, true)} onViewVehicle={(id, plateNumber) => setViewingVehicle({ id, plateNumber })} />
               ))
             )}
           </div>
@@ -697,6 +900,31 @@ export function EspMemberLoginPage() {
           </div>
         )}
       </div>
+
+      {session && showPersonalDetails && (
+        <PersonalDetailsModal
+          session={session}
+          tenantSlug={tenantSlug}
+          onClose={() => setShowPersonalDetails(false)}
+          onSaved={(updated) => {
+            const next: Session = { ...session, fullName: updated.fullName, phone: updated.phone, email: updated.email, icNumber: updated.icNumber, fullAddress: updated.fullAddress }
+            sessionStorage.setItem(sessionKey, JSON.stringify(next))
+            setSession(next)
+            setShowPersonalDetails(false)
+          }}
+        />
+      )}
+
+      {session && viewingVehicle && (
+        <VehicleLogModal
+          vehicleId={viewingVehicle.id}
+          plateNumber={viewingVehicle.plateNumber}
+          phone={session.phone}
+          password={session.password}
+          tenantSlug={tenantSlug}
+          onClose={() => setViewingVehicle(null)}
+        />
+      )}
     </div>
   )
 }
