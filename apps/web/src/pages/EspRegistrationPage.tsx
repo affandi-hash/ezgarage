@@ -165,7 +165,8 @@ export function EspRegistrationPage() {
   }, [session, statusText?.status])
 
   async function checkStatus(s: RegistrationSession) {
-    await supabase.rpc('reconcile_invoice_now', { p_invoice_id: s.invoiceId }).catch(() => { /* best-effort -- the cron backstop still covers this */ })
+    // best-effort -- the cron backstop still covers this if it errors
+    await supabase.rpc('reconcile_invoice_now', { p_invoice_id: s.invoiceId })
     const { data } = await supabase.rpc('esp_check_status', {
       p_membership_number: s.membershipNumber, p_phone: s.phone,
     })
