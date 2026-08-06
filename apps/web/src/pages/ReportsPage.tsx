@@ -275,8 +275,11 @@ export function ReportsPage() {
       // total), which overstated real collections by ~2.7x. Fetch every
       // committed invoice in range (excludes draft -- not yet issued -- and
       // void -- not a real bill), then split by status client-side so
-      // "All Statuses" = "Paid" + "Unpaid" always holds exactly. COGS/gross
-      // profit stay paid-only, unchanged from before.
+      // "All Statuses" = "Paid" + "Unpaid" always holds exactly. COGS
+      // deliberately covers every status here -- cost is incurred (parts
+      // bought, labour performed) at time of invoicing regardless of
+      // whether the customer has paid yet, so scoping it to paid-only
+      // undercounted real cost exposure.
       let invQ = supabase
         .from('invoices')
         .select('job_id, line_items, status, total_amount, subtotal')
@@ -289,9 +292,7 @@ export function ReportsPage() {
       invRows?.forEach((inv: { job_id: string; line_items: LineItem[] | null; status: string; total_amount: number | null; subtotal: number | null }) => {
         const invTotal = inv.total_amount ?? inv.subtotal ?? 0
         revenueAll += invTotal
-        if (inv.status !== 'paid') { revenueUnpaid += invTotal; return }
-        revenue += invTotal
-        paidJobCount++
+        if (inv.status === 'paid') { revenue += invTotal; paidJobCount++ } else { revenueUnpaid += invTotal }
         ;(inv.line_items ?? []).forEach((li) => {
           const qty = li.qty ?? 1
           if (li.item_type === 'part') {
