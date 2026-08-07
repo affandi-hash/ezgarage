@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Building2, Loader2, Plus, Power, X, Copy, Link2, Trash2, Wrench } from 'lucide-react'
+import { Building2, Loader2, Plus, Power, X, Copy, Link2, Trash2, Wrench, LogIn } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -394,11 +394,18 @@ export function EspCommunitySettingsPage() {
         <h1 style={{ fontSize: 18, fontWeight: 700, color: '#F0F0F0' }}>ESP Communities</h1>
         <div style={{ display: 'flex', gap: 8 }}>
           {tenant?.slug && (
-            <button onClick={() => copyLink(`${window.location.origin}/esp/join/${tenant.slug}`, 'Community picker link')}
-              title="Copy the link members use to pick their community before registering"
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: '#1E1E1E', color: '#A0A0A0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              <Link2 size={14} /> Copy Join Link
-            </button>
+            <>
+              <button onClick={() => copyLink(`${window.location.origin}/esp/login/${tenant.slug}`, 'Member login link')}
+                title="Copy the link existing members use to log in -- same link works for every community"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: '#1E1E1E', color: '#A0A0A0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                <LogIn size={14} /> Copy Member Login Link
+              </button>
+              <button onClick={() => copyLink(`${window.location.origin}/esp/join/${tenant.slug}`, 'Community picker link')}
+                title="Copy the link members use to pick their community before registering"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: '#1E1E1E', color: '#A0A0A0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                <Link2 size={14} /> Copy Join Link
+              </button>
+            </>
           )}
           <button onClick={() => setModalFor('new')} disabled={branches.length === 0}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
