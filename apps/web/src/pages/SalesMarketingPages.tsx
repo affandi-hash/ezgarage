@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Building, Target, Share2, Tag, PieChart, Sparkles } from 'lucide-react'
+import { Target, Share2, Tag, PieChart, Sparkles } from 'lucide-react'
 
 function ComingSoonShell({ icon: Icon, title, description, bullets }: {
   icon: LucideIcon
@@ -28,20 +28,6 @@ function ComingSoonShell({ icon: Icon, title, description, bullets }: {
         </ul>
       </div>
     </div>
-  )
-}
-
-export function BusinessProfilePage() {
-  return (
-    <ComingSoonShell
-      icon={Building}
-      title="Business Profile"
-      description="The permanent briefing your AI Sales & Marketing assistant reads before doing anything else -- target audience, brand voice, current channels, budget, and service priorities."
-      bullets={[
-        'Fill it in once, refine anytime -- the assistant uses it instead of re-asking the same questions every session.',
-        'Feeds every other Sales & Marketing submodule: plans, social drafts, and analysis all reason from this profile.',
-      ]}
-    />
   )
 }
 
