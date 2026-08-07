@@ -97,7 +97,7 @@ function blankRow(vehicle_type: 'car' | 'bike', sort_order: number): Maintenance
 // means for this club's bikes/cars. Only usable once the community exists
 // (needs a real community_id to attach items to), same constraint as the
 // membership-number-preview above.
-function MaintenanceItemsEditor({ communityId }: { communityId: string }) {
+function MaintenanceItemsEditor({ communityId, tenantId }: { communityId: string; tenantId: string }) {
   const [rows, setRows] = useState<MaintenanceItemRow[]>([])
   const [deletedIds, setDeletedIds] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -137,7 +137,7 @@ function MaintenanceItemsEditor({ communityId }: { communityId: string }) {
     }
     const payload = withContent.map(r => ({
       ...(r.id ? { id: r.id } : {}),
-      community_id: communityId, vehicle_type: r.vehicle_type, name: r.name.trim(),
+      community_id: communityId, tenant_id: tenantId, vehicle_type: r.vehicle_type, name: r.name.trim(),
       interval_km: r.interval_km.trim() ? parseInt(r.interval_km, 10) : null,
       interval_months: r.interval_months.trim() ? parseInt(r.interval_months, 10) : null,
       sort_order: r.sort_order,
@@ -333,7 +333,7 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
                 <Wrench size={13} color="#F15A22" />
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#A0A0A0' }}>Maintenance Schedule -- what "due for service" means for this club's vehicles</span>
               </div>
-              <MaintenanceItemsEditor communityId={initial.id} />
+              <MaintenanceItemsEditor communityId={initial.id} tenantId={initial.tenant_id} />
             </div>
           )}
         </div>
