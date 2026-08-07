@@ -27,6 +27,7 @@ import {
   Globe2,
   Building2,
   ShieldCheck,
+  Megaphone,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
@@ -82,6 +83,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/esp/members', label: 'ESP Members', icon: Users, roles: ['super_admin', 'ops_manager', 'front_desk', 'foreman'] },
       { to: '/esp/communities', label: 'ESP Communities', icon: Building2, roles: ['super_admin', 'ops_manager', 'foreman'] },
       { to: '/esp/reports', label: 'ESP Reports', icon: BarChart3, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
+      { to: '/esp/announcements', label: 'ESP Announcements', icon: Megaphone, roles: ['super_admin', 'ops_manager', 'front_desk', 'foreman'] },
     ],
   },
   {

@@ -54,14 +54,22 @@ Deno.serve(async (req) => {
     // may not have an IC on file at all (optional at registration) -- for
     // them, verify via esp_verify_invoice_access_by_password instead, using
     // the same password already checked at login rather than asking for IC.
+    //
+    // The ESP portal's Billing tab (128) also lets a member pay a regular
+    // job/service invoice, not just their own membership-fee one -- those
+    // have esp_member_id = NULL, so route password-authenticated requests
+    // through the customer-scoped check instead of the plate+IC one, which
+    // the password-only portal session has no plate/IC to satisfy.
     const verifyRpc = invoice.esp_member_id
       ? (password ? 'esp_verify_invoice_access_by_password' : 'esp_verify_invoice_access')
-      : 'portal_verify_invoice_access'
+      : (password ? 'esp_verify_customer_invoice_by_password' : 'portal_verify_invoice_access')
     const verifyArgs = invoice.esp_member_id
       ? (password
           ? { p_invoice_id: invoice_id, p_phone: requestPhone, p_password: password }
           : { p_invoice_id: invoice_id, p_phone: requestPhone, p_ic_first6: ic_first6 })
-      : { p_invoice_id: invoice_id, p_plate: plate, p_phone: requestPhone, p_ic_first6: ic_first6 }
+      : (password
+          ? { p_invoice_id: invoice_id, p_phone: requestPhone, p_password: password }
+          : { p_invoice_id: invoice_id, p_plate: plate, p_phone: requestPhone, p_ic_first6: ic_first6 })
     const { data: verified, error: verifyErr } = await supabase.rpc(verifyRpc, verifyArgs)
     if (verifyErr || !verified) {
       return new Response(JSON.stringify({ error: 'Could not verify your identity for this invoice' }), { status: 403, headers: corsHeaders })

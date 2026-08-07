@@ -40,6 +40,7 @@ import { EspCommunityPickerPage } from '@/pages/EspCommunityPickerPage'
 import { EspMemberLoginPage } from '@/pages/EspMemberLoginPage'
 import { EspCommunitySettingsPage } from '@/pages/EspCommunitySettingsPage'
 import { EspMembersPage } from '@/pages/EspMembersPage'
+import { EspAnnouncementsPage } from '@/pages/EspAnnouncementsPage'
 import { EspReportsPage } from '@/pages/EspReportsPage'
 import { PaymentVerificationsPage } from '@/pages/PaymentVerificationsPage'
 
@@ -312,6 +313,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager','finance','foreman']}>
                 <EspReportsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/esp/announcements"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','front_desk','foreman']}>
+                <EspAnnouncementsPage />
               </ProtectedRoute>
             }
           />

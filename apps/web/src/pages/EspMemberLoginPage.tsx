@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon, X, UserCog, ChevronRight, Pencil } from 'lucide-react'
+import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon, X, UserCog, ChevronRight, Pencil, ShoppingBag } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { OTHER, makeOptionsFor, modelOptionsFor } from '@/lib/vehicleMakes'
 
@@ -100,6 +100,158 @@ function formatDate(iso: string | null): string {
 function daysUntil(iso: string | null): number | null {
   if (!iso) return null
   return Math.ceil((new Date(iso).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+}
+
+// Reused for both the page-level nav (My Membership/Billing/Announcements/
+// Marketplace) and each membership card's internal tabs (Overview/
+// Vehicles/History) -- one visual language for "these are views of the
+// same data," not two different tab styles competing for attention.
+function Tabs({ tabs, active, onChange }: { tabs: { id: string; label: string }[]; active: string; onChange: (id: string) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 4, background: C.surface2, borderRadius: 10, padding: 4, overflowX: 'auto' }}>
+      {tabs.map(t => (
+        <button key={t.id} type="button" onClick={() => onChange(t.id)}
+          style={{
+            flex: '1 0 auto', padding: '8px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
+            background: active === t.id ? C.orange : 'transparent',
+            color: active === t.id ? '#fff' : C.textSecondary,
+            fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+          }}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Mirrors CustomerPortalPage.tsx's status vocabulary exactly (jobs.status
+// as WorkshopBoardPage actually uses it) so an ESP member's active job is
+// tracked with the same fidelity as the standalone customer portal's.
+const JOB_STATUS_LABELS: Record<string, string> = {
+  checked_in: 'Checked In', diagnosing: 'Diagnosing', waiting_approval: 'Waiting Approval',
+  waiting_parts: 'Waiting for Parts', in_progress: 'In Progress', ready: 'Ready for Collection',
+  long_due: 'Ready — Please Collect Soon', delivered: 'Delivered', closed: 'Closed', cancelled: 'Cancelled',
+}
+const JOB_STATUS_COLORS: Record<string, string> = {
+  checked_in: '#8B5CF6', diagnosing: '#F59E0B', waiting_approval: '#EF4444', waiting_parts: '#F97316',
+  in_progress: C.orange, ready: '#22C55E', long_due: '#DC2626', delivered: '#0EA5E9', closed: '#6B7280', cancelled: C.red,
+}
+const JOB_STATUS_ORDER = ['checked_in', 'diagnosing', 'waiting_approval', 'waiting_parts', 'in_progress', 'ready', 'delivered']
+const TERMINAL_JOB_STATUSES = ['delivered', 'closed', 'cancelled']
+function jobTimelinePosition(status: string) { return status === 'long_due' ? 'ready' : status }
+
+function JobStatusTimeline({ currentStatus }: { currentStatus: string }) {
+  const idx = JOB_STATUS_ORDER.indexOf(jobTimelinePosition(currentStatus))
+  if (currentStatus === 'cancelled') return null
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0, minWidth: 420 }}>
+        {JOB_STATUS_ORDER.map((s, i) => {
+          const done = i <= idx
+          const active = s === jobTimelinePosition(currentStatus)
+          const color = active ? (JOB_STATUS_COLORS[s] || C.orange) : done ? C.green : C.border
+          return (
+            <div key={s} style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: '0 0 auto' }}>
+                <div style={{ width: 20, height: 20, borderRadius: '50%', background: done ? color : 'transparent', border: `2px solid ${color}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {done && <CheckCircle size={10} color="#fff" />}
+                </div>
+                <span style={{ fontSize: 9, color: active ? color : C.textSecondary, textAlign: 'center', width: 58, lineHeight: 1.2, fontWeight: active ? 700 : 400 }}>{JOB_STATUS_LABELS[s]}</span>
+              </div>
+              {i < JOB_STATUS_ORDER.length - 1 && <div style={{ flex: 1, height: 2, background: (done && i < idx) ? C.green : C.border, marginBottom: 20 }} />}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Pay Online / Payment Proof (ESP variants -- phone+password instead of
+// the standalone customer portal's plate+IC session) ────────────────────
+
+function EspPayOnline({ invoiceId, balanceDue, phone, password }: { invoiceId: string; balanceDue: number; phone: string; password: string }) {
+  const [loading, setLoading] = useState<'duitnow' | 'credit_card' | 'fpx' | null>(null)
+  const [error, setError] = useState('')
+
+  async function startPayment(method: 'duitnow' | 'credit_card' | 'fpx') {
+    setLoading(method); setError('')
+    try {
+      const res = await fetch(RAUDHAHPAY_CREATE_PAYMENT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ invoice_id: invoiceId, payment_method: method, redirect_url: window.location.href, phone, password }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Failed to start payment. Please try again.'); setLoading(null); return }
+      window.location.href = data.payment_url
+    } catch {
+      setError('Network error. Please check your connection and try again.')
+      setLoading(null)
+    }
+  }
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 12, color: C.textSecondary }}>Balance due: <strong style={{ color: C.orange }}>RM {balanceDue.toFixed(2)}</strong></div>
+      {error && <div style={{ fontSize: 11, color: C.red }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {(['duitnow', 'credit_card', 'fpx'] as const).map(m => (
+          <button key={m} type="button" onClick={() => startPayment(m)} disabled={loading !== null}
+            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: C.orange, color: '#fff', fontSize: 12, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading && loading !== m ? 0.5 : 1 }}>
+            {loading === m ? 'Redirecting…' : m === 'duitnow' ? 'DuitNow QR' : m === 'credit_card' ? 'Card' : 'FPX'}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function EspPaymentUpload({ jobId }: { jobId: string }) {
+  const [open, setOpen] = useState(false)
+  const [file, setFile] = useState<File | null>(null)
+  const [amount, setAmount] = useState('')
+  const [reference, setReference] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [done, setDone] = useState(false)
+  const [err, setErr] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const upload = async () => {
+    if (!file) return
+    setUploading(true); setErr('')
+    const ext = file.name.split('.').pop()
+    const path = `${jobId}/payment_proof_${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('portal-uploads').upload(path, file, { upsert: false })
+    if (error) { setErr(error.message); setUploading(false); return }
+    await supabase.rpc('submit_payment_proof', {
+      p_job_id: jobId, p_storage_path: path,
+      p_claimed_amount: amount ? Number(amount) : null, p_claimed_reference: reference || null,
+    })
+    setDone(true); setUploading(false)
+  }
+
+  if (done) return <div style={{ fontSize: 12, color: C.green, padding: '8px 0' }}>Payment proof submitted — we'll confirm it shortly.</div>
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.textSecondary, fontSize: 12, padding: '8px 12px', cursor: 'pointer' }}>
+        <FileText size={13} /> Paid another way? Upload proof
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <input ref={fileRef} type="file" accept="image/*,.pdf" onChange={e => setFile(e.target.files?.[0] ?? null)} style={{ fontSize: 12, color: C.textSecondary }} />
+      <input style={inputStyle()} type="number" placeholder="Amount paid (optional)" value={amount} onChange={e => setAmount(e.target.value)} />
+      <input style={inputStyle()} placeholder="Reference number (optional)" value={reference} onChange={e => setReference(e.target.value)} />
+      {err && <div style={{ fontSize: 11, color: C.red }}>{err}</div>}
+      <button type="button" onClick={upload} disabled={!file || uploading} style={{ padding: '8px 0', borderRadius: 8, border: 'none', background: C.orange, color: '#fff', fontSize: 12, fontWeight: 700, cursor: (!file || uploading) ? 'not-allowed' : 'pointer', opacity: (!file || uploading) ? 0.6 : 1 }}>
+        {uploading ? 'Uploading…' : 'Submit Proof'}
+      </button>
+    </div>
+  )
 }
 
 // ─── Add Vehicle ────────────────────────────────────────────────────────────
@@ -215,9 +367,126 @@ function AddVehicleForm({ membershipNumber, phone, password, tenantSlug, onAdded
   )
 }
 
+// ─── Announcements ──────────────────────────────────────────────────────────
+// Account-wide, not per-membership -- a general Motoverse announcement
+// reaches every member regardless of which community they're in, and a
+// community-specific one only reaches that community's own members.
+// esp_get_announcements already does that filtering server-side.
+
+interface Announcement { id: string; title: string; body: string; created_at: string; community_name: string | null; is_general: boolean }
+
+function AnnouncementsFeed({ phone, password, tenantSlug }: { phone: string; password: string; tenantSlug?: string }) {
+  const [items, setItems] = useState<Announcement[] | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    supabase.rpc('esp_get_announcements', { p_phone: phone, p_password: password, p_tenant_slug: tenantSlug || null })
+      .then(({ data, error: rpcErr }) => {
+        if (rpcErr || data?.error) { setError('Could not load announcements.'); return }
+        setItems(data.announcements ?? [])
+      })
+  }, [phone, password, tenantSlug])
+
+  if (error) return <div style={{ fontSize: 13, color: C.red, textAlign: 'center', padding: 24 }}>{error}</div>
+  if (items === null) return <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} color={C.textSecondary} /></div>
+  if (items.length === 0) return <div style={{ fontSize: 13, color: C.textSecondary, textAlign: 'center', padding: 24 }}>No announcements yet.</div>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {items.map(a => (
+        <div key={a.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{a.title}</div>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: a.is_general ? 'rgba(59,130,246,0.12)' : 'rgba(241,90,34,0.12)', color: a.is_general ? C.blue : C.orange, whiteSpace: 'nowrap' }}>
+              {a.is_general ? 'MOTOVERSE' : (a.community_name ?? '').toUpperCase()}
+            </span>
+          </div>
+          <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 8, whiteSpace: 'pre-wrap' }}>{a.body}</div>
+          <div style={{ fontSize: 11, color: C.textSecondary, marginTop: 10 }}>{formatDate(a.created_at)}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Billing ────────────────────────────────────────────────────────────────
+// Also account-wide, not per-membership: esp_get_billing returns every
+// invoice tied to this customer (membership fees AND job/service
+// invoices), since a member's bills aren't scoped to one community.
+
+interface Bill {
+  invoice_id: string; invoice_number: string; status: string; total_amount: number; amount_paid: number
+  balance_due: number; issue_date: string; due_date: string | null; is_esp_fee: boolean
+  vehicle_plate: string | null; job_number: string | null
+}
+
+function BillingTab({ phone, password, tenantSlug }: { phone: string; password: string; tenantSlug?: string }) {
+  const [bills, setBills] = useState<Bill[] | null>(null)
+  const [error, setError] = useState('')
+  const [payingId, setPayingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    supabase.rpc('esp_get_billing', { p_phone: phone, p_password: password, p_tenant_slug: tenantSlug || null })
+      .then(({ data, error: rpcErr }) => {
+        if (rpcErr || data?.error) { setError('Could not load your bills.'); return }
+        setBills(data.bills ?? [])
+      })
+  }, [phone, password, tenantSlug])
+
+  if (error) return <div style={{ fontSize: 13, color: C.red, textAlign: 'center', padding: 24 }}>{error}</div>
+  if (bills === null) return <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} color={C.textSecondary} /></div>
+
+  const open = bills.filter(b => b.balance_due > 0)
+  const closed = bills.filter(b => b.balance_due <= 0)
+
+  function BillRow({ b }: { b: Bill }) {
+    return (
+      <div style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{b.invoice_number}</div>
+            <div style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>
+              {formatDate(b.issue_date)} · {b.is_esp_fee ? 'Membership Fee' : b.vehicle_plate ? `${b.vehicle_plate}${b.job_number ? ` · ${b.job_number}` : ''}` : 'Service'}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>RM {b.total_amount.toFixed(2)}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: b.balance_due > 0 ? '#F59E0B' : C.green }}>{b.status}</div>
+          </div>
+        </div>
+        {b.balance_due > 0 && (
+          payingId === b.invoice_id ? (
+            <div style={{ marginTop: 10 }}><EspPayOnline invoiceId={b.invoice_id} balanceDue={b.balance_due} phone={phone} password={password} /></div>
+          ) : (
+            <button type="button" onClick={() => setPayingId(b.invoice_id)} style={{ marginTop: 10, padding: '7px 14px', borderRadius: 8, border: 'none', background: C.orange, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              Pay Now — RM {b.balance_due.toFixed(2)}
+            </button>
+          )
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div>
+        <div style={sectionLabelStyle()}>Open Bills{open.length > 0 ? ` (${open.length})` : ''}</div>
+        {open.length === 0 ? <div style={{ fontSize: 12, color: C.textSecondary }}>Nothing outstanding — you're all paid up.</div> :
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{open.map(b => <BillRow key={b.invoice_id} b={b} />)}</div>}
+      </div>
+      <div>
+        <div style={sectionLabelStyle()}>Closed Bills{closed.length > 0 ? ` (${closed.length})` : ''}</div>
+        {closed.length === 0 ? <div style={{ fontSize: 12, color: C.textSecondary }}>No closed bills yet.</div> :
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{closed.map(b => <BillRow key={b.invoice_id} b={b} />)}</div>}
+      </div>
+    </div>
+  )
+}
+
 // ─── Membership Card ────────────────────────────────────────────────────────
 
 function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehicle }: { m: Membership; phone: string; password: string; tenantSlug?: string; onChanged: () => void; onViewVehicle: (vehicleId: string, plateNumber: string) => void }) {
+  const [tab, setTab] = useState<'overview' | 'vehicles' | 'history'>('overview')
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string> | null>(null)
   const [receiptsLoading, setReceiptsLoading] = useState(false)
   const [renewing, setRenewing] = useState(false)
@@ -229,6 +498,12 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehic
   const lastService = m.service_history[0]
   const daysSinceService = lastService ? Math.floor((Date.now() - new Date(lastService.checked_in_at).getTime()) / (1000 * 60 * 60 * 24)) : null
   const dueForCheckup = daysSinceService !== null && daysSinceService > 90
+
+  // Surfaced prominently in Overview -- a member checking "is my bike
+  // ready?" shouldn't have to dig into History to find out something's
+  // even in the shop right now.
+  const activeServiceJob = m.service_history.find(j => !TERMINAL_JOB_STATUSES.includes(j.status))
+  const activeVehicle = activeServiceJob ? m.vehicles.find(v => v.plate_number === activeServiceJob.plate_number) : null
 
   async function loadReceipts() {
     if (receiptUrls || receiptsLoading || m.receipts.length === 0) return
@@ -297,7 +572,7 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehic
         {m.valid_until && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 10 }}>Valid until {formatDate(m.valid_until)}</div>}
       </div>
 
-      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Expiry / maintenance banner */}
         {(expiringSoon || expired || dueForCheckup) && (
           <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#F59E0B' }}>
@@ -307,112 +582,133 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehic
           </div>
         )}
 
-        {/* Discounts */}
-        <div>
-          <div style={sectionLabelStyle()}>Your Discounts</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div style={{ background: C.surface2, borderRadius: 8, padding: 12 }}>
-              <div style={{ fontSize: 11, color: C.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><Bike size={12} /> Bike</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: C.orange, marginTop: 4 }}>{m.discounts.bike_full_pct}% off Full Service</div>
-              <div style={{ fontSize: 11, color: C.textSecondary }}>{m.discounts.bike_selected_pct}% off Selected Items</div>
-            </div>
-            <div style={{ background: C.surface2, borderRadius: 8, padding: 12 }}>
-              <div style={{ fontSize: 11, color: C.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><Car size={12} /> Car</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: C.orange, marginTop: 4 }}>{m.discounts.car_full_pct}% off Full Service</div>
-              <div style={{ fontSize: 11, color: C.textSecondary }}>{m.discounts.car_selected_pct}% off Selected Items</div>
-            </div>
-          </div>
-        </div>
+        <Tabs
+          tabs={[{ id: 'overview', label: 'Overview' }, { id: 'vehicles', label: 'Vehicles' }, { id: 'history', label: 'History' }]}
+          active={tab} onChange={id => setTab(id as typeof tab)}
+        />
 
-        {/* Vehicles */}
-        <div>
-          <div style={sectionLabelStyle()}>Your Vehicles</div>
-          {m.vehicles.length > 0 && (
-            <div style={{ fontSize: 11, color: C.textSecondary, marginBottom: 8 }}>Tap a vehicle for its full service history, photos, and maintenance status.</div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-            {m.vehicles.length === 0 ? (
-              <div style={{ fontSize: 12, color: C.textSecondary }}>No vehicles on file yet.</div>
-            ) : m.vehicles.map(v => (
-              <button key={v.id} onClick={() => onViewVehicle(v.id, v.plate_number)}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.surface2, border: 'none', borderRadius: 8, padding: '8px 12px', width: '100%', textAlign: 'left', cursor: 'pointer' }}>
-                {v.vehicle_type === 'bike' ? <Bike size={13} color={C.textSecondary} /> : <Car size={13} color={C.textSecondary} />}
-                <span style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary }}>{v.plate_number}</span>
-                {(v.make || v.model) && <span style={{ fontSize: 12, color: C.textSecondary }}>{v.make} {v.model}</span>}
-                <ChevronRight size={13} color={C.textSecondary} style={{ marginLeft: 'auto' }} />
+        {tab === 'overview' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {activeServiceJob && activeVehicle && (
+              <button type="button" onClick={() => onViewVehicle(activeVehicle.id, activeVehicle.plate_number)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(241,90,34,0.08)', border: `1px solid rgba(241,90,34,0.3)`, borderRadius: 10, padding: '12px 14px', width: '100%', textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+                <WrenchIcon size={16} color={C.orange} style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.orange }}>{activeVehicle.plate_number} is being serviced</div>
+                  <div style={{ fontSize: 11, color: C.textSecondary, marginTop: 1 }}>{JOB_STATUS_LABELS[activeServiceJob.status] ?? activeServiceJob.status} — tap for live status</div>
+                </div>
+                <ChevronRight size={14} color={C.orange} />
               </button>
-            ))}
-          </div>
-          <AddVehicleForm membershipNumber={m.membership_number} phone={phone} password={password} tenantSlug={tenantSlug} onAdded={onChanged} />
-        </div>
+            )}
 
-        {/* Service history */}
-        <div>
-          <div style={sectionLabelStyle()}><WrenchIcon size={12} /> Service History</div>
-          {m.service_history.length === 0 ? (
-            <div style={{ fontSize: 12, color: C.textSecondary }}>No service records yet.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {m.service_history.map(j => {
-                const vehicle = m.vehicles.find(v => v.plate_number === j.plate_number)
-                return (
-                  <button key={j.job_number} type="button" disabled={!vehicle}
-                    onClick={() => vehicle && onViewVehicle(vehicle.id, vehicle.plate_number)}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, border: 'none', borderRadius: 8, padding: '8px 12px', width: '100%', textAlign: 'left', cursor: vehicle ? 'pointer' : 'default', font: 'inherit', color: 'inherit' }}>
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 600 }}>{j.plate_number} · {j.service_type}</div>
-                      <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(j.checked_in_at)} · {j.job_number}</div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {j.final_amount != null && <span style={{ fontSize: 12, fontWeight: 600, color: C.textPrimary }}>RM {j.final_amount.toFixed(2)}</span>}
-                      {vehicle && <ChevronRight size={13} color={C.textSecondary} />}
-                    </div>
-                  </button>
-                )
-              })}
+            <div>
+              <div style={sectionLabelStyle()}>Your Discounts</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ background: C.surface2, borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontSize: 11, color: C.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><Bike size={12} /> Bike</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: C.orange, marginTop: 4 }}>{m.discounts.bike_full_pct}% off Full Service</div>
+                  <div style={{ fontSize: 11, color: C.textSecondary }}>{m.discounts.bike_selected_pct}% off Selected Items</div>
+                </div>
+                <div style={{ background: C.surface2, borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontSize: 11, color: C.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><Car size={12} /> Car</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: C.orange, marginTop: 4 }}>{m.discounts.car_full_pct}% off Full Service</div>
+                  <div style={{ fontSize: 11, color: C.textSecondary }}>{m.discounts.car_selected_pct}% off Selected Items</div>
+                </div>
+              </div>
             </div>
-          )}
-        </div>
 
-        {/* Receipts */}
-        <div>
-          <div style={sectionLabelStyle()}><FileText size={12} /> Receipts</div>
-          {m.receipts.length === 0 ? (
-            <div style={{ fontSize: 12, color: C.textSecondary }}>No receipts yet.</div>
-          ) : receiptUrls === null ? (
-            <button type="button" onClick={loadReceipts} disabled={receiptsLoading} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.textSecondary, fontSize: 12, padding: '8px 12px', cursor: 'pointer' }}>
-              {receiptsLoading ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <FileText size={13} />}
-              {receiptsLoading ? 'Loading…' : `View ${m.receipts.length} receipt${m.receipts.length > 1 ? 's' : ''}`}
-            </button>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {m.receipts.map(r => (
-                <a key={r.receipt_id} href={receiptUrls[r.receipt_id]} target="_blank" rel="noreferrer"
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, borderRadius: 8, padding: '8px 12px', textDecoration: 'none', color: 'inherit' }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{r.invoice_number}</div>
-                    <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(r.payment_date)} · {r.payment_method}</div>
-                  </div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: C.orange }}>RM {r.amount.toFixed(2)}</div>
-                </a>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {(expiringSoon || expired) && (
+                <button type="button" onClick={renew} disabled={renewing} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: renewing ? 'not-allowed' : 'pointer', opacity: renewing ? 0.7 : 1 }}>
+                  <RefreshCw size={14} /> {renewing ? 'Starting payment…' : 'Renew Membership'}
+                </button>
+              )}
+              {renewError && <div style={{ fontSize: 12, color: C.red }}>{renewError}</div>}
+              <a href={`/book/${tenantSlug ?? ''}?esp=${encodeURIComponent(m.membership_number)}&phone=${encodeURIComponent(phone)}${m.vehicles[0] ? `&plate=${encodeURIComponent(m.vehicles[0].plate_number)}` : ''}`}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.blue}`, color: C.blue, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
+                <CalendarPlus size={14} /> Book Appointment (Priority)
+              </a>
+            </div>
+          </div>
+        )}
+
+        {tab === 'vehicles' && (
+          <div>
+            {m.vehicles.length > 0 && (
+              <div style={{ fontSize: 11, color: C.textSecondary, marginBottom: 8 }}>Tap a vehicle for its full service history, photos, and maintenance status.</div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+              {m.vehicles.length === 0 ? (
+                <div style={{ fontSize: 12, color: C.textSecondary }}>No vehicles on file yet.</div>
+              ) : m.vehicles.map(v => (
+                <button key={v.id} onClick={() => onViewVehicle(v.id, v.plate_number)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.surface2, border: 'none', borderRadius: 8, padding: '8px 12px', width: '100%', textAlign: 'left', cursor: 'pointer' }}>
+                  {v.vehicle_type === 'bike' ? <Bike size={13} color={C.textSecondary} /> : <Car size={13} color={C.textSecondary} />}
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary }}>{v.plate_number}</span>
+                  {(v.make || v.model) && <span style={{ fontSize: 12, color: C.textSecondary }}>{v.make} {v.model}</span>}
+                  <ChevronRight size={13} color={C.textSecondary} style={{ marginLeft: 'auto' }} />
+                </button>
               ))}
             </div>
-          )}
-        </div>
+            <AddVehicleForm membershipNumber={m.membership_number} phone={phone} password={password} tenantSlug={tenantSlug} onAdded={onChanged} />
+          </div>
+        )}
 
-        {/* Actions: renew + book */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {(expiringSoon || expired) && (
-            <button type="button" onClick={renew} disabled={renewing} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px 0', borderRadius: 8, background: C.orange, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: renewing ? 'not-allowed' : 'pointer', opacity: renewing ? 0.7 : 1 }}>
-              <RefreshCw size={14} /> {renewing ? 'Starting payment…' : 'Renew Membership'}
-            </button>
-          )}
-          {renewError && <div style={{ fontSize: 12, color: C.red }}>{renewError}</div>}
-          <a href={`/book/${tenantSlug ?? ''}?esp=${encodeURIComponent(m.membership_number)}&phone=${encodeURIComponent(phone)}${m.vehicles[0] ? `&plate=${encodeURIComponent(m.vehicles[0].plate_number)}` : ''}`}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px 0', borderRadius: 8, background: 'transparent', border: `1px solid ${C.blue}`, color: C.blue, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
-            <CalendarPlus size={14} /> Book Appointment (Priority)
-          </a>
-        </div>
+        {tab === 'history' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div>
+              <div style={sectionLabelStyle()}><WrenchIcon size={12} /> Service History</div>
+              {m.service_history.length === 0 ? (
+                <div style={{ fontSize: 12, color: C.textSecondary }}>No service records yet.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {m.service_history.map(j => {
+                    const vehicle = m.vehicles.find(v => v.plate_number === j.plate_number)
+                    return (
+                      <button key={j.job_number} type="button" disabled={!vehicle}
+                        onClick={() => vehicle && onViewVehicle(vehicle.id, vehicle.plate_number)}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, border: 'none', borderRadius: 8, padding: '8px 12px', width: '100%', textAlign: 'left', cursor: vehicle ? 'pointer' : 'default', font: 'inherit', color: 'inherit' }}>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600 }}>{j.plate_number} · {j.service_type}</div>
+                          <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(j.checked_in_at)} · {j.job_number}</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {j.final_amount != null && <span style={{ fontSize: 12, fontWeight: 600, color: C.textPrimary }}>RM {j.final_amount.toFixed(2)}</span>}
+                          {vehicle && <ChevronRight size={13} color={C.textSecondary} />}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div style={sectionLabelStyle()}><FileText size={12} /> Receipts</div>
+              {m.receipts.length === 0 ? (
+                <div style={{ fontSize: 12, color: C.textSecondary }}>No receipts yet.</div>
+              ) : receiptUrls === null ? (
+                <button type="button" onClick={loadReceipts} disabled={receiptsLoading} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.textSecondary, fontSize: 12, padding: '8px 12px', cursor: 'pointer' }}>
+                  {receiptsLoading ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <FileText size={13} />}
+                  {receiptsLoading ? 'Loading…' : `View ${m.receipts.length} receipt${m.receipts.length > 1 ? 's' : ''}`}
+                </button>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {m.receipts.map(r => (
+                    <a key={r.receipt_id} href={receiptUrls[r.receipt_id]} target="_blank" rel="noreferrer"
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, borderRadius: 8, padding: '8px 12px', textDecoration: 'none', color: 'inherit' }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600 }}>{r.invoice_number}</div>
+                        <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(r.payment_date)} · {r.payment_method}</div>
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.orange }}>RM {r.amount.toFixed(2)}</div>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -501,9 +797,104 @@ interface VehicleLogJob {
   checked_in_at: string
   customer_complaint: string | null
   diagnosis_summary: string | null
+  next_action: string | null
+  estimated_cost: number | null
+  estimate_approved_at: string | null
   final_amount: number | null
   photo_count: number
+  invoice_id: string | null
+  invoice_number: string | null
+  invoice_total: number | null
+  invoice_paid: number | null
 }
+
+// A non-terminal job gets the full live-tracker treatment (status
+// timeline, estimate approval, pay online); a completed one just shows
+// its summary, same as before this module existed.
+function VehicleJobCard({ job, phone, password, tenantSlug, openPhotosJobId, photoUrls, photosLoading, onTogglePhotos, onApproved }: {
+  job: VehicleLogJob; phone: string; password: string; tenantSlug?: string
+  openPhotosJobId: string | null; photoUrls: Record<string, { url: string; caption: string | null }[]>; photosLoading: boolean
+  onTogglePhotos: (jobId: string) => void; onApproved: (jobId: string) => void
+}) {
+  const [approving, setApproving] = useState(false)
+  const [approveErr, setApproveErr] = useState('')
+  const isActive = !TERMINAL_JOB_STATUSES.includes(job.status)
+  const canApprove = isActive && job.estimated_cost != null && !job.estimate_approved_at && ['diagnosing', 'waiting_parts'].includes(job.status)
+  const hasInvoice = !!job.invoice_id
+  const balanceDue = job.invoice_total != null && job.invoice_paid != null ? job.invoice_total - job.invoice_paid : 0
+  const showPay = hasInvoice && balanceDue > 0 && ['ready', 'long_due', 'delivered', 'closed'].includes(job.status)
+
+  async function approve() {
+    setApproving(true); setApproveErr('')
+    const { data, error } = await supabase.rpc('esp_approve_estimate', { p_phone: phone, p_password: password, p_job_id: job.job_id, p_tenant_slug: tenantSlug || null })
+    setApproving(false)
+    if (error || data?.error) { setApproveErr('Could not approve. Please try again or contact us.'); return }
+    onApproved(job.job_id)
+  }
+
+  return (
+    <div style={{ background: C.surface2, border: `1px solid ${isActive ? C.orange + '55' : C.border}`, borderRadius: 8, padding: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{job.service_type} · {job.job_number}</div>
+          <div style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>{formatDate(job.checked_in_at)} · {JOB_STATUS_LABELS[job.status] ?? job.status.replace('_', ' ')}</div>
+        </div>
+        {job.final_amount != null && <div style={{ fontSize: 13, fontWeight: 700 }}>RM {job.final_amount.toFixed(2)}</div>}
+      </div>
+
+      {isActive && <div style={{ marginTop: 12, marginBottom: 4 }}><JobStatusTimeline currentStatus={job.status} /></div>}
+
+      {job.customer_complaint && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 8 }}><strong style={{ color: C.textPrimary }}>Complaint:</strong> {job.customer_complaint}</div>}
+      {job.diagnosis_summary && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 4 }}><strong style={{ color: C.textPrimary }}>Diagnosis:</strong> {job.diagnosis_summary}</div>}
+      {job.next_action && <div style={{ fontSize: 12, color: C.blue, marginTop: 4 }}><strong>Next:</strong> {job.next_action}</div>}
+
+      {canApprove && (
+        <div style={{ background: 'rgba(241,90,34,0.08)', border: `1px solid rgba(241,90,34,0.25)`, borderRadius: 8, padding: 12, marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: C.textPrimary, marginBottom: 8 }}>Estimated cost: <strong style={{ color: C.orange }}>RM {job.estimated_cost!.toFixed(2)}</strong>. Please approve to proceed.</div>
+          {approveErr && <div style={{ fontSize: 11, color: C.red, marginBottom: 6 }}>{approveErr}</div>}
+          <button type="button" onClick={approve} disabled={approving} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: C.orange, color: '#fff', fontSize: 12, fontWeight: 700, cursor: approving ? 'not-allowed' : 'pointer' }}>
+            {approving ? 'Approving…' : 'Approve Estimate'}
+          </button>
+        </div>
+      )}
+      {job.estimate_approved_at && job.estimated_cost != null && isActive && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 12, color: C.green }}>
+          <CheckCircle size={13} /> Estimate approved — workshop will proceed.
+        </div>
+      )}
+
+      {job.photo_count > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <button onClick={() => onTogglePhotos(job.job_id)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textSecondary, fontSize: 11, padding: '5px 10px', cursor: 'pointer' }}>
+            <FileText size={11} /> {openPhotosJobId === job.job_id ? 'Hide' : 'View'} {job.photo_count} photo{job.photo_count > 1 ? 's' : ''}
+          </button>
+          {openPhotosJobId === job.job_id && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+              {photosLoading ? (
+                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} color={C.textSecondary} />
+              ) : (
+                (photoUrls[job.job_id] ?? []).map((p, i) => (
+                  <a key={i} href={p.url} target="_blank" rel="noreferrer" style={{ width: 64, height: 64, borderRadius: 6, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+                    <img src={p.url} alt={p.caption ?? 'Job photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </a>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showPay && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <EspPayOnline invoiceId={job.invoice_id!} balanceDue={balanceDue} phone={phone} password={password} />
+          <EspPaymentUpload jobId={job.job_id} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface MileageHistoryEntry { recorded_at: string; mileage: number; source: 'job_checkin' | 'member_report' }
 
 interface MileageHistoryEntry { recorded_at: string; mileage: number; source: 'job_checkin' | 'member_report' }
 
@@ -777,37 +1168,12 @@ function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, 
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {jobs.map(j => (
-                <div key={j.job_id} style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{j.service_type} · {j.job_number}</div>
-                      <div style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>{formatDate(j.checked_in_at)} · {j.status.replace('_', ' ')}</div>
-                    </div>
-                    {j.final_amount != null && <div style={{ fontSize: 13, fontWeight: 700 }}>RM {j.final_amount.toFixed(2)}</div>}
-                  </div>
-                  {j.customer_complaint && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 8 }}><strong style={{ color: C.textPrimary }}>Complaint:</strong> {j.customer_complaint}</div>}
-                  {j.diagnosis_summary && <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 4 }}><strong style={{ color: C.textPrimary }}>Diagnosis:</strong> {j.diagnosis_summary}</div>}
-                  {j.photo_count > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      <button onClick={() => togglePhotos(j.job_id)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 6, color: C.textSecondary, fontSize: 11, padding: '5px 10px', cursor: 'pointer' }}>
-                        <FileText size={11} /> {openPhotosJobId === j.job_id ? 'Hide' : 'View'} {j.photo_count} photo{j.photo_count > 1 ? 's' : ''}
-                      </button>
-                      {openPhotosJobId === j.job_id && (
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                          {photosLoading ? (
-                            <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} color={C.textSecondary} />
-                          ) : (
-                            (photoUrls[j.job_id] ?? []).map((p, i) => (
-                              <a key={i} href={p.url} target="_blank" rel="noreferrer" style={{ width: 64, height: 64, borderRadius: 6, overflow: 'hidden', border: `1px solid ${C.border}` }}>
-                                <img src={p.url} alt={p.caption ?? 'Job photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              </a>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                <VehicleJobCard
+                  key={j.job_id} job={j} phone={phone} password={password} tenantSlug={tenantSlug}
+                  openPhotosJobId={openPhotosJobId} photoUrls={photoUrls} photosLoading={photosLoading}
+                  onTogglePhotos={togglePhotos}
+                  onApproved={jobId => setJobs(prev => prev.map(x => x.job_id === jobId ? { ...x, estimate_approved_at: new Date().toISOString() } : x))}
+                />
               ))}
             </div>
           )}
@@ -870,6 +1236,11 @@ export function EspMemberLoginPage() {
   // cron backstop, same reasoning as EspRegistrationPage.tsx.
   const [showPersonalDetails, setShowPersonalDetails] = useState(false)
   const [viewingVehicle, setViewingVehicle] = useState<{ id: string; plateNumber: string } | null>(null)
+  // Billing and Announcements are account-wide (a bill or a general
+  // Motoverse announcement isn't scoped to one community), so they're
+  // page-level tabs alongside "My Membership," not nested inside any one
+  // membership card the way Overview/Vehicles/History are.
+  const [pageTab, setPageTab] = useState<'membership' | 'billing' | 'announcements' | 'marketplace'>('membership')
 
   const [pendingRenewal, setPendingRenewal] = useState<{ invoiceId: string; membershipNumber: string } | null>(null)
   const [renewalPollAttempts, setRenewalPollAttempts] = useState(0)
@@ -1032,14 +1403,34 @@ export function EspMemberLoginPage() {
               </div>
             )}
 
-            {session.memberships.length === 0 ? (
-              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: C.textSecondary, fontSize: 13 }}>
-                No ESP memberships found on this account.
+            <Tabs
+              tabs={[
+                { id: 'membership', label: 'My Membership' },
+                { id: 'billing', label: 'Billing' },
+                { id: 'announcements', label: 'Announcements' },
+                { id: 'marketplace', label: 'Marketplace' },
+              ]}
+              active={pageTab} onChange={id => setPageTab(id as typeof pageTab)}
+            />
+
+            {pageTab === 'membership' && (
+              session.memberships.length === 0 ? (
+                <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: C.textSecondary, fontSize: 13 }}>
+                  No ESP memberships found on this account.
+                </div>
+              ) : (
+                session.memberships.map(m => (
+                  <MembershipCard key={m.membership_number} m={m} phone={session.phone} password={session.password} tenantSlug={tenantSlug} onChanged={() => doLogin(session.phone, session.password, true)} onViewVehicle={(id, plateNumber) => setViewingVehicle({ id, plateNumber })} />
+                ))
+              )
+            )}
+            {pageTab === 'billing' && <BillingTab phone={session.phone} password={session.password} tenantSlug={tenantSlug} />}
+            {pageTab === 'announcements' && <AnnouncementsFeed phone={session.phone} password={session.password} tenantSlug={tenantSlug} />}
+            {pageTab === 'marketplace' && (
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 32, textAlign: 'center', color: C.textSecondary, fontSize: 13 }}>
+                <ShoppingBag size={26} style={{ marginBottom: 10, opacity: 0.5 }} />
+                <div>Marketplace is coming soon.</div>
               </div>
-            ) : (
-              session.memberships.map(m => (
-                <MembershipCard key={m.membership_number} m={m} phone={session.phone} password={session.password} tenantSlug={tenantSlug} onChanged={() => doLogin(session.phone, session.password, true)} onViewVehicle={(id, plateNumber) => setViewingVehicle({ id, plateNumber })} />
-              ))
             )}
           </div>
         ) : mode === 'login' ? (
