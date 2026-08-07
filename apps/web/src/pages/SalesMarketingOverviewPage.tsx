@@ -3,7 +3,7 @@ import {
   Users, Link2, Filter, UserCheck, ShoppingCart, Wallet, CircleDollarSign,
   Star, TrendingUp, TrendingDown, Sparkles, AlertTriangle, Megaphone,
   CalendarDays, Bike, Building2, Car, MessageCircle, Share2, Footprints,
-  Search, PartyPopper, UserPlus, Percent,
+  Search, PartyPopper, UserPlus, Percent, Bot, Phone, Shuffle,
 } from 'lucide-react'
 
 // Sample data only -- this page is a design pass to agree on the layout
@@ -39,6 +39,38 @@ const SECONDARY_STATS: StatTile[] = [
   { label: 'Conversion Rate', value: '49%', delta: '+2%', good: true, icon: Percent, sub: 'Leads to Bookings' },
   { label: 'Google Reviews', value: '12', delta: '★ 4.8', good: true, icon: Star, sub: 'This month' },
   { label: 'ESP Members', value: '31', delta: '+8%', good: true, icon: Users, sub: 'Total members' },
+]
+
+// Breakdown of the 41 bookings by who actually closed them -- a different
+// cut than Performance by Selling Method (which is acquisition channel,
+// not closing handler). Mutually exclusive, sums to 41.
+interface BookingChannel {
+  key: string; icon: React.ElementType; name: string; blurb: string
+  count: number; share: number; color: string
+  metricLabel: string; metricValue: string
+}
+
+const BOOKING_CHANNELS: BookingChannel[] = [
+  {
+    key: 'mia', icon: Bot, name: 'Mia (AI Assistant)', blurb: 'Handled and closed solo, no human touch',
+    count: 20, share: 48.8, color: ORANGE,
+    metricLabel: 'Conversion rate', metricValue: '44.4%',
+  },
+  {
+    key: 'human', icon: Phone, name: 'Human (Office Line)', blurb: 'Came straight to the office number',
+    count: 9, share: 22.0, color: INFO,
+    metricLabel: 'Conversion rate', metricValue: '60.0%',
+  },
+  {
+    key: 'hybrid', icon: Shuffle, name: 'Hybrid (Mia -> Human)', blurb: 'Mia routed a pricing/technical case to a human',
+    count: 7, share: 17.1, color: WARN,
+    metricLabel: 'Escalation rate', metricValue: '15.6% of Mia leads',
+  },
+  {
+    key: 'walkin', icon: Footprints, name: 'Walk-in', blurb: 'Showed up cold, no prior Mia/phone contact',
+    count: 5, share: 12.2, color: GOOD,
+    metricLabel: 'Conversion rate', metricValue: '35.7%',
+  },
 ]
 
 const FUNNEL = [
@@ -113,6 +145,44 @@ function StatTileCard({ tile }: { tile: StatTile }) {
         {!tile.delta.startsWith('★') && (tile.good ? <TrendingUp size={11} /> : <TrendingDown size={11} />)}
         <span style={{ fontWeight: 700 }}>{tile.delta}</span>
         <span style={{ color: '#6A6A6A', fontWeight: 400 }}>{tile.sub ?? 'vs 1 - 31 Jul 2026'}</span>
+      </div>
+    </div>
+  )
+}
+
+function BookingChannelsRow() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>Bookings by Who Closed Them</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+        {BOOKING_CHANNELS.map(c => (
+          <div key={c.key} style={{ ...cardStyle, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: `${c.color}1A`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <c.icon size={15} color={c.color} />
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#F0F0F0' }}>{c.name}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: 26, fontWeight: 700, color: '#F0F0F0' }}>{c.count}</span>
+              <span style={{ fontSize: 12, color: c.color, fontWeight: 700 }}>{c.share}%</span>
+              <span style={{ fontSize: 11, color: '#6A6A6A' }}>of bookings</span>
+            </div>
+            <div style={{ width: '100%', height: 5, borderRadius: 999, backgroundColor: '#2A2A2A', overflow: 'hidden' }}>
+              <div style={{ width: `${c.share}%`, height: '100%', backgroundColor: c.color }} />
+            </div>
+            <p style={{ fontSize: 11, color: '#8A8A8A', margin: 0, lineHeight: 1.4 }}>{c.blurb}</p>
+            <div style={{ borderTop: '1px solid #2A2A2A', paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+              <span style={{ color: '#6A6A6A' }}>{c.metricLabel}</span>
+              <span style={{ color: '#E0E0E0', fontWeight: 700 }}>{c.metricValue}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#6A6A6A' }}>
+        <span>520 chats started with Mia this month</span>
+        <span>·</span>
+        <span>95 calls started with Human this month</span>
       </div>
     </div>
   )
@@ -371,6 +441,8 @@ function DashboardTab() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         {SECONDARY_STATS.map(t => <StatTileCard key={t.label} tile={t} />)}
       </div>
+
+      <BookingChannelsRow />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)', gap: 14 }}>
         <AIExecutiveSummary />
