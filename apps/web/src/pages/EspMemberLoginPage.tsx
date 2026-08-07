@@ -327,6 +327,9 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehic
         {/* Vehicles */}
         <div>
           <div style={sectionLabelStyle()}>Your Vehicles</div>
+          {m.vehicles.length > 0 && (
+            <div style={{ fontSize: 11, color: C.textSecondary, marginBottom: 8 }}>Tap a vehicle for its full service history, photos, and maintenance status.</div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
             {m.vehicles.length === 0 ? (
               <div style={{ fontSize: 12, color: C.textSecondary }}>No vehicles on file yet.</div>
@@ -350,15 +353,23 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehic
             <div style={{ fontSize: 12, color: C.textSecondary }}>No service records yet.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {m.service_history.map(j => (
-                <div key={j.job_number} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, borderRadius: 8, padding: '8px 12px' }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{j.plate_number} · {j.service_type}</div>
-                    <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(j.checked_in_at)} · {j.job_number}</div>
-                  </div>
-                  {j.final_amount != null && <div style={{ fontSize: 12, fontWeight: 600, color: C.textPrimary }}>RM {j.final_amount.toFixed(2)}</div>}
-                </div>
-              ))}
+              {m.service_history.map(j => {
+                const vehicle = m.vehicles.find(v => v.plate_number === j.plate_number)
+                return (
+                  <button key={j.job_number} type="button" disabled={!vehicle}
+                    onClick={() => vehicle && onViewVehicle(vehicle.id, vehicle.plate_number)}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, border: 'none', borderRadius: 8, padding: '8px 12px', width: '100%', textAlign: 'left', cursor: vehicle ? 'pointer' : 'default', font: 'inherit', color: 'inherit' }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>{j.plate_number} · {j.service_type}</div>
+                      <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(j.checked_in_at)} · {j.job_number}</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {j.final_amount != null && <span style={{ fontSize: 12, fontWeight: 600, color: C.textPrimary }}>RM {j.final_amount.toFixed(2)}</span>}
+                      {vehicle && <ChevronRight size={13} color={C.textSecondary} />}
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
