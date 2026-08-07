@@ -45,7 +45,7 @@ import { EspReportsPage } from '@/pages/EspReportsPage'
 import { PaymentVerificationsPage } from '@/pages/PaymentVerificationsPage'
 
 export default function App() {
-  const { setUser, setLoading } = useAuthStore()
+  const { setUser, setTenant, setLoading } = useAuthStore()
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -56,6 +56,17 @@ export default function App() {
           .eq('id', session.user.id)
           .single()
         setUser(profile ?? null)
+        // authStore.signIn() already sets tenant on an interactive login,
+        // but that never runs again on a restored session (every page
+        // reload, every new tab) -- tenant silently stayed null forever
+        // after the first login, breaking every page keyed off
+        // tenant?.slug (ESP Communities' copy-link buttons, Settings,
+        // Fleet, Inventory, Onboarding) until the user explicitly logged
+        // out and back in.
+        if (profile?.tenant_id) {
+          const { data: tenant } = await supabase.from('tenants').select('*').eq('id', profile.tenant_id).single()
+          setTenant(tenant ?? null)
+        }
       }
       setLoading(false)
     })
@@ -65,6 +76,7 @@ export default function App() {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
         setUser(null)
+        setTenant(null)
         setLoading(false)
       } else if (event === 'SIGNED_IN' && session?.user) {
         const { data: profile } = await supabase
@@ -73,6 +85,10 @@ export default function App() {
           .eq('id', session.user.id)
           .single()
         setUser(profile ?? null)
+        if (profile?.tenant_id) {
+          const { data: tenant } = await supabase.from('tenants').select('*').eq('id', profile.tenant_id).single()
+          setTenant(tenant ?? null)
+        }
         setLoading(false)
       }
     })
