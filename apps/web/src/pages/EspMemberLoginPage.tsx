@@ -505,6 +505,8 @@ interface VehicleLogJob {
   photo_count: number
 }
 
+interface MileageHistoryEntry { recorded_at: string; mileage: number; source: 'job_checkin' | 'member_report' }
+
 interface VehicleMaintenanceItem {
   item_id: string; name: string
   next_due_at: string | null; next_due_mileage: number | null
@@ -658,17 +660,24 @@ function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, 
   const [photoUrls, setPhotoUrls] = useState<Record<string, { url: string; caption: string | null }[]>>({})
   const [photosLoading, setPhotosLoading] = useState(false)
   const [maintenance, setMaintenance] = useState<VehicleMaintenanceItem[]>([])
+  const [mileageHistory, setMileageHistory] = useState<MileageHistoryEntry[]>([])
 
-  useEffect(() => {
+  function loadVehicleLog() {
     supabase.rpc('esp_get_vehicle_log', { p_phone: phone, p_password: password, p_vehicle_id: vehicleId, p_tenant_slug: tenantSlug || null })
       .then(({ data, error: rpcErr }) => {
         setLoading(false)
         if (rpcErr || data?.error) { setError('Could not load vehicle history.'); return }
         setJobs(data.jobs ?? [])
         setVehicleInfo(data.vehicle)
+        setMileageHistory(data.mileage_history ?? [])
       })
+  }
+
+  useEffect(() => {
+    loadVehicleLog()
     supabase.rpc('esp_get_vehicle_maintenance', { p_phone: phone, p_password: password, p_vehicle_id: vehicleId, p_tenant_slug: tenantSlug || null })
       .then(({ data }) => { if (data?.success) setMaintenance(data.items ?? []) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vehicleId, phone, password, tenantSlug])
 
   async function togglePhotos(jobId: string) {
@@ -721,6 +730,7 @@ function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, 
             onSaved={(updated) => {
               setVehicleInfo(prev => prev ? { ...prev, ...updated } : prev)
               setShowEdit(false)
+              loadVehicleLog()
               onChanged()
             }}
           />
@@ -739,6 +749,20 @@ function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, 
                       {m.next_due_mileage != null ? ` · ${m.next_due_mileage.toLocaleString()} km` : ''}
                       {m.next_due_at ? ` · ${formatDate(m.next_due_at)}` : ''}
                     </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {mileageHistory.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.textSecondary, letterSpacing: '0.05em', marginBottom: 8 }}>MILEAGE HISTORY</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {mileageHistory.map((h, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px' }}>
+                    <span style={{ fontSize: 12 }}>{formatDate(h.recorded_at)}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>{h.mileage.toLocaleString()} km</span>
+                    <span style={{ fontSize: 11, color: C.textSecondary }}>{h.source === 'member_report' ? 'Self-reported' : 'Service visit'}</span>
                   </div>
                 ))}
               </div>
