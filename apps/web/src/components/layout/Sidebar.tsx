@@ -30,10 +30,8 @@ import {
   Megaphone,
   Building,
   Target,
-  Share2,
-  Tag,
-  PieChart,
-  Sparkles,
+  Filter,
+  FileBarChart,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
@@ -105,11 +103,13 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Sales & Marketing',
     items: [
       { to: '/sales-marketing/profile', label: 'Business Profile', icon: Building, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/performance', label: 'Performance', icon: BarChart3, roles: ['super_admin', 'ops_manager'] },
       { to: '/sales-marketing/plan', label: 'Marketing Plan', icon: Target, roles: ['super_admin', 'ops_manager'] },
-      { to: '/sales-marketing/social', label: 'Social Media Engagement', icon: Share2, roles: ['super_admin', 'ops_manager'] },
-      { to: '/sales-marketing/campaigns', label: 'Campaigns & Promotions', icon: Tag, roles: ['super_admin', 'ops_manager'] },
-      { to: '/sales-marketing/analytics', label: 'Analytics & Insights', icon: PieChart, roles: ['super_admin', 'ops_manager'] },
-      { to: '/sales-marketing/assistant', label: 'Ask Izzy', icon: Sparkles, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/campaigns', label: 'Campaigns', icon: Megaphone, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/leads', label: 'Leads', icon: Filter, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/customers', label: 'Customers', icon: Users, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/reports', label: 'Reports', icon: FileBarChart, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/settings', label: 'Settings', icon: Settings, roles: ['super_admin', 'ops_manager'] },
     ],
   },
   {

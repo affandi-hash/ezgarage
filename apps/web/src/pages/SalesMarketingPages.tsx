@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Share2, Tag, PieChart, Sparkles } from 'lucide-react'
+import { BarChart3, Megaphone, Filter, Users, FileBarChart, Settings } from 'lucide-react'
 
 function ComingSoonShell({ icon: Icon, title, description, bullets }: {
   icon: LucideIcon
@@ -31,57 +31,84 @@ function ComingSoonShell({ icon: Icon, title, description, bullets }: {
   )
 }
 
-export function SocialMediaEngagementPage() {
+export function PerformancePage() {
   return (
     <ComingSoonShell
-      icon={Share2}
-      title="Social Media Engagement"
-      description="A content calendar with AI-drafted captions and post ideas, plus reply and comment suggestions for your existing channels."
+      icon={BarChart3}
+      title="Performance"
+      description="How Sales & Marketing is actually performing, broken down by selling method -- walk-in, WhatsApp, Facebook/Instagram, Google, community/events, referrals."
       bullets={[
-        'Drafts content for you to review and post manually at first -- direct publishing to Instagram/TikTok needs a separate platform-account connection.',
-        'Suggestions tuned to your Business Profile’s brand voice.',
+        'Reach, leads, prospects, customers, transactions, and ROI per channel, not just a single blended number.',
+        'Built on the same job and invoice data already trusted in Reports, so the numbers reconcile.',
       ]}
     />
   )
 }
 
-export function CampaignsPromotionsPage() {
+export function CampaignsPage() {
   return (
     <ComingSoonShell
-      icon={Tag}
-      title="Campaigns & Promotions"
-      description="Track promo codes and discounts, and see which bookings they actually drove -- the missing link that turns marketing analysis from guesswork into attribution."
+      icon={Megaphone}
+      title="Campaigns"
+      description="Active and upcoming campaigns with budget, spend, and ROI tracked per campaign -- the execution layer under the Marketing Plan's initiatives."
       bullets={[
-        'Attach a campaign to a promo code once, and every booking that uses it gets counted automatically.',
-        'Feeds directly into Analytics & Insights for real ROI numbers.',
+        'Each campaign tracks budget vs spend and attributes bookings back to it.',
+        'Initiatives from the Marketing Plan can be promoted into a running campaign here.',
       ]}
     />
   )
 }
 
-export function SalesMarketingAnalyticsPage() {
+export function LeadsPage() {
   return (
     <ComingSoonShell
-      icon={PieChart}
-      title="Analytics & Insights"
-      description="Dashboards blending Operations, Finance, and Marketing data -- revenue by service line, campaign ROI, repeat-customer rate, and ESP membership growth."
+      icon={Filter}
+      title="Leads"
+      description="Enquiries from every channel in one pipeline, from first contact through to becoming a customer."
       bullets={[
-        'Built on data you already have in Reports and Accounts Receivable, plus new Campaign attribution once that’s tracked.',
-        'Surfaces trends proactively rather than waiting for you to go looking.',
+        'Tracks where each lead came from and how far it got -- lead, prospect, customer.',
+        'Feeds Performance and Campaigns with real conversion numbers instead of estimates.',
       ]}
     />
   )
 }
 
-export function AskIzzyPage() {
+export function SalesMarketingCustomersPage() {
   return (
     <ComingSoonShell
-      icon={Sparkles}
-      title="Ask Izzy"
-      description="A persistent chat with Izzy, an AI that acts like a real Chief Sales & Marketing Officer -- grounded in your Business Profile and live business data."
+      icon={Users}
+      title="Customers"
+      description="A Sales & Marketing view of the customer database -- segments, engagement, and repeat-visit patterns, not just contact records."
       bullets={[
-        'Asks clarifying questions only when something critical is missing for your specific request -- otherwise it proceeds and states its assumptions.',
-        'Every suggestion becomes a real, trackable item elsewhere in this module, not just chat text that disappears.',
+        'Same underlying customers as Operations, viewed through a marketing lens: segment, last visit, lifetime value.',
+        'Lines up with the Audience Segments already captured in the Business Profile.',
+      ]}
+    />
+  )
+}
+
+export function SalesMarketingReportsPage() {
+  return (
+    <ComingSoonShell
+      icon={FileBarChart}
+      title="Reports"
+      description="Exportable Sales & Marketing analytics -- performance by channel, campaign ROI, and plan progress over time."
+      bullets={[
+        'Export what Performance and Campaigns show, for a given period.',
+        'Built for sharing outside the app, not just viewing in-app.',
+      ]}
+    />
+  )
+}
+
+export function SalesMarketingSettingsPage() {
+  return (
+    <ComingSoonShell
+      icon={Settings}
+      title="Settings"
+      description="Module-level preferences for Sales & Marketing -- notification defaults, default channels, and AI assistant behaviour."
+      bullets={[
+        'Scoped to this module only -- tenant-wide settings stay in the main Settings page.',
       ]}
     />
   )

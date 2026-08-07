@@ -43,7 +43,7 @@ import { EspMembersPage } from '@/pages/EspMembersPage'
 import { EspAnnouncementsPage } from '@/pages/EspAnnouncementsPage'
 import { EspReportsPage } from '@/pages/EspReportsPage'
 import { PaymentVerificationsPage } from '@/pages/PaymentVerificationsPage'
-import { SocialMediaEngagementPage, CampaignsPromotionsPage, SalesMarketingAnalyticsPage, AskIzzyPage } from '@/pages/SalesMarketingPages'
+import { PerformancePage, CampaignsPage, LeadsPage, SalesMarketingCustomersPage, SalesMarketingReportsPage, SalesMarketingSettingsPage } from '@/pages/SalesMarketingPages'
 import { BusinessProfilePage } from '@/pages/BusinessProfilePage'
 import { MarketingPlanPage } from '@/pages/MarketingPlanPage'
 
@@ -354,6 +354,14 @@ export default function App() {
             }
           />
           <Route
+            path="/sales-marketing/performance"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <PerformancePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/sales-marketing/plan"
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
@@ -362,34 +370,42 @@ export default function App() {
             }
           />
           <Route
-            path="/sales-marketing/social"
-            element={
-              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
-                <SocialMediaEngagementPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/sales-marketing/campaigns"
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
-                <CampaignsPromotionsPage />
+                <CampaignsPage />
               </ProtectedRoute>
             }
           />
           <Route
-            path="/sales-marketing/analytics"
+            path="/sales-marketing/leads"
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
-                <SalesMarketingAnalyticsPage />
+                <LeadsPage />
               </ProtectedRoute>
             }
           />
           <Route
-            path="/sales-marketing/assistant"
+            path="/sales-marketing/customers"
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
-                <AskIzzyPage />
+                <SalesMarketingCustomersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales-marketing/reports"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <SalesMarketingReportsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales-marketing/settings"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <SalesMarketingSettingsPage />
               </ProtectedRoute>
             }
           />
