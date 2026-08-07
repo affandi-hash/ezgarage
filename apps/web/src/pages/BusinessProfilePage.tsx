@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Building, Sparkles, Send, Pencil, Check, X, Loader2 } from 'lucide-react'
+import { Building, Sparkles, Send, Pencil, Check, X, Loader2, Gauge, Paperclip, ImageOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -29,8 +29,12 @@ interface BusinessProfile {
 
 interface ConversationTurn {
   role: 'user' | 'assistant'
-  content: string | Array<{ type: string; text?: string }>
+  content: string | Array<{ type: string; text?: string; path?: string }>
 }
+
+const UPLOADS_BUCKET = 'sales-marketing-uploads'
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
 
 const QUICK_FIELDS: { key: keyof BusinessProfile; label: string; placeholder: string }[] = [
   { key: 'tagline', label: 'Tagline', placeholder: 'e.g. We Check First - We Explain First - You Decide' },
@@ -64,6 +68,36 @@ const labelStyle: React.CSSProperties = { display: 'block', fontSize: 11, fontWe
 function extractText(content: ConversationTurn['content']): string {
   if (typeof content === 'string') return content
   return content.filter(b => b.type === 'text' && b.text).map(b => b.text).join('\n')
+}
+
+function extractImagePath(content: ConversationTurn['content']): string | null {
+  if (typeof content === 'string') return null
+  return content.find(b => b.type === 'image_ref')?.path ?? null
+}
+
+function ChatImage({ path }: { path: string }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    supabase.storage.from(UPLOADS_BUCKET).createSignedUrl(path, 3600).then(({ data, error }) => {
+      if (cancelled) return
+      if (error || !data) { setFailed(true); return }
+      setUrl(data.signedUrl)
+    })
+    return () => { cancelled = true }
+  }, [path])
+
+  if (failed) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: 8, borderRadius: 8, backgroundColor: '#1E1E1E', color: '#6A6A6A', fontSize: 11 }}>
+        <ImageOff size={12} /> Image unavailable
+      </div>
+    )
+  }
+  if (!url) return <div style={{ width: 160, height: 100, borderRadius: 8, backgroundColor: '#1E1E1E' }} />
+  return <img src={url} alt="Attachment" style={{ maxWidth: 220, maxHeight: 160, borderRadius: 8, display: 'block', objectFit: 'cover' as const }} />
 }
 
 function NarrativeCard({ field, value, onSave }: { field: { key: keyof BusinessProfile; label: string; hint: string }; value: string | null; onSave: (value: string) => Promise<void> }) {
@@ -125,7 +159,13 @@ export function BusinessProfilePage() {
   const [sending, setSending] = useState(false)
   const [quickDraft, setQuickDraft] = useState<Partial<BusinessProfile>>({})
   const [savingQuick, setSavingQuick] = useState(false)
+  const [lastTurnTokens, setLastTurnTokens] = useState<number | null>(null)
+  const [totalTokens, setTotalTokens] = useState<number | null>(null)
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const [attachedPreview, setAttachedPreview] = useState<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   function load() {
     if (!user?.tenant_id) return
@@ -139,31 +179,77 @@ export function BusinessProfilePage() {
       })
   }
 
-  useEffect(() => { load() }, [user?.tenant_id])
+  function loadTotalTokens() {
+    if (!user?.tenant_id) return
+    supabase.from('ai_token_usage').select('input_tokens, output_tokens')
+      .eq('tenant_id', user.tenant_id).eq('feature', 'business_profile_assistant')
+      .then(({ data, error }) => {
+        if (error) return
+        setTotalTokens((data ?? []).reduce((sum, r) => sum + r.input_tokens + r.output_tokens, 0))
+      })
+  }
+
+  useEffect(() => { load(); loadTotalTokens() }, [user?.tenant_id])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [profile?.conversation])
 
-  async function callAssistant(message: string) {
-    const { data, error } = await supabase.functions.invoke('sales-marketing-assistant', { body: { message } })
+  async function callAssistant(message: string, imagePath?: string) {
+    const { data, error } = await supabase.functions.invoke('sales-marketing-assistant', { body: { message, imagePath } })
     if (error) { toast.error('The assistant is unavailable right now'); return null }
     if (data?.error) { toast.error(data.error); return null }
-    return data as { reply: string; profile: BusinessProfile }
+    return data as { reply: string; profile: BusinessProfile; usage?: { total_tokens: number } }
+  }
+
+  function applyUsage(usage?: { total_tokens: number }) {
+    if (!usage) return
+    setLastTurnTokens(usage.total_tokens)
+    setTotalTokens(prev => (prev ?? 0) + usage.total_tokens)
   }
 
   async function startInterview() {
     setStarting(true)
     const result = await callAssistant('__START_INTERVIEW__')
     setStarting(false)
-    if (result) { setProfile(result.profile); setQuickDraft(result.profile) }
+    if (result) { setProfile(result.profile); setQuickDraft(result.profile); applyUsage(result.usage) }
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) { toast.error('Only JPEG, PNG, or WebP images are supported'); return }
+    if (file.size > MAX_IMAGE_BYTES) { toast.error('Image must be under 10MB'); return }
+    setAttachedFile(file)
+    setAttachedPreview(URL.createObjectURL(file))
+  }
+
+  function clearAttachment() {
+    if (attachedPreview) URL.revokeObjectURL(attachedPreview)
+    setAttachedFile(null)
+    setAttachedPreview(null)
   }
 
   async function sendMessage() {
-    const message = chatInput.trim()
-    if (!message || sending) return
+    const message = chatInput.trim() || (attachedFile ? 'Here is an image.' : '')
+    if (!message || sending || uploadingImage) return
     setChatInput('')
+    const fileToSend = attachedFile
+    clearAttachment()
+
+    let imagePath: string | undefined
+    if (fileToSend && profile) {
+      setUploadingImage(true)
+      const ext = fileToSend.name.split('.').pop() || 'jpg'
+      const path = `${profile.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+      const { error: uploadErr } = await supabase.storage.from(UPLOADS_BUCKET).upload(path, fileToSend, { contentType: fileToSend.type })
+      setUploadingImage(false)
+      if (uploadErr) { toast.error('Could not upload the image'); return }
+      imagePath = path
+    }
+
     setSending(true)
-    const result = await callAssistant(message)
+    const result = await callAssistant(message, imagePath)
     setSending(false)
-    if (result) setProfile(result.profile)
+    if (result) { setProfile(result.profile); applyUsage(result.usage) }
   }
 
   async function saveNarrativeField(key: keyof BusinessProfile, value: string) {
@@ -250,17 +336,25 @@ export function BusinessProfilePage() {
               <span style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>Ask Your CSMO</span>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {visibleTurns.map((turn, i) => (
-                <div key={i} style={{
-                  alignSelf: turn.role === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '80%', padding: '9px 13px', borderRadius: 12,
-                  backgroundColor: turn.role === 'user' ? '#F15A22' : '#1E1E1E',
-                  color: turn.role === 'user' ? '#fff' : '#E0E0E0',
-                  fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' as const,
-                }}>
-                  {extractText(turn.content)}
-                </div>
-              ))}
+              {visibleTurns.map((turn, i) => {
+                const imagePath = extractImagePath(turn.content)
+                return (
+                  <div key={i} style={{
+                    alignSelf: turn.role === 'user' ? 'flex-end' : 'flex-start',
+                    maxWidth: '80%', display: 'flex', flexDirection: 'column', gap: 6,
+                  }}>
+                    {imagePath && <ChatImage path={imagePath} />}
+                    <div style={{
+                      padding: '9px 13px', borderRadius: 12,
+                      backgroundColor: turn.role === 'user' ? '#F15A22' : '#1E1E1E',
+                      color: turn.role === 'user' ? '#fff' : '#E0E0E0',
+                      fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' as const,
+                    }}>
+                      {extractText(turn.content)}
+                    </div>
+                  </div>
+                )
+              })}
               {sending && (
                 <div style={{ alignSelf: 'flex-start', color: '#6A6A6A', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Loader2 size={12} className="animate-spin" /> thinking...
@@ -268,14 +362,36 @@ export function BusinessProfilePage() {
               )}
               <div ref={chatEndRef} />
             </div>
-            <div style={{ padding: 12, borderTop: '1px solid #2A2A2A', display: 'flex', gap: 8 }}>
+            {attachedPreview && (
+              <div style={{ padding: '0 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <img src={attachedPreview} alt="Attachment preview" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' as const }} />
+                <span style={{ fontSize: 11, color: '#A0A0A0', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{attachedFile?.name}</span>
+                <button onClick={clearAttachment} style={{ background: 'none', border: 'none', color: '#6A6A6A', cursor: 'pointer', padding: 2 }}>
+                  <X size={13} />
+                </button>
+              </div>
+            )}
+            <div style={{ padding: '12px 12px 8px', borderTop: '1px solid #2A2A2A', display: 'flex', gap: 8 }}>
+              <input ref={fileInputRef} type="file" accept={ACCEPTED_IMAGE_TYPES.join(',')} onChange={handleFileSelect} style={{ display: 'none' }} />
+              <button onClick={() => fileInputRef.current?.click()} disabled={sending || uploadingImage}
+                title="Attach an image"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, borderRadius: 8, border: '1px solid #2A2A2A', background: 'none', color: '#A0A0A0', cursor: 'pointer' }}>
+                <Paperclip size={14} />
+              </button>
               <input value={chatInput} onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                 placeholder="Type your answer..." style={{ ...inputStyle, flex: 1 }} disabled={sending} />
-              <button onClick={sendMessage} disabled={sending || !chatInput.trim()}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', cursor: 'pointer', opacity: sending || !chatInput.trim() ? 0.5 : 1 }}>
-                <Send size={14} />
+              <button onClick={sendMessage} disabled={sending || uploadingImage || (!chatInput.trim() && !attachedFile)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', cursor: 'pointer', opacity: sending || uploadingImage || (!chatInput.trim() && !attachedFile) ? 0.5 : 1 }}>
+                {uploadingImage ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
               </button>
+            </div>
+            <div style={{ padding: '0 12px 10px', display: 'flex', alignItems: 'center', gap: 5, color: '#5A5A5A', fontSize: 11 }}>
+              <Gauge size={11} />
+              {lastTurnTokens !== null && <span>Last message: {lastTurnTokens.toLocaleString()} tokens</span>}
+              {lastTurnTokens !== null && totalTokens !== null && <span>·</span>}
+              {totalTokens !== null && <span>Total: {totalTokens.toLocaleString()} tokens</span>}
+              {lastTurnTokens === null && totalTokens === null && <span>No token usage recorded yet</span>}
             </div>
           </div>
 
