@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon, X, UserCog, ChevronRight } from 'lucide-react'
+import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon, X, UserCog, ChevronRight, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { OTHER, makeOptionsFor, modelOptionsFor } from '@/lib/vehicleMakes'
 
@@ -517,11 +517,143 @@ function maintenanceStatusColor(status: string) {
   return '#22C55E'
 }
 
-function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, onClose }: { vehicleId: string; plateNumber: string; phone: string; password: string; tenantSlug?: string; onClose: () => void }) {
+interface VehicleInfo { plate_number?: string; make: string | null; model: string | null; year: number | null; vehicle_type: 'car' | 'bike'; color: string | null; current_mileage: number | null }
+
+// Lets a member fill in / correct their own vehicle's details -- closes a
+// real dead end where a vehicle registered with just a plate (e.g. a
+// walk-in "TEST001") could never get make/model/year added afterward.
+// Mileage is included here too since it's the only self-report path for
+// it -- current_mileage otherwise only ever updates when staff check the
+// vehicle in for a job (125), which can be months between visits.
+function EditVehicleModal({ vehicleId, plateNumber, info, phone, password, tenantSlug, onClose, onSaved }: {
+  vehicleId: string; plateNumber: string; info: VehicleInfo; phone: string; password: string; tenantSlug?: string
+  onClose: () => void; onSaved: (updated: { plate_number: string; make: string | null; model: string | null; year: number | null; color: string | null; current_mileage: number | null }) => void
+}) {
+  const [plate, setPlate] = useState(plateNumber)
+  const [make, setMake] = useState(info.make ?? '')
+  const [makeOther, setMakeOther] = useState(!!info.make && !makeOptionsFor(info.vehicle_type).includes(info.make))
+  const [model, setModel] = useState(info.model ?? '')
+  const [modelOther, setModelOther] = useState(!!info.model && !modelOptionsFor(info.vehicle_type, info.make ?? '').includes(info.model))
+  const [year, setYear] = useState(info.year?.toString() ?? '')
+  const [color, setColor] = useState(info.color ?? '')
+  const [mileage, setMileage] = useState(info.current_mileage?.toString() ?? '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function submit() {
+    if (!plate.trim()) { setErr('Plate number is required.'); return }
+    setSaving(true); setErr('')
+    const { data, error } = await supabase.rpc('esp_member_update_vehicle', {
+      p_phone: phone, p_password: password, p_vehicle_id: vehicleId,
+      p_plate_number: plate.trim(), p_make: make.trim() || null, p_model: model.trim() || null,
+      p_year: year.trim() || null, p_color: color.trim() || null, p_current_mileage: mileage.trim() || null,
+      p_tenant_slug: tenantSlug || null,
+    })
+    setSaving(false)
+    if (error) { setErr('Something went wrong.'); return }
+    if (data?.error) {
+      const msgs: Record<string, string> = {
+        plate_required: 'Plate number is required.',
+        plate_already_registered_to_another_customer: 'That plate is already registered to someone else.',
+        mileage_cannot_decrease: `Mileage can't be lower than the last recorded ${data.current_mileage?.toLocaleString()} km.`,
+        vehicle_not_found: 'Could not find this vehicle.',
+        invalid_credentials: 'Session expired -- please log in again.',
+      }
+      setErr(msgs[data.error] ?? 'Could not save changes.')
+      return
+    }
+    onSaved({
+      plate_number: plate.trim().toUpperCase(), make: make.trim() || null, model: model.trim() || null,
+      year: year.trim() ? parseInt(year, 10) : null, color: color.trim() || null,
+      current_mileage: mileage.trim() ? parseInt(mileage, 10) : info.current_mileage,
+    })
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, width: '100%', maxWidth: 420, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>Edit Vehicle</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textSecondary, cursor: 'pointer' }}><X size={16} /></button>
+        </div>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 11, color: C.textSecondary, display: 'block', marginBottom: 4 }}>Plate Number</label>
+            <input style={inputStyle()} value={plate} onChange={e => setPlate(e.target.value.toUpperCase())} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {makeOther ? (
+              <div>
+                <input style={inputStyle()} value={make} autoFocus onChange={e => setMake(e.target.value)} placeholder="Make" />
+                <button type="button" onClick={() => { setMake(''); setMakeOther(false); setModel(''); setModelOther(false) }}
+                  style={{ background: 'none', border: 'none', color: C.textSecondary, fontSize: 11, padding: '3px 0', cursor: 'pointer', textDecoration: 'underline' }}>
+                  Choose from list
+                </button>
+              </div>
+            ) : (
+              <select style={inputStyle()} value={make} onChange={e => {
+                const val = e.target.value
+                if (val === OTHER) { setMake(''); setMakeOther(true); setModel(''); setModelOther(false) }
+                else { setMake(val); setModel(''); setModelOther(false) }
+              }}>
+                <option value="">Select Make</option>
+                {makeOptionsFor(info.vehicle_type).map(m => <option key={m} value={m}>{m}</option>)}
+                <option value={OTHER}>Other</option>
+              </select>
+            )}
+            {makeOther || modelOther ? (
+              <div>
+                <input style={inputStyle()} value={model} onChange={e => setModel(e.target.value)} placeholder="Model" />
+                {!makeOther && (
+                  <button type="button" onClick={() => { setModel(''); setModelOther(false) }}
+                    style={{ background: 'none', border: 'none', color: C.textSecondary, fontSize: 11, padding: '3px 0', cursor: 'pointer', textDecoration: 'underline' }}>
+                    Choose from list
+                  </button>
+                )}
+              </div>
+            ) : (
+              <select style={inputStyle()} value={model} disabled={!make} onChange={e => {
+                const val = e.target.value
+                if (val === OTHER) { setModel(''); setModelOther(true) }
+                else setModel(val)
+              }}>
+                <option value="">{make ? 'Select Model' : 'Select Make first'}</option>
+                {modelOptionsFor(info.vehicle_type, make).map(m => <option key={m} value={m}>{m}</option>)}
+                {make && <option value={OTHER}>Other</option>}
+              </select>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div>
+              <label style={{ fontSize: 11, color: C.textSecondary, display: 'block', marginBottom: 4 }}>Year</label>
+              <input style={inputStyle()} type="number" value={year} onChange={e => setYear(e.target.value)} min={1900} max={2100} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: C.textSecondary, display: 'block', marginBottom: 4 }}>Color</label>
+              <input style={inputStyle()} value={color} onChange={e => setColor(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: C.textSecondary, display: 'block', marginBottom: 4 }}>Current Mileage (km)</label>
+            <input style={inputStyle()} type="number" min={0} value={mileage} onChange={e => setMileage(e.target.value)} placeholder="e.g. 12500" />
+            <p style={{ fontSize: 11, color: C.textSecondary, margin: '4px 0 0' }}>Keeps your maintenance due-dates accurate between visits. Can only go up.</p>
+          </div>
+          {err && <div style={{ fontSize: 12, color: C.red }}>{err}</div>}
+          <button onClick={submit} disabled={saving} style={{ padding: '10px', borderRadius: 8, border: 'none', backgroundColor: C.orange, color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, onClose, onChanged }: { vehicleId: string; plateNumber: string; phone: string; password: string; tenantSlug?: string; onClose: () => void; onChanged: () => void }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [jobs, setJobs] = useState<VehicleLogJob[]>([])
-  const [vehicleInfo, setVehicleInfo] = useState<{ make: string | null; model: string | null; year: number | null; current_mileage: number | null } | null>(null)
+  const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null)
+  const [showEdit, setShowEdit] = useState(false)
   const [openPhotosJobId, setOpenPhotosJobId] = useState<string | null>(null)
   const [photoUrls, setPhotoUrls] = useState<Record<string, { url: string; caption: string | null }[]>>({})
   const [photosLoading, setPhotosLoading] = useState(false)
@@ -560,15 +692,39 @@ function VehicleLogModal({ vehicleId, plateNumber, phone, password, tenantSlug, 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, width: '100%', maxWidth: 480, maxHeight: '85vh', overflowY: 'auto' }}>
-        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>{plateNumber}</div>
-            {vehicleInfo && (vehicleInfo.make || vehicleInfo.model) && (
-              <div style={{ fontSize: 12, color: C.textSecondary }}>{vehicleInfo.make} {vehicleInfo.model} {vehicleInfo.year ?? ''}</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{vehicleInfo?.plate_number ?? plateNumber}</div>
+            {vehicleInfo && (vehicleInfo.make || vehicleInfo.model || vehicleInfo.color) ? (
+              <div style={{ fontSize: 12, color: C.textSecondary }}>
+                {[vehicleInfo.make, vehicleInfo.model, vehicleInfo.year, vehicleInfo.color].filter(Boolean).join(' · ')}
+              </div>
+            ) : vehicleInfo ? (
+              <div style={{ fontSize: 12, color: C.textSecondary, fontStyle: 'italic' }}>No make/model on file yet</div>
+            ) : null}
+            {vehicleInfo?.current_mileage != null && (
+              <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>{vehicleInfo.current_mileage.toLocaleString()} km</div>
             )}
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textSecondary, cursor: 'pointer' }}><X size={16} /></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {vehicleInfo && (
+              <button onClick={() => setShowEdit(true)} title="Edit vehicle details" style={{ background: 'none', border: 'none', color: C.textSecondary, cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Pencil size={15} /></button>
+            )}
+            <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textSecondary, cursor: 'pointer' }}><X size={16} /></button>
+          </div>
         </div>
+        {showEdit && vehicleInfo && (
+          <EditVehicleModal
+            vehicleId={vehicleId} plateNumber={vehicleInfo.plate_number ?? plateNumber} info={vehicleInfo}
+            phone={phone} password={password} tenantSlug={tenantSlug}
+            onClose={() => setShowEdit(false)}
+            onSaved={(updated) => {
+              setVehicleInfo(prev => prev ? { ...prev, ...updated } : prev)
+              setShowEdit(false)
+              onChanged()
+            }}
+          />
+        )}
         <div style={{ padding: 20 }}>
           {maintenance.length > 0 && (
             <div style={{ marginBottom: 16 }}>
@@ -967,6 +1123,7 @@ export function EspMemberLoginPage() {
           password={session.password}
           tenantSlug={tenantSlug}
           onClose={() => setViewingVehicle(null)}
+          onChanged={() => doLogin(session.phone, session.password, true)}
         />
       )}
     </div>
