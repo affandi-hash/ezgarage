@@ -28,6 +28,12 @@ import {
   Building2,
   ShieldCheck,
   Megaphone,
+  Building,
+  Target,
+  Share2,
+  Tag,
+  PieChart,
+  Sparkles,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { supabase } from '@/lib/supabase'
@@ -93,6 +99,17 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/finance', label: 'Accounts Payable', icon: Landmark, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/ar', label: 'Accounts Receivable', icon: TrendingUp, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
+    ],
+  },
+  {
+    label: 'Sales & Marketing',
+    items: [
+      { to: '/sales-marketing/profile', label: 'Business Profile', icon: Building, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/plan', label: 'Marketing Plan', icon: Target, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/social', label: 'Social Media Engagement', icon: Share2, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/campaigns', label: 'Campaigns & Promotions', icon: Tag, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/analytics', label: 'Analytics & Insights', icon: PieChart, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/assistant', label: 'Ask Your CSMO', icon: Sparkles, roles: ['super_admin', 'ops_manager'] },
     ],
   },
   {

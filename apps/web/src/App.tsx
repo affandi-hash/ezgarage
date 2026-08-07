@@ -43,6 +43,7 @@ import { EspMembersPage } from '@/pages/EspMembersPage'
 import { EspAnnouncementsPage } from '@/pages/EspAnnouncementsPage'
 import { EspReportsPage } from '@/pages/EspReportsPage'
 import { PaymentVerificationsPage } from '@/pages/PaymentVerificationsPage'
+import { BusinessProfilePage, MarketingPlanPage, SocialMediaEngagementPage, CampaignsPromotionsPage, SalesMarketingAnalyticsPage, AskYourCsmoPage } from '@/pages/SalesMarketingPages'
 
 export default function App() {
   const { setUser, setTenant, setLoading } = useAuthStore()
@@ -337,6 +338,56 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager','front_desk','foreman']}>
                 <EspAnnouncementsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Sales & Marketing */}
+          <Route
+            path="/sales-marketing/profile"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <BusinessProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales-marketing/plan"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <MarketingPlanPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales-marketing/social"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <SocialMediaEngagementPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales-marketing/campaigns"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <CampaignsPromotionsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales-marketing/analytics"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <SalesMarketingAnalyticsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales-marketing/assistant"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <AskYourCsmoPage />
               </ProtectedRoute>
             }
           />
