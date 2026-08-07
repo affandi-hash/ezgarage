@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Target, Share2, Tag, PieChart, Sparkles } from 'lucide-react'
+import { Share2, Tag, PieChart, Sparkles } from 'lucide-react'
 
 function ComingSoonShell({ icon: Icon, title, description, bullets }: {
   icon: LucideIcon
@@ -28,20 +28,6 @@ function ComingSoonShell({ icon: Icon, title, description, bullets }: {
         </ul>
       </div>
     </div>
-  )
-}
-
-export function MarketingPlanPage() {
-  return (
-    <ComingSoonShell
-      icon={Target}
-      title="Marketing Plan"
-      description="AI-drafted monthly and quarterly marketing plans, aware of your real booking history -- including seasonal slow periods and peak demand."
-      bullets={[
-        'Campaign ideas grounded in your actual job volume trends, not generic templates.',
-        'Editable plan documents you can revise before committing to a budget or timeline.',
-      ]}
-    />
   )
 }
 

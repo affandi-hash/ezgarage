@@ -43,8 +43,9 @@ import { EspMembersPage } from '@/pages/EspMembersPage'
 import { EspAnnouncementsPage } from '@/pages/EspAnnouncementsPage'
 import { EspReportsPage } from '@/pages/EspReportsPage'
 import { PaymentVerificationsPage } from '@/pages/PaymentVerificationsPage'
-import { MarketingPlanPage, SocialMediaEngagementPage, CampaignsPromotionsPage, SalesMarketingAnalyticsPage, AskIzzyPage } from '@/pages/SalesMarketingPages'
+import { SocialMediaEngagementPage, CampaignsPromotionsPage, SalesMarketingAnalyticsPage, AskIzzyPage } from '@/pages/SalesMarketingPages'
 import { BusinessProfilePage } from '@/pages/BusinessProfilePage'
+import { MarketingPlanPage } from '@/pages/MarketingPlanPage'
 
 export default function App() {
   const { setUser, setTenant, setLoading } = useAuthStore()
