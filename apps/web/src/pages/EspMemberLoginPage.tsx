@@ -83,6 +83,12 @@ interface Session {
 
 const sessionKey = 'esp_member_login'
 const pendingRenewalKey = 'esp_pending_renewal'
+// Shared by both Billing's "Pay Now" and the Vehicle Log job tracker's
+// "Pay Online" -- whichever one a member used, RaudhahPay's redirect
+// lands back on the default (My Membership/Overview) view with any modal
+// closed and pageTab reset, so the confirmation banner has to live at the
+// top level to be visible regardless of which flow started it.
+const pendingBillPaymentKey = 'esp_pending_bill_payment'
 
 function inputStyle(): React.CSSProperties {
   return { width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.textPrimary, padding: '10px 14px', fontSize: 14, boxSizing: 'border-box', outline: 'none' }
@@ -170,7 +176,7 @@ function JobStatusTimeline({ currentStatus }: { currentStatus: string }) {
 // ─── Pay Online / Payment Proof (ESP variants -- phone+password instead of
 // the standalone customer portal's plate+IC session) ────────────────────
 
-function EspPayOnline({ invoiceId, balanceDue, phone, password }: { invoiceId: string; balanceDue: number; phone: string; password: string }) {
+function EspPayOnline({ invoiceId, label, balanceDue, phone, password }: { invoiceId: string; label: string; balanceDue: number; phone: string; password: string }) {
   const [loading, setLoading] = useState<'duitnow' | 'credit_card' | 'fpx' | null>(null)
   const [error, setError] = useState('')
 
@@ -184,6 +190,11 @@ function EspPayOnline({ invoiceId, balanceDue, phone, password }: { invoiceId: s
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to start payment. Please try again.'); setLoading(null); return }
+      // Read back on the redirect-back landing view (top-level, since the
+      // modal/tab that started this won't still be open) to show the same
+      // calm "Confirming…" experience Registration/Renewal already have,
+      // instead of leaving the member staring at a still-"Open" bill.
+      sessionStorage.setItem(pendingBillPaymentKey, JSON.stringify({ invoiceId, label }))
       window.location.href = data.payment_url
     } catch {
       setError('Network error. Please check your connection and try again.')
@@ -420,7 +431,7 @@ interface Bill {
   vehicle_plate: string | null; job_number: string | null
 }
 
-function BillingTab({ phone, password, tenantSlug }: { phone: string; password: string; tenantSlug?: string }) {
+function BillingTab({ phone, password, tenantSlug, refreshTick }: { phone: string; password: string; tenantSlug?: string; refreshTick: number }) {
   const [bills, setBills] = useState<Bill[] | null>(null)
   const [error, setError] = useState('')
   const [payingId, setPayingId] = useState<string | null>(null)
@@ -431,7 +442,7 @@ function BillingTab({ phone, password, tenantSlug }: { phone: string; password: 
         if (rpcErr || data?.error) { setError('Could not load your bills.'); return }
         setBills(data.bills ?? [])
       })
-  }, [phone, password, tenantSlug])
+  }, [phone, password, tenantSlug, refreshTick])
 
   if (error) return <div style={{ fontSize: 13, color: C.red, textAlign: 'center', padding: 24 }}>{error}</div>
   if (bills === null) return <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} color={C.textSecondary} /></div>
@@ -456,7 +467,7 @@ function BillingTab({ phone, password, tenantSlug }: { phone: string; password: 
         </div>
         {b.balance_due > 0 && (
           payingId === b.invoice_id ? (
-            <div style={{ marginTop: 10 }}><EspPayOnline invoiceId={b.invoice_id} balanceDue={b.balance_due} phone={phone} password={password} /></div>
+            <div style={{ marginTop: 10 }}><EspPayOnline invoiceId={b.invoice_id} label={b.invoice_number} balanceDue={b.balance_due} phone={phone} password={password} /></div>
           ) : (
             <button type="button" onClick={() => setPayingId(b.invoice_id)} style={{ marginTop: 10, padding: '7px 14px', borderRadius: 8, border: 'none', background: C.orange, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
               Pay Now — RM {b.balance_due.toFixed(2)}
@@ -886,7 +897,7 @@ function VehicleJobCard({ job, phone, password, tenantSlug, openPhotosJobId, pho
 
       {showPay && (
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <EspPayOnline invoiceId={job.invoice_id!} balanceDue={balanceDue} phone={phone} password={password} />
+          <EspPayOnline invoiceId={job.invoice_id!} label={job.job_number} balanceDue={balanceDue} phone={phone} password={password} />
           <EspPaymentUpload jobId={job.job_id} />
         </div>
       )}
@@ -1274,6 +1285,46 @@ export function EspMemberLoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingRenewal, session])
 
+  // Same calm-confirmation pattern as renewal above, but for any invoice
+  // paid via Billing's "Pay Now" or the Vehicle Log job tracker's "Pay
+  // Online" -- both write the same sessionStorage key before redirecting.
+  // Lives at the top level (not inside BillingTab/VehicleLogModal)
+  // because RaudhahPay's redirect lands back on the default view with
+  // whatever tab/modal started the payment no longer open.
+  const [pendingBillPayment, setPendingBillPayment] = useState<{ invoiceId: string; label: string } | null>(null)
+  const [billPollAttempts, setBillPollAttempts] = useState(0)
+  const [billPaymentConfirmed, setBillPaymentConfirmed] = useState(false)
+  const [billingRefreshTick, setBillingRefreshTick] = useState(0)
+
+  useEffect(() => {
+    const cached = sessionStorage.getItem(pendingBillPaymentKey)
+    if (!cached) return
+    try { setPendingBillPayment(JSON.parse(cached)) } catch { sessionStorage.removeItem(pendingBillPaymentKey) }
+  }, [])
+
+  useEffect(() => {
+    if (!pendingBillPayment || !session) return
+    setBillPollAttempts(0)
+    let attempts = 0
+    const interval = setInterval(async () => {
+      attempts += 1
+      setBillPollAttempts(attempts)
+      const { data } = await supabase.rpc('reconcile_invoice_now', { p_invoice_id: pendingBillPayment.invoiceId })
+      if (data?.status === 'paid') {
+        clearInterval(interval)
+        sessionStorage.removeItem(pendingBillPaymentKey)
+        setBillPaymentConfirmed(true)
+        await doLogin(session.phone, session.password, true)
+        setBillingRefreshTick(t => t + 1)
+        setTimeout(() => { setPendingBillPayment(null); setBillPaymentConfirmed(false) }, 4000)
+        return
+      }
+      if (attempts > 40) clearInterval(interval)
+    }, 3000)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingBillPayment, session])
+
   async function doLogin(phone: string, password: string, silent = false) {
     if (!silent) { setLoginLoading(true); setLoginError('') }
     const { data, error } = await supabase.rpc('esp_login', {
@@ -1403,6 +1454,28 @@ export function EspMemberLoginPage() {
               </div>
             )}
 
+            {pendingBillPayment && (
+              <div style={{ background: billPaymentConfirmed ? 'rgba(34,197,94,0.08)' : 'rgba(241,90,34,0.08)', border: `1px solid ${billPaymentConfirmed ? 'rgba(34,197,94,0.25)' : 'rgba(241,90,34,0.25)'}`, borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {billPaymentConfirmed ? <CheckCircle size={16} color={C.green} /> : <Loader2 size={16} color={C.orange} style={{ animation: 'spin 1s linear infinite' }} />}
+                  <div style={{ fontSize: 12, color: billPaymentConfirmed ? C.green : C.textPrimary }}>
+                    {billPaymentConfirmed
+                      ? 'Payment confirmed!'
+                      : billPollAttempts < 20
+                        ? `Confirming your payment for ${pendingBillPayment.label} — if you've already paid, this usually only takes a few seconds.`
+                        : "Still confirming — if your bank or e-wallet already showed success, you're covered, this is just taking a little longer than usual."}
+                  </div>
+                </div>
+                {!billPaymentConfirmed && billPollAttempts >= 20 && config?.whatsapp_number && (
+                  <a href={`https://wa.me/${config.whatsapp_number}?text=${encodeURIComponent(`Hi, I already paid for ${pendingBillPayment.label} but it still shows Pending on my end.`)}`}
+                    target="_blank" rel="noreferrer"
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSecondary, textDecoration: 'none', marginLeft: 26 }}>
+                    <MessageCircle size={13} /> Already paid? Contact us on WhatsApp
+                  </a>
+                )}
+              </div>
+            )}
+
             <Tabs
               tabs={[
                 { id: 'membership', label: 'My Membership' },
@@ -1424,7 +1497,7 @@ export function EspMemberLoginPage() {
                 ))
               )
             )}
-            {pageTab === 'billing' && <BillingTab phone={session.phone} password={session.password} tenantSlug={tenantSlug} />}
+            {pageTab === 'billing' && <BillingTab phone={session.phone} password={session.password} tenantSlug={tenantSlug} refreshTick={billingRefreshTick} />}
             {pageTab === 'announcements' && <AnnouncementsFeed phone={session.phone} password={session.password} tenantSlug={tenantSlug} />}
             {pageTab === 'marketplace' && (
               <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 32, textAlign: 'center', color: C.textSecondary, fontSize: 13 }}>
