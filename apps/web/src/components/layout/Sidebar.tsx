@@ -102,6 +102,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Sales & Marketing',
     items: [
+      { to: '/sales-marketing/overview', label: 'Overview', icon: LayoutDashboard, roles: ['super_admin', 'ops_manager'] },
       { to: '/sales-marketing/profile', label: 'Business Profile', icon: Building, roles: ['super_admin', 'ops_manager'] },
       { to: '/sales-marketing/performance', label: 'Performance', icon: BarChart3, roles: ['super_admin', 'ops_manager'] },
       { to: '/sales-marketing/plan', label: 'Marketing Plan', icon: Target, roles: ['super_admin', 'ops_manager'] },

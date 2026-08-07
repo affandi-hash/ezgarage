@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { BarChart3, Megaphone, Filter, Users, FileBarChart, Settings } from 'lucide-react'
+import { LayoutDashboard, BarChart3, Megaphone, Filter, Users, FileBarChart, Settings } from 'lucide-react'
 
 function ComingSoonShell({ icon: Icon, title, description, bullets }: {
   icon: LucideIcon
@@ -28,6 +28,20 @@ function ComingSoonShell({ icon: Icon, title, description, bullets }: {
         </ul>
       </div>
     </div>
+  )
+}
+
+export function SalesMarketingOverviewPage() {
+  return (
+    <ComingSoonShell
+      icon={LayoutDashboard}
+      title="Overview"
+      description="A single-page snapshot of Sales & Marketing -- reach, leads, prospects, customers, transactions, and gross profit, plus performance by selling method and what's active in the Marketing Plan and Campaigns."
+      bullets={[
+        'The landing page for this module once Performance, Marketing Plan, and Campaigns have real data to summarise.',
+        'Pulls from the same submodules rather than tracking its own separate numbers.',
+      ]}
+    />
   )
 }
 

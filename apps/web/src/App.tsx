@@ -43,7 +43,7 @@ import { EspMembersPage } from '@/pages/EspMembersPage'
 import { EspAnnouncementsPage } from '@/pages/EspAnnouncementsPage'
 import { EspReportsPage } from '@/pages/EspReportsPage'
 import { PaymentVerificationsPage } from '@/pages/PaymentVerificationsPage'
-import { PerformancePage, CampaignsPage, LeadsPage, SalesMarketingCustomersPage, SalesMarketingReportsPage, SalesMarketingSettingsPage } from '@/pages/SalesMarketingPages'
+import { SalesMarketingOverviewPage, PerformancePage, CampaignsPage, LeadsPage, SalesMarketingCustomersPage, SalesMarketingReportsPage, SalesMarketingSettingsPage } from '@/pages/SalesMarketingPages'
 import { BusinessProfilePage } from '@/pages/BusinessProfilePage'
 import { MarketingPlanPage } from '@/pages/MarketingPlanPage'
 
@@ -345,6 +345,14 @@ export default function App() {
           />
 
           {/* Sales & Marketing */}
+          <Route
+            path="/sales-marketing/overview"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <SalesMarketingOverviewPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/sales-marketing/profile"
             element={
