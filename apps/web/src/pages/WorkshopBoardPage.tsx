@@ -591,7 +591,7 @@ function AddNoteModal({ job, onClose, onSave }: { job: JobRow; onClose: () => vo
 // service_type free text -- see migration 125 for why.
 // ---------------------------------------------------------------------------
 interface MaintenanceStatusItem {
-  item_id: string; name: string; status: 'ok' | 'due_soon' | 'overdue'
+  item_id: string; item_name: string; status: 'ok' | 'due_soon' | 'overdue'
   next_due_at: string | null; next_due_mileage: number | null
 }
 
@@ -649,7 +649,7 @@ function MaintenanceChecklistPanel({ vehicleId, jobId, mileageIn, tenantId, bran
           <label key={it.item_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', backgroundColor: '#0E0E0E', borderRadius: 6, cursor: 'pointer' }}>
             <input type="checkbox" checked={selected.has(it.item_id)} onChange={() => toggle(it.item_id)} />
             <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: maintenanceStatusColor(it.status), flexShrink: 0 }} />
-            <span style={{ color: '#F0F0F0', fontSize: 13, flex: 1 }}>{it.name}</span>
+            <span style={{ color: '#F0F0F0', fontSize: 13, flex: 1 }}>{it.item_name}</span>
             <span style={{ color: '#666', fontSize: 11 }}>
               {it.status === 'overdue' ? 'Overdue' : it.status === 'due_soon' ? 'Due soon' : 'OK'}
             </span>
