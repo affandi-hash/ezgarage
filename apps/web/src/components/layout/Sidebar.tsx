@@ -109,7 +109,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/sales-marketing/social', label: 'Social Media Engagement', icon: Share2, roles: ['super_admin', 'ops_manager'] },
       { to: '/sales-marketing/campaigns', label: 'Campaigns & Promotions', icon: Tag, roles: ['super_admin', 'ops_manager'] },
       { to: '/sales-marketing/analytics', label: 'Analytics & Insights', icon: PieChart, roles: ['super_admin', 'ops_manager'] },
-      { to: '/sales-marketing/assistant', label: 'Ask Your CSMO', icon: Sparkles, roles: ['super_admin', 'ops_manager'] },
+      { to: '/sales-marketing/assistant', label: 'Ask Izzy', icon: Sparkles, roles: ['super_admin', 'ops_manager'] },
     ],
   },
   {

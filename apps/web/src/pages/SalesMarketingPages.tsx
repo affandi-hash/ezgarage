@@ -87,12 +87,12 @@ export function SalesMarketingAnalyticsPage() {
   )
 }
 
-export function AskYourCsmoPage() {
+export function AskIzzyPage() {
   return (
     <ComingSoonShell
       icon={Sparkles}
-      title="Ask Your CSMO"
-      description="A persistent chat with an AI that acts like a real Chief Sales & Marketing Officer -- grounded in your Business Profile and live business data."
+      title="Ask Izzy"
+      description="A persistent chat with Izzy, an AI that acts like a real Chief Sales & Marketing Officer -- grounded in your Business Profile and live business data."
       bullets={[
         'Asks clarifying questions only when something critical is missing for your specific request -- otherwise it proceeds and states its assumptions.',
         'Every suggestion becomes a real, trackable item elsewhere in this module, not just chat text that disappears.',

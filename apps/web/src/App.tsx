@@ -43,7 +43,7 @@ import { EspMembersPage } from '@/pages/EspMembersPage'
 import { EspAnnouncementsPage } from '@/pages/EspAnnouncementsPage'
 import { EspReportsPage } from '@/pages/EspReportsPage'
 import { PaymentVerificationsPage } from '@/pages/PaymentVerificationsPage'
-import { MarketingPlanPage, SocialMediaEngagementPage, CampaignsPromotionsPage, SalesMarketingAnalyticsPage, AskYourCsmoPage } from '@/pages/SalesMarketingPages'
+import { MarketingPlanPage, SocialMediaEngagementPage, CampaignsPromotionsPage, SalesMarketingAnalyticsPage, AskIzzyPage } from '@/pages/SalesMarketingPages'
 import { BusinessProfilePage } from '@/pages/BusinessProfilePage'
 
 export default function App() {
@@ -388,7 +388,7 @@ export default function App() {
             path="/sales-marketing/assistant"
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
-                <AskYourCsmoPage />
+                <AskIzzyPage />
               </ProtectedRoute>
             }
           />

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Building, Sparkles, Send, Pencil, Check, X, Loader2, Gauge, Paperclip, ImageOff } from 'lucide-react'
+import { Building, Sparkles, Send, Pencil, Check, X, Loader2, Gauge, Paperclip, ImageOff, Trash2, Plus, Target, Users, Calendar, Swords } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -17,14 +17,46 @@ interface BusinessProfile {
   monthly_budget_myr: number | null
   execution_capacity: string | null
   brand_voice: string | null
-  target_audience: string | null
   unique_selling_points: string | null
-  competitors: string | null
-  goals: string | null
   guardrails: string | null
-  seasonal_notes: string | null
   conversation: ConversationTurn[]
   updated_at: string
+}
+
+interface Competitor {
+  id: string
+  name: string
+  competitor_type: 'direct' | 'indirect' | null
+  notes: string | null
+  threat_level: 'low' | 'medium' | 'high' | null
+  our_counter: string | null
+}
+
+interface AudienceSegment {
+  id: string
+  name: string
+  description: string | null
+  messaging_angle: string | null
+  priority: 'primary' | 'secondary' | null
+}
+
+interface Goal {
+  id: string
+  description: string
+  metric: string | null
+  target_value: number | null
+  current_value: number | null
+  deadline: string | null
+  priority_rank: number | null
+  status: 'active' | 'achieved' | 'dropped'
+}
+
+interface SeasonalEvent {
+  id: string
+  period_label: string
+  theme: string | null
+  focus_notes: string | null
+  priority: 'low' | 'medium' | 'high' | null
 }
 
 interface ConversationTurn {
@@ -47,23 +79,22 @@ const QUICK_FIELDS: { key: keyof BusinessProfile; label: string; placeholder: st
 ]
 
 const NARRATIVE_FIELDS: { key: keyof BusinessProfile; label: string; hint: string }[] = [
-  { key: 'target_audience', label: 'Target Audience', hint: 'Who your customers are' },
-  { key: 'unique_selling_points', label: 'Unique Selling Points', hint: 'What makes you different' },
   { key: 'brand_voice', label: 'Brand Voice', hint: 'How you sound to customers' },
-  { key: 'competitors', label: 'Competitors', hint: 'Who you compete with, and how' },
-  { key: 'goals', label: 'Goals & Priorities', hint: 'What you want more of right now' },
+  { key: 'unique_selling_points', label: 'Unique Selling Points', hint: 'What makes you different' },
   { key: 'guardrails', label: 'Guardrails', hint: 'Things to always or never do' },
-  { key: 'seasonal_notes', label: 'Seasonal Context', hint: 'Known slow/peak periods and why' },
 ]
-
-const ALL_FIELDS = [...QUICK_FIELDS, ...NARRATIVE_FIELDS, { key: 'pricing_position' as const }, { key: 'monthly_budget_myr' as const }]
 
 const cardStyle: React.CSSProperties = { backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 12 }
 const inputStyle: React.CSSProperties = {
   width: '100%', backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#F0F0F0',
   borderRadius: 8, padding: '9px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box',
 }
+const smallInputStyle: React.CSSProperties = { ...inputStyle, padding: '7px 10px', fontSize: 12 }
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 5, color: '#8A8A8A', textTransform: 'uppercase' as const, letterSpacing: '0.03em' }
+const badgeStyle = (color: string): React.CSSProperties => ({
+  display: 'inline-flex', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
+  backgroundColor: `${color}22`, color, textTransform: 'uppercase' as const, letterSpacing: '0.03em',
+})
 
 function extractText(content: ConversationTurn['content']): string {
   if (typeof content === 'string') return content
@@ -143,9 +174,60 @@ function NarrativeCard({ field, value, onSave }: { field: { key: keyof BusinessP
         </div>
       ) : (
         <p style={{ fontSize: 13, color: value ? '#C0C0C0' : '#5A5A5A', lineHeight: 1.5, margin: 0, fontStyle: value ? 'normal' : 'italic' }}>
-          {value || 'Not yet known -- ask your CSMO, or fill it in yourself.'}
+          {value || 'Not yet known -- ask Izzy, or fill it in yourself.'}
         </p>
       )}
+    </div>
+  )
+}
+
+// Shared shell for the four structured-list cards (competitors, audience
+// segments, goals, seasonal events). Each item is its own database row --
+// deleting or adding one never touches the others, unlike the old
+// single-text-field design.
+function ListCard<T extends { id: string }>({ icon: Icon, title, hint, items, renderRow, onDelete, addForm }: {
+  icon: React.ElementType
+  title: string
+  hint: string
+  items: T[]
+  renderRow: (item: T) => React.ReactNode
+  onDelete: (id: string) => void
+  addForm: (close: () => void) => React.ReactNode
+}) {
+  const [adding, setAdding] = useState(false)
+
+  return (
+    <div style={{ ...cardStyle, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Icon size={13} color="#F15A22" />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>{title}</div>
+            <div style={{ fontSize: 11, color: '#6A6A6A' }}>{hint}</div>
+          </div>
+        </div>
+        {!adding && (
+          <button onClick={() => setAdding(true)} title="Add manually"
+            style={{ background: 'none', border: 'none', color: '#6A6A6A', cursor: 'pointer', padding: 4 }}>
+            <Plus size={14} />
+          </button>
+        )}
+      </div>
+
+      {items.length === 0 && !adding && (
+        <p style={{ fontSize: 13, color: '#5A5A5A', fontStyle: 'italic', margin: 0 }}>Not yet known -- ask Izzy, or add one yourself.</p>
+      )}
+
+      {items.map(item => (
+        <div key={item.id} style={{ padding: 10, borderRadius: 8, backgroundColor: '#1E1E1E', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>{renderRow(item)}</div>
+          <button onClick={() => onDelete(item.id)} style={{ background: 'none', border: 'none', color: '#6A6A6A', cursor: 'pointer', padding: 2, flexShrink: 0 }}>
+            <Trash2 size={12} />
+          </button>
+        </div>
+      ))}
+
+      {adding && addForm(() => setAdding(false))}
     </div>
   )
 }
@@ -153,6 +235,10 @@ function NarrativeCard({ field, value, onSave }: { field: { key: keyof BusinessP
 export function BusinessProfilePage() {
   const { user } = useAuthStore()
   const [profile, setProfile] = useState<BusinessProfile | null>(null)
+  const [competitors, setCompetitors] = useState<Competitor[]>([])
+  const [audienceSegments, setAudienceSegments] = useState<AudienceSegment[]>([])
+  const [goals, setGoals] = useState<Goal[]>([])
+  const [seasonalEvents, setSeasonalEvents] = useState<SeasonalEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [starting, setStarting] = useState(false)
   const [chatInput, setChatInput] = useState('')
@@ -171,10 +257,22 @@ export function BusinessProfilePage() {
     if (!user?.tenant_id) return
     setLoading(true)
     supabase.from('sales_marketing_business_profile').select('*').eq('tenant_id', user.tenant_id).maybeSingle()
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (error) toast.error(error.message)
         setProfile(data as BusinessProfile | null)
-        if (data) setQuickDraft(data)
+        if (data) {
+          setQuickDraft(data)
+          const [c, a, g, s] = await Promise.all([
+            supabase.from('sales_marketing_competitors').select('*').eq('business_profile_id', data.id).order('created_at'),
+            supabase.from('sales_marketing_audience_segments').select('*').eq('business_profile_id', data.id).order('created_at'),
+            supabase.from('sales_marketing_goals').select('*').eq('business_profile_id', data.id).order('priority_rank', { nullsFirst: false }),
+            supabase.from('sales_marketing_seasonal_events').select('*').eq('business_profile_id', data.id).order('created_at'),
+          ])
+          setCompetitors(c.data ?? [])
+          setAudienceSegments(a.data ?? [])
+          setGoals(g.data ?? [])
+          setSeasonalEvents(s.data ?? [])
+        }
         setLoading(false)
       })
   }
@@ -192,24 +290,40 @@ export function BusinessProfilePage() {
   useEffect(() => { load(); loadTotalTokens() }, [user?.tenant_id])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [profile?.conversation])
 
+  type AssistantResult = {
+    reply: string
+    profile: BusinessProfile
+    competitors: Competitor[]
+    audienceSegments: AudienceSegment[]
+    goals: Goal[]
+    seasonalEvents: SeasonalEvent[]
+    usage?: { total_tokens: number }
+  }
+
   async function callAssistant(message: string, imagePath?: string) {
     const { data, error } = await supabase.functions.invoke('sales-marketing-assistant', { body: { message, imagePath } })
     if (error) { toast.error('The assistant is unavailable right now'); return null }
     if (data?.error) { toast.error(data.error); return null }
-    return data as { reply: string; profile: BusinessProfile; usage?: { total_tokens: number } }
+    return data as AssistantResult
   }
 
-  function applyUsage(usage?: { total_tokens: number }) {
-    if (!usage) return
-    setLastTurnTokens(usage.total_tokens)
-    setTotalTokens(prev => (prev ?? 0) + usage.total_tokens)
+  function applyResult(result: AssistantResult) {
+    setProfile(result.profile)
+    setCompetitors(result.competitors)
+    setAudienceSegments(result.audienceSegments)
+    setGoals(result.goals)
+    setSeasonalEvents(result.seasonalEvents)
+    if (result.usage) {
+      setLastTurnTokens(result.usage.total_tokens)
+      setTotalTokens(prev => (prev ?? 0) + result.usage!.total_tokens)
+    }
   }
 
   async function startInterview() {
     setStarting(true)
     const result = await callAssistant('__START_INTERVIEW__')
     setStarting(false)
-    if (result) { setProfile(result.profile); setQuickDraft(result.profile); applyUsage(result.usage) }
+    if (result) { setQuickDraft(result.profile); applyResult(result) }
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -249,7 +363,7 @@ export function BusinessProfilePage() {
     setSending(true)
     const result = await callAssistant(message, imagePath)
     setSending(false)
-    if (result) { setProfile(result.profile); applyUsage(result.usage) }
+    if (result) applyResult(result)
   }
 
   async function saveNarrativeField(key: keyof BusinessProfile, value: string) {
@@ -277,9 +391,78 @@ export function BusinessProfilePage() {
     toast.success('Business Profile updated')
   }
 
-  const completeness = profile
-    ? Math.round((ALL_FIELDS.filter(f => profile[f.key] !== null && profile[f.key] !== undefined && profile[f.key] !== '').length / ALL_FIELDS.length) * 100)
-    : 0
+  async function addCompetitor(input: Partial<Competitor>, close: () => void) {
+    if (!profile || !input.name?.trim()) return
+    const { data, error } = await supabase.from('sales_marketing_competitors')
+      .upsert({ ...input, name: input.name.trim(), tenant_id: user?.tenant_id, business_profile_id: profile.id }, { onConflict: 'business_profile_id,name' })
+      .select('*').single()
+    if (error) { toast.error(error.message); return }
+    setCompetitors(prev => [...prev.filter(c => c.id !== data.id), data])
+    close()
+  }
+  async function deleteCompetitor(id: string) {
+    const { error } = await supabase.from('sales_marketing_competitors').delete().eq('id', id)
+    if (error) { toast.error(error.message); return }
+    setCompetitors(prev => prev.filter(c => c.id !== id))
+  }
+
+  async function addSegment(input: Partial<AudienceSegment>, close: () => void) {
+    if (!profile || !input.name?.trim()) return
+    const { data, error } = await supabase.from('sales_marketing_audience_segments')
+      .upsert({ ...input, name: input.name.trim(), tenant_id: user?.tenant_id, business_profile_id: profile.id }, { onConflict: 'business_profile_id,name' })
+      .select('*').single()
+    if (error) { toast.error(error.message); return }
+    setAudienceSegments(prev => [...prev.filter(s => s.id !== data.id), data])
+    close()
+  }
+  async function deleteSegment(id: string) {
+    const { error } = await supabase.from('sales_marketing_audience_segments').delete().eq('id', id)
+    if (error) { toast.error(error.message); return }
+    setAudienceSegments(prev => prev.filter(s => s.id !== id))
+  }
+
+  async function addGoal(input: Partial<Goal>, close: () => void) {
+    if (!profile || !input.description?.trim()) return
+    const { data, error } = await supabase.from('sales_marketing_goals')
+      .upsert({ ...input, description: input.description.trim(), tenant_id: user?.tenant_id, business_profile_id: profile.id }, { onConflict: 'business_profile_id,description' })
+      .select('*').single()
+    if (error) { toast.error(error.message); return }
+    setGoals(prev => [...prev.filter(g => g.id !== data.id), data])
+    close()
+  }
+  async function deleteGoal(id: string) {
+    const { error } = await supabase.from('sales_marketing_goals').delete().eq('id', id)
+    if (error) { toast.error(error.message); return }
+    setGoals(prev => prev.filter(g => g.id !== id))
+  }
+
+  async function addEvent(input: Partial<SeasonalEvent>, close: () => void) {
+    if (!profile || !input.period_label?.trim()) return
+    const { data, error } = await supabase.from('sales_marketing_seasonal_events')
+      .upsert({ ...input, period_label: input.period_label.trim(), tenant_id: user?.tenant_id, business_profile_id: profile.id }, { onConflict: 'business_profile_id,period_label' })
+      .select('*').single()
+    if (error) { toast.error(error.message); return }
+    setSeasonalEvents(prev => [...prev.filter(e => e.id !== data.id), data])
+    close()
+  }
+  async function deleteEvent(id: string) {
+    const { error } = await supabase.from('sales_marketing_seasonal_events').delete().eq('id', id)
+    if (error) { toast.error(error.message); return }
+    setSeasonalEvents(prev => prev.filter(e => e.id !== id))
+  }
+
+  const totalCriteria = QUICK_FIELDS.length + NARRATIVE_FIELDS.length + 2 + 4
+  const filledCriteria = profile ? (
+    QUICK_FIELDS.filter(f => profile[f.key]).length +
+    NARRATIVE_FIELDS.filter(f => profile[f.key]).length +
+    (profile.pricing_position ? 1 : 0) +
+    (profile.monthly_budget_myr ? 1 : 0) +
+    (competitors.length > 0 ? 1 : 0) +
+    (audienceSegments.length > 0 ? 1 : 0) +
+    (goals.length > 0 ? 1 : 0) +
+    (seasonalEvents.length > 0 ? 1 : 0)
+  ) : 0
+  const completeness = profile ? Math.round((filledCriteria / totalCriteria) * 100) : 0
 
   const visibleTurns = (profile?.conversation ?? []).filter(turn => {
     if (typeof turn.content === 'string') return turn.content !== '__START_INTERVIEW__'
@@ -300,7 +483,7 @@ export function BusinessProfilePage() {
           </div>
           <div>
             <h1 style={{ fontSize: 18, fontWeight: 700, color: '#F0F0F0', margin: 0 }}>Business Profile</h1>
-            <p style={{ fontSize: 12, color: '#6A6A6A', margin: '2px 0 0' }}>The briefing your AI Sales & Marketing assistant reads before doing anything else</p>
+            <p style={{ fontSize: 12, color: '#6A6A6A', margin: '2px 0 0' }}>The briefing Izzy reads before doing anything else</p>
           </div>
         </div>
         {profile && (
@@ -319,7 +502,7 @@ export function BusinessProfilePage() {
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#F0F0F0' }}>Let's build your Business Profile</div>
             <p style={{ fontSize: 13, color: '#A0A0A0', maxWidth: 420, margin: '6px 0 0' }}>
-              Your CSMO will ask a few questions -- target audience, positioning, goals -- and fill in the profile as you talk. Takes about 5 minutes.
+              Izzy will ask a few questions -- target audience, positioning, goals -- and fill in the profile as you talk. Takes about 5 minutes.
             </p>
           </div>
           <button onClick={startInterview} disabled={starting}
@@ -330,10 +513,10 @@ export function BusinessProfilePage() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.3fr) minmax(0,1fr)', gap: 16, alignItems: 'start' }}>
-          <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', height: 560 }}>
+          <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', height: 560, position: 'sticky' as const, top: 16 }}>
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #2A2A2A', display: 'flex', alignItems: 'center', gap: 8 }}>
               <Sparkles size={14} color="#F15A22" />
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>Ask Your CSMO</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>Ask Izzy</span>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
               {visibleTurns.map((turn, i) => {
@@ -428,13 +611,167 @@ export function BusinessProfilePage() {
               </button>
             </div>
 
-            {NARRATIVE_FIELDS.map(f => (
-              <NarrativeCard key={f.key} field={f} value={profile[f.key] as string | null}
-                onSave={value => saveNarrativeField(f.key, value)} />
-            ))}
+            <NarrativeCard field={NARRATIVE_FIELDS[0]} value={profile.brand_voice} onSave={v => saveNarrativeField('brand_voice', v)} />
+            <NarrativeCard field={NARRATIVE_FIELDS[1]} value={profile.unique_selling_points} onSave={v => saveNarrativeField('unique_selling_points', v)} />
+
+            <ListCard icon={Swords} title="Competitors" hint="Who you compete with, and how" items={competitors} onDelete={deleteCompetitor}
+              renderRow={c => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>{c.name}</span>
+                    {c.competitor_type && <span style={badgeStyle('#A0A0A0')}>{c.competitor_type}</span>}
+                    {c.threat_level && <span style={badgeStyle(c.threat_level === 'high' ? '#EF4444' : c.threat_level === 'medium' ? '#F59E0B' : '#6A6A6A')}>{c.threat_level} threat</span>}
+                  </div>
+                  {c.notes && <p style={{ fontSize: 12, color: '#A0A0A0', margin: 0, lineHeight: 1.4 }}>{c.notes}</p>}
+                  {c.our_counter && <p style={{ fontSize: 12, color: '#7FB88F', margin: 0, lineHeight: 1.4 }}>Counter: {c.our_counter}</p>}
+                </div>
+              )}
+              addForm={close => <CompetitorForm onSave={input => addCompetitor(input, close)} onCancel={close} />}
+            />
+
+            <ListCard icon={Users} title="Audience Segments" hint="Who your customers are, one segment at a time" items={audienceSegments} onDelete={deleteSegment}
+              renderRow={s => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>{s.name}</span>
+                    {s.priority && <span style={badgeStyle(s.priority === 'primary' ? '#F15A22' : '#6A6A6A')}>{s.priority}</span>}
+                  </div>
+                  {s.description && <p style={{ fontSize: 12, color: '#A0A0A0', margin: 0, lineHeight: 1.4 }}>{s.description}</p>}
+                  {s.messaging_angle && <p style={{ fontSize: 12, color: '#7FB8D8', margin: 0, lineHeight: 1.4 }}>Angle: {s.messaging_angle}</p>}
+                </div>
+              )}
+              addForm={close => <SegmentForm onSave={input => addSegment(input, close)} onCancel={close} />}
+            />
+
+            <ListCard icon={Target} title="Goals & Priorities" hint="Tracked over time, ranked" items={goals} onDelete={deleteGoal}
+              renderRow={g => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>{g.description}</span>
+                    {g.status !== 'active' && <span style={badgeStyle(g.status === 'achieved' ? '#7FB88F' : '#6A6A6A')}>{g.status}</span>}
+                  </div>
+                  {(g.target_value != null || g.current_value != null) && (
+                    <p style={{ fontSize: 12, color: '#A0A0A0', margin: 0 }}>
+                      {g.metric ?? 'Progress'}: {g.current_value ?? '?'} → {g.target_value ?? '?'}
+                    </p>
+                  )}
+                  {g.deadline && <p style={{ fontSize: 12, color: '#6A6A6A', margin: 0 }}>By {g.deadline}</p>}
+                </div>
+              )}
+              addForm={close => <GoalForm onSave={input => addGoal(input, close)} onCancel={close} />}
+            />
+
+            <ListCard icon={Calendar} title="Seasonal Context" hint="Calendar of periods that shift your marketing" items={seasonalEvents} onDelete={deleteEvent}
+              renderRow={e => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>{e.period_label}</span>
+                    {e.priority && <span style={badgeStyle(e.priority === 'high' ? '#F15A22' : e.priority === 'medium' ? '#F59E0B' : '#6A6A6A')}>{e.priority}</span>}
+                  </div>
+                  {e.theme && <p style={{ fontSize: 12, color: '#A0A0A0', margin: 0 }}>{e.theme}</p>}
+                  {e.focus_notes && <p style={{ fontSize: 12, color: '#6A6A6A', margin: 0, lineHeight: 1.4 }}>{e.focus_notes}</p>}
+                </div>
+              )}
+              addForm={close => <SeasonalEventForm onSave={input => addEvent(input, close)} onCancel={close} />}
+            />
+
+            <NarrativeCard field={NARRATIVE_FIELDS[2]} value={profile.guardrails} onSave={v => saveNarrativeField('guardrails', v)} />
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function FormActions({ onCancel, onSave }: { onCancel: () => void; onSave: () => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+      <button onClick={onCancel} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: '1px solid #2A2A2A', background: 'none', color: '#A0A0A0', fontSize: 12, cursor: 'pointer' }}>
+        <X size={12} /> Cancel
+      </button>
+      <button onClick={onSave} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: 'none', background: '#F15A22', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+        <Check size={12} /> Save
+      </button>
+    </div>
+  )
+}
+
+function CompetitorForm({ onSave, onCancel }: { onSave: (input: Partial<Competitor>) => void; onCancel: () => void }) {
+  const [name, setName] = useState('')
+  const [type, setType] = useState<'direct' | 'indirect' | ''>('')
+  const [threat, setThreat] = useState<'low' | 'medium' | 'high' | ''>('')
+  const [notes, setNotes] = useState('')
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRadius: 8, backgroundColor: '#1E1E1E' }}>
+      <input style={smallInputStyle} placeholder="Competitor name" value={name} onChange={e => setName(e.target.value)} autoFocus />
+      <div style={{ display: 'flex', gap: 6 }}>
+        <select style={smallInputStyle} value={type} onChange={e => setType(e.target.value as typeof type)}>
+          <option value="">Type</option><option value="direct">Direct</option><option value="indirect">Indirect</option>
+        </select>
+        <select style={smallInputStyle} value={threat} onChange={e => setThreat(e.target.value as typeof threat)}>
+          <option value="">Threat</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+        </select>
+      </div>
+      <textarea style={{ ...smallInputStyle, resize: 'vertical' as const, fontFamily: 'inherit' }} rows={2} placeholder="Notes" value={notes} onChange={e => setNotes(e.target.value)} />
+      <FormActions onCancel={onCancel} onSave={() => onSave({ name, competitor_type: type || null, threat_level: threat || null, notes: notes || null })} />
+    </div>
+  )
+}
+
+function SegmentForm({ onSave, onCancel }: { onSave: (input: Partial<AudienceSegment>) => void; onCancel: () => void }) {
+  const [name, setName] = useState('')
+  const [priority, setPriority] = useState<'primary' | 'secondary' | ''>('')
+  const [description, setDescription] = useState('')
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRadius: 8, backgroundColor: '#1E1E1E' }}>
+      <input style={smallInputStyle} placeholder="Segment name" value={name} onChange={e => setName(e.target.value)} autoFocus />
+      <select style={smallInputStyle} value={priority} onChange={e => setPriority(e.target.value as typeof priority)}>
+        <option value="">Priority</option><option value="primary">Primary</option><option value="secondary">Secondary</option>
+      </select>
+      <textarea style={{ ...smallInputStyle, resize: 'vertical' as const, fontFamily: 'inherit' }} rows={2} placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} />
+      <FormActions onCancel={onCancel} onSave={() => onSave({ name, priority: priority || null, description: description || null })} />
+    </div>
+  )
+}
+
+function GoalForm({ onSave, onCancel }: { onSave: (input: Partial<Goal>) => void; onCancel: () => void }) {
+  const [description, setDescription] = useState('')
+  const [metric, setMetric] = useState('')
+  const [target, setTarget] = useState('')
+  const [current, setCurrent] = useState('')
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRadius: 8, backgroundColor: '#1E1E1E' }}>
+      <input style={smallInputStyle} placeholder="Goal description" value={description} onChange={e => setDescription(e.target.value)} autoFocus />
+      <input style={smallInputStyle} placeholder="Metric (optional), e.g. Monthly revenue (RM)" value={metric} onChange={e => setMetric(e.target.value)} />
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input style={smallInputStyle} type="number" placeholder="Current value" value={current} onChange={e => setCurrent(e.target.value)} />
+        <input style={smallInputStyle} type="number" placeholder="Target value" value={target} onChange={e => setTarget(e.target.value)} />
+      </div>
+      <FormActions onCancel={onCancel} onSave={() => onSave({
+        description, metric: metric || null,
+        current_value: current ? Number(current) : null,
+        target_value: target ? Number(target) : null,
+      })} />
+    </div>
+  )
+}
+
+function SeasonalEventForm({ onSave, onCancel }: { onSave: (input: Partial<SeasonalEvent>) => void; onCancel: () => void }) {
+  const [periodLabel, setPeriodLabel] = useState('')
+  const [theme, setTheme] = useState('')
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high' | ''>('')
+  const [focusNotes, setFocusNotes] = useState('')
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRadius: 8, backgroundColor: '#1E1E1E' }}>
+      <input style={smallInputStyle} placeholder="Period, e.g. Ramadan / Hari Raya" value={periodLabel} onChange={e => setPeriodLabel(e.target.value)} autoFocus />
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input style={smallInputStyle} placeholder="Theme" value={theme} onChange={e => setTheme(e.target.value)} />
+        <select style={smallInputStyle} value={priority} onChange={e => setPriority(e.target.value as typeof priority)}>
+          <option value="">Priority</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+        </select>
+      </div>
+      <textarea style={{ ...smallInputStyle, resize: 'vertical' as const, fontFamily: 'inherit' }} rows={2} placeholder="What to focus on" value={focusNotes} onChange={e => setFocusNotes(e.target.value)} />
+      <FormActions onCancel={onCancel} onSave={() => onSave({ period_label: periodLabel, theme: theme || null, priority: priority || null, focus_notes: focusNotes || null })} />
     </div>
   )
 }
