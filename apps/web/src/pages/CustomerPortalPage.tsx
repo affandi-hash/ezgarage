@@ -3,12 +3,13 @@ import { useParams } from 'react-router-dom'
 import {
   Search, CheckCircle, Clock, Wrench, Car, Loader2, AlertCircle,
   FileText, Upload, ThumbsUp, MessageCircle, ChevronDown, ChevronUp, X,
-  CreditCard, QrCode, Landmark, ImageIcon,
+  CreditCard, QrCode, Landmark, ImageIcon, Receipt, Download,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 const RAUDHAHPAY_CREATE_PAYMENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/raudhahpay-create-payment`
 const PORTAL_JOB_PHOTOS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/portal-job-photos`
+const PORTAL_RECEIPTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/portal-receipts`
 
 const C = {
   bg: '#0E0E0E',
@@ -421,6 +422,82 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
   )
 }
 
+// ─── Receipts ──────────────────────────────────────────────────────────────────
+
+interface PortalReceipt {
+  id: string
+  amount: number
+  payment_method: string
+  payment_date: string
+  gateway_ref: string | null
+  url: string
+}
+
+function ReceiptsSection({ invoiceId, plate, phone, icFirst6 }: { invoiceId: string; plate: string; phone: string; icFirst6: string }) {
+  const [receipts, setReceipts] = useState<PortalReceipt[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function loadReceipts() {
+    setLoading(true); setError('')
+    try {
+      const res = await fetch(PORTAL_RECEIPTS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ invoice_id: invoiceId, plate, phone, ic_first6: icFirst6 }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Could not load receipts.'); setLoading(false); return }
+      setReceipts(data.receipts ?? [])
+    } catch {
+      setError('Network error loading receipts.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (receipts === null) {
+    return (
+      <button
+        onClick={loadReceipts}
+        disabled={loading}
+        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 8, background: 'transparent', border: `1px solid ${C.border}`, color: C.textPrimary, fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer' }}
+      >
+        {loading ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Receipt size={14} />}
+        View Receipt{loading ? '' : 's'}
+        {error && <span style={{ color: C.red, marginLeft: 6 }}>{error}</span>}
+      </button>
+    )
+  }
+
+  if (receipts.length === 0) {
+    return <div style={{ fontSize: 12, color: C.textSecondary }}>No downloadable receipt found for this payment yet.</div>
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.textSecondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        <Receipt size={12} /> Receipts
+      </div>
+      {receipts.map(r => (
+        <a
+          key={r.id}
+          href={r.url}
+          target="_blank"
+          rel="noreferrer"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, textDecoration: 'none' }}
+        >
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary }}>{formatRM(r.amount)}</div>
+            <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(r.payment_date)} · {r.payment_method.replace('_', ' ').toUpperCase()}</div>
+          </div>
+          <Download size={14} color={C.orange} />
+        </a>
+      ))}
+    </div>
+  )
+}
+
 // ─── Photo Gallery ─────────────────────────────────────────────────────────────
 
 function PhotoLightbox({ photos, index, onClose, onNav }: { photos: PortalJobPhoto[]; index: number; onClose: () => void; onNav: (i: number) => void }) {
@@ -544,6 +621,7 @@ function JobCard({ job, plate, phone, icFirst6, tenantSlug }: { job: PortalJob; 
   // never real values, so this silently hid Pay Online for nearly every job.
   const showPaymentUpload = ['ready', 'long_due', 'delivered', 'closed'].includes(job.status) && hasInvoice && balanceDue > 0
   const showPayOnline = showPaymentUpload && balanceDue > 0
+  const showReceipts = hasInvoice && (job.inv_paid ?? 0) > 0
 
   const doApprove = async () => {
     setApproving(true); setApproveErr('')
@@ -663,6 +741,10 @@ function JobCard({ job, plate, phone, icFirst6, tenantSlug }: { job: PortalJob; 
 
             {showPayOnline && (
               <PayOnlineSection invoiceId={job.invoice_id!} balanceDue={balanceDue} />
+            )}
+
+            {showReceipts && (
+              <ReceiptsSection invoiceId={job.invoice_id!} plate={plate} phone={phone} icFirst6={icFirst6} />
             )}
 
             {showPaymentUpload && (
