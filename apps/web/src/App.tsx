@@ -35,6 +35,7 @@ import { ExpensesPage } from '@/pages/ExpensesPage'
 import { ChangePasswordPage } from '@/pages/ChangePasswordPage'
 import { PrintInvoicePage } from '@/pages/PrintInvoicePage'
 import { PrintReceiptPage } from '@/pages/PrintReceiptPage'
+import { ReceiptViewPage } from '@/pages/ReceiptViewPage'
 import { EspRegistrationPage } from '@/pages/EspRegistrationPage'
 import { EspCommunityPickerPage } from '@/pages/EspCommunityPickerPage'
 import { EspMemberLoginPage } from '@/pages/EspMemberLoginPage'
@@ -122,6 +123,11 @@ export default function App() {
         <Route path="/esp/:communitySlug" element={<EspRegistrationPage />} />
         <Route path="/print/invoice/:id" element={<ProtectedRoute><PrintInvoicePage /></ProtectedRoute>} />
         <Route path="/print/receipt/:id" element={<ProtectedRoute><PrintReceiptPage /></ProtectedRoute>} />
+        {/* No :id here on purpose -- the caller already re-verified identity
+            via portal-receipts/esp-receipt and hands data across through
+            sessionStorage (see openReceiptView), not a route param, so a
+            phone number/password/IC is never encoded into a URL. */}
+        <Route path="/receipt-view" element={<ReceiptViewPage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
         <Route

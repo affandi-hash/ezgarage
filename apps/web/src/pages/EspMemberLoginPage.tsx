@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom'
 import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon, X, UserCog, ChevronRight, Pencil, ShoppingBag, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { OTHER, makeOptionsFor, modelOptionsFor } from '@/lib/vehicleMakes'
+import { openReceiptView } from '@/pages/ReceiptViewPage'
+import type { ReceiptBranchInfo } from '@/components/receipts/ReceiptSheet'
 
 const RAUDHAHPAY_CREATE_PAYMENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/raudhahpay-create-payment`
 const ESP_RECEIPT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/esp-receipt`
@@ -431,13 +433,18 @@ interface Bill {
   vehicle_plate: string | null; job_number: string | null
 }
 
-interface BillReceipt { receipt_id: string; invoice_id: string; amount: number; payment_date: string; payment_method: string; url: string }
+interface BillReceipt {
+  receipt_id: string; invoice_id: string; amount: number; payment_date: string; payment_method: string; payment_reference: string | null
+  invoice_number: string; vehicle_plate: string | null; status: string; subtotal: number | null; discount_amount: number | null; total_amount: number
+  branch: ReceiptBranchInfo | null
+}
 
 function BillingTab({ phone, password, tenantSlug, refreshTick }: { phone: string; password: string; tenantSlug?: string; refreshTick: number }) {
   const [bills, setBills] = useState<Bill[] | null>(null)
   const [error, setError] = useState('')
   const [payingId, setPayingId] = useState<string | null>(null)
   const [receiptsByInvoice, setReceiptsByInvoice] = useState<Record<string, BillReceipt[]>>({})
+  const [customerName, setCustomerName] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.rpc('esp_get_billing', { p_phone: phone, p_password: password, p_tenant_slug: tenantSlug || null })
@@ -461,6 +468,7 @@ function BillingTab({ phone, password, tenantSlug, refreshTick }: { phone: strin
       .then(res => res.json())
       .then(data => {
         if (!data.receipts) return
+        setCustomerName(data.customer_name ?? null)
         const map: Record<string, BillReceipt[]> = {}
         for (const r of data.receipts as BillReceipt[]) {
           if (!map[r.invoice_id]) map[r.invoice_id] = []
@@ -505,13 +513,18 @@ function BillingTab({ phone, password, tenantSlug, refreshTick }: { phone: strin
         {b.balance_due <= 0 && receipts.length > 0 && (
           <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {receipts.map(r => (
-              <a key={r.receipt_id} href={r.url} target="_blank" rel="noreferrer"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 10px', textDecoration: 'none', color: 'inherit' }}>
+              <button key={r.receipt_id} onClick={() => openReceiptView({
+                receipt_number: `${r.invoice_number}-${r.receipt_id.slice(0, 6).toUpperCase()}`,
+                invoice_number: r.invoice_number, customer_name: customerName, vehicle_plate: r.vehicle_plate,
+                payment_date: r.payment_date, status: r.status, subtotal: r.subtotal, discount_amount: r.discount_amount,
+                total_amount: r.total_amount, amount_paid: r.amount, payment_method: r.payment_method, payment_reference: r.payment_reference,
+              }, r.branch)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 10px', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.textSecondary }}>
                   <FileText size={12} /> {formatDate(r.payment_date)} · {r.payment_method.replace('_', ' ').toUpperCase()}
                 </div>
                 <Download size={13} color={C.orange} />
-              </a>
+              </button>
             ))}
           </div>
         )}
@@ -539,7 +552,8 @@ function BillingTab({ phone, password, tenantSlug, refreshTick }: { phone: strin
 
 function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehicle }: { m: Membership; phone: string; password: string; tenantSlug?: string; onChanged: () => void; onViewVehicle: (vehicleId: string, plateNumber: string) => void }) {
   const [tab, setTab] = useState<'overview' | 'vehicles' | 'history'>('overview')
-  const [receiptUrls, setReceiptUrls] = useState<Record<string, string> | null>(null)
+  const [receiptData, setReceiptData] = useState<Record<string, BillReceipt> | null>(null)
+  const [receiptCustomerName, setReceiptCustomerName] = useState<string | null>(null)
   const [receiptsLoading, setReceiptsLoading] = useState(false)
   const [renewing, setRenewing] = useState(false)
   const [renewError, setRenewError] = useState('')
@@ -558,7 +572,7 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehic
   const activeVehicle = activeServiceJob ? m.vehicles.find(v => v.plate_number === activeServiceJob.plate_number) : null
 
   async function loadReceipts() {
-    if (receiptUrls || receiptsLoading || m.receipts.length === 0) return
+    if (receiptData || receiptsLoading || m.receipts.length === 0) return
     setReceiptsLoading(true)
     try {
       const res = await fetch(ESP_RECEIPT_URL, {
@@ -568,9 +582,10 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehic
       })
       const data = await res.json()
       if (res.ok && data.receipts) {
-        const map: Record<string, string> = {}
-        for (const r of data.receipts) map[r.receipt_id] = r.url
-        setReceiptUrls(map)
+        setReceiptCustomerName(data.customer_name ?? null)
+        const map: Record<string, BillReceipt> = {}
+        for (const r of data.receipts as BillReceipt[]) map[r.receipt_id] = r
+        setReceiptData(map)
       }
     } finally {
       setReceiptsLoading(false)
@@ -739,23 +754,31 @@ function MembershipCard({ m, phone, password, tenantSlug, onChanged, onViewVehic
               <div style={sectionLabelStyle()}><FileText size={12} /> Receipts</div>
               {m.receipts.length === 0 ? (
                 <div style={{ fontSize: 12, color: C.textSecondary }}>No receipts yet.</div>
-              ) : receiptUrls === null ? (
+              ) : receiptData === null ? (
                 <button type="button" onClick={loadReceipts} disabled={receiptsLoading} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.textSecondary, fontSize: 12, padding: '8px 12px', cursor: 'pointer' }}>
                   {receiptsLoading ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <FileText size={13} />}
                   {receiptsLoading ? 'Loading…' : `View ${m.receipts.length} receipt${m.receipts.length > 1 ? 's' : ''}`}
                 </button>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {m.receipts.map(r => (
-                    <a key={r.receipt_id} href={receiptUrls[r.receipt_id]} target="_blank" rel="noreferrer"
-                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, borderRadius: 8, padding: '8px 12px', textDecoration: 'none', color: 'inherit' }}>
+                  {m.receipts.map(r => {
+                    const full = receiptData[r.receipt_id]
+                    return (
+                    <button key={r.receipt_id} type="button" disabled={!full} onClick={() => full && openReceiptView({
+                      receipt_number: `${full.invoice_number}-${full.receipt_id.slice(0, 6).toUpperCase()}`,
+                      invoice_number: full.invoice_number, customer_name: receiptCustomerName, vehicle_plate: full.vehicle_plate,
+                      payment_date: full.payment_date, status: full.status, subtotal: full.subtotal, discount_amount: full.discount_amount,
+                      total_amount: full.total_amount, amount_paid: full.amount, payment_method: full.payment_method, payment_reference: full.payment_reference,
+                    }, full.branch)}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.surface2, border: 'none', borderRadius: 8, padding: '8px 12px', cursor: full ? 'pointer' : 'default', color: 'inherit', width: '100%', textAlign: 'left' }}>
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 600 }}>{r.invoice_number}</div>
                         <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(r.payment_date)} · {r.payment_method}</div>
                       </div>
                       <div style={{ fontSize: 12, fontWeight: 700, color: C.orange }}>RM {r.amount.toFixed(2)}</div>
-                    </a>
-                  ))}
+                    </button>
+                    )
+                  })}
                 </div>
               )}
             </div>

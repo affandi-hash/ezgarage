@@ -6,6 +6,8 @@ import {
   CreditCard, QrCode, Landmark, ImageIcon, Receipt, Download,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { openReceiptView } from '@/pages/ReceiptViewPage'
+import type { ReceiptBranchInfo } from '@/components/receipts/ReceiptSheet'
 
 const RAUDHAHPAY_CREATE_PAYMENT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/raudhahpay-create-payment`
 const PORTAL_JOB_PHOTOS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/portal-job-photos`
@@ -425,16 +427,21 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
 // ─── Receipts ──────────────────────────────────────────────────────────────────
 
 interface PortalReceipt {
-  id: string
+  receipt_id: string
   amount: number
   payment_method: string
   payment_date: string
-  gateway_ref: string | null
-  url: string
+  payment_reference: string | null
+}
+
+interface PortalReceiptsResponse {
+  invoice: { invoice_number: string; customer_name: string | null; vehicle_plate: string | null; status: string; subtotal: number | null; discount_amount: number | null; total_amount: number }
+  branch: ReceiptBranchInfo | null
+  receipts: PortalReceipt[]
 }
 
 function ReceiptsSection({ invoiceId, plate, phone, icFirst6 }: { invoiceId: string; plate: string; phone: string; icFirst6: string }) {
-  const [receipts, setReceipts] = useState<PortalReceipt[] | null>(null)
+  const [data, setData] = useState<PortalReceiptsResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -446,9 +453,9 @@ function ReceiptsSection({ invoiceId, plate, phone, icFirst6 }: { invoiceId: str
         headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
         body: JSON.stringify({ invoice_id: invoiceId, plate, phone, ic_first6: icFirst6 }),
       })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Could not load receipts.'); setLoading(false); return }
-      setReceipts(data.receipts ?? [])
+      const json = await res.json()
+      if (!res.ok) { setError(json.error || 'Could not load receipts.'); setLoading(false); return }
+      setData(json)
     } catch {
       setError('Network error loading receipts.')
     } finally {
@@ -456,7 +463,25 @@ function ReceiptsSection({ invoiceId, plate, phone, icFirst6 }: { invoiceId: str
     }
   }
 
-  if (receipts === null) {
+  function viewReceipt(r: PortalReceipt) {
+    if (!data) return
+    openReceiptView({
+      receipt_number: `${data.invoice.invoice_number}-${r.receipt_id.slice(0, 6).toUpperCase()}`,
+      invoice_number: data.invoice.invoice_number,
+      customer_name: data.invoice.customer_name,
+      vehicle_plate: data.invoice.vehicle_plate,
+      payment_date: r.payment_date,
+      status: data.invoice.status,
+      subtotal: data.invoice.subtotal,
+      discount_amount: data.invoice.discount_amount,
+      total_amount: data.invoice.total_amount,
+      amount_paid: r.amount,
+      payment_method: r.payment_method,
+      payment_reference: r.payment_reference,
+    }, data.branch)
+  }
+
+  if (data === null) {
     return (
       <button
         onClick={loadReceipts}
@@ -470,8 +495,8 @@ function ReceiptsSection({ invoiceId, plate, phone, icFirst6 }: { invoiceId: str
     )
   }
 
-  if (receipts.length === 0) {
-    return <div style={{ fontSize: 12, color: C.textSecondary }}>No downloadable receipt found for this payment yet.</div>
+  if (data.receipts.length === 0) {
+    return <div style={{ fontSize: 12, color: C.textSecondary }}>No receipt found for this payment yet.</div>
   }
 
   return (
@@ -479,20 +504,18 @@ function ReceiptsSection({ invoiceId, plate, phone, icFirst6 }: { invoiceId: str
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.textSecondary, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
         <Receipt size={12} /> Receipts
       </div>
-      {receipts.map(r => (
-        <a
-          key={r.id}
-          href={r.url}
-          target="_blank"
-          rel="noreferrer"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, textDecoration: 'none' }}
+      {data.receipts.map(r => (
+        <button
+          key={r.receipt_id}
+          onClick={() => viewReceipt(r)}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', borderRadius: 8, background: C.surface2, border: `1px solid ${C.border}`, cursor: 'pointer', textAlign: 'left', width: '100%' }}
         >
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.textPrimary }}>{formatRM(r.amount)}</div>
             <div style={{ fontSize: 11, color: C.textSecondary }}>{formatDate(r.payment_date)} · {r.payment_method.replace('_', ' ').toUpperCase()}</div>
           </div>
           <Download size={14} color={C.orange} />
-        </a>
+        </button>
       ))}
     </div>
   )
