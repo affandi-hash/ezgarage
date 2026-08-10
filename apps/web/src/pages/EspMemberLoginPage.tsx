@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon, X, UserCog, ChevronRight, Pencil, ShoppingBag } from 'lucide-react'
+import { Wrench, Loader2, AlertCircle, CheckCircle, Lock, LogOut, MessageCircle, Car, Bike, Plus, FileText, RefreshCw, CalendarPlus, Wrench as WrenchIcon, X, UserCog, ChevronRight, Pencil, ShoppingBag, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { OTHER, makeOptionsFor, modelOptionsFor } from '@/lib/vehicleMakes'
 
@@ -431,10 +431,13 @@ interface Bill {
   vehicle_plate: string | null; job_number: string | null
 }
 
+interface BillReceipt { receipt_id: string; invoice_id: string; amount: number; payment_date: string; payment_method: string; url: string }
+
 function BillingTab({ phone, password, tenantSlug, refreshTick }: { phone: string; password: string; tenantSlug?: string; refreshTick: number }) {
   const [bills, setBills] = useState<Bill[] | null>(null)
   const [error, setError] = useState('')
   const [payingId, setPayingId] = useState<string | null>(null)
+  const [receiptsByInvoice, setReceiptsByInvoice] = useState<Record<string, BillReceipt[]>>({})
 
   useEffect(() => {
     supabase.rpc('esp_get_billing', { p_phone: phone, p_password: password, p_tenant_slug: tenantSlug || null })
@@ -444,6 +447,30 @@ function BillingTab({ phone, password, tenantSlug, refreshTick }: { phone: strin
       })
   }, [phone, password, tenantSlug, refreshTick])
 
+  // Loaded alongside bills, not gated behind a click -- Billing already
+  // shows everything eagerly, and a customer who just paid (this is the
+  // exact complaint that led here: a payment went through with no
+  // receipt ever visible anywhere in the portal) shouldn't need to know
+  // to click something else first to find proof of it.
+  useEffect(() => {
+    fetch(ESP_RECEIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+      body: JSON.stringify({ phone, password }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.receipts) return
+        const map: Record<string, BillReceipt[]> = {}
+        for (const r of data.receipts as BillReceipt[]) {
+          if (!map[r.invoice_id]) map[r.invoice_id] = []
+          map[r.invoice_id].push(r)
+        }
+        setReceiptsByInvoice(map)
+      })
+      .catch(() => { /* receipts are a bonus on top of the bill list, not worth a hard error here */ })
+  }, [phone, password, tenantSlug, refreshTick])
+
   if (error) return <div style={{ fontSize: 13, color: C.red, textAlign: 'center', padding: 24 }}>{error}</div>
   if (bills === null) return <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} color={C.textSecondary} /></div>
 
@@ -451,6 +478,7 @@ function BillingTab({ phone, password, tenantSlug, refreshTick }: { phone: strin
   const closed = bills.filter(b => b.balance_due <= 0)
 
   function BillRow({ b }: { b: Bill }) {
+    const receipts = receiptsByInvoice[b.invoice_id] ?? []
     return (
       <div style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -473,6 +501,19 @@ function BillingTab({ phone, password, tenantSlug, refreshTick }: { phone: strin
               Pay Now — RM {b.balance_due.toFixed(2)}
             </button>
           )
+        )}
+        {b.balance_due <= 0 && receipts.length > 0 && (
+          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {receipts.map(r => (
+              <a key={r.receipt_id} href={r.url} target="_blank" rel="noreferrer"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 10px', textDecoration: 'none', color: 'inherit' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.textSecondary }}>
+                  <FileText size={12} /> {formatDate(r.payment_date)} · {r.payment_method.replace('_', ' ').toUpperCase()}
+                </div>
+                <Download size={13} color={C.orange} />
+              </a>
+            ))}
+          </div>
         )}
       </div>
     )
