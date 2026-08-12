@@ -41,6 +41,9 @@ interface QuoteRow {
   customer_email: string | null
   converted_to_booking_id: string | null
   branch_id: string
+  sent_channel: string | null
+  sent_to: string | null
+  sent_at: string | null
 }
 
 interface CustomerResult { id: string; full_name: string; phone: string; email: string | null; ic_number: string | null }
@@ -79,10 +82,12 @@ function formatDate(s: string) {
 // ---------------------------------------------------------------------------
 // Actions menu (portal-based)
 // ---------------------------------------------------------------------------
-function ActionsMenu({ quote, onView, onDuplicate, onMarkSent, onMarkAccepted, onMarkRejected, onConvert, onDelete, onPrint }: {
+function ActionsMenu({ quote, sendingWhatsApp, onView, onDuplicate, onSendWhatsApp, onMarkSent, onMarkAccepted, onMarkRejected, onConvert, onDelete, onPrint }: {
   quote: QuoteRow
+  sendingWhatsApp: boolean
   onView: () => void
   onDuplicate: () => void
+  onSendWhatsApp: () => void
   onMarkSent: () => void
   onMarkAccepted: () => void
   onMarkRejected: () => void
@@ -106,7 +111,8 @@ function ActionsMenu({ quote, onView, onDuplicate, onMarkSent, onMarkAccepted, o
     { label: 'View / Edit', action: onView, color: C.text, show: true },
     { label: 'Print / Save PDF', action: onPrint, color: C.text2, show: true },
     { label: 'Duplicate', action: onDuplicate, color: C.text2, show: true },
-    { label: 'Mark as Sent', action: onMarkSent, color: '#93C5FD', show: quote.status === 'draft' },
+    { label: sendingWhatsApp ? 'Sending…' : 'Send via WhatsApp', action: onSendWhatsApp, color: C.green, show: quote.status === 'draft' && !!quote.customer_phone },
+    { label: 'Mark as Sent (other channel)', action: onMarkSent, color: '#93C5FD', show: quote.status === 'draft' },
     { label: 'Mark as Accepted', action: onMarkAccepted, color: C.green, show: quote.status === 'sent' },
     { label: 'Mark as Rejected', action: onMarkRejected, color: C.red, show: quote.status === 'sent' },
     { label: '→ Convert to Booking', action: onConvert, color: C.orange, show: quote.status === 'accepted' && !quote.converted_to_booking_id },
@@ -623,6 +629,7 @@ export function QuotationsPage() {
 
   const [quotes, setQuotes]           = useState<QuoteRow[]>([])
   const [loading, setLoading]         = useState(true)
+  const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null)
   const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [showDrawer, setShowDrawer]   = useState(false)
@@ -671,9 +678,45 @@ export function QuotationsPage() {
   }, [tenantId])
 
   async function updateStatus(id: string, status: string) {
-    await supabase.from('quotations').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+    const extra = status === 'sent' ? { sent_channel: 'manual', sent_to: null, sent_at: new Date().toISOString() } : {}
+    await supabase.from('quotations').update({ status, updated_at: new Date().toISOString(), ...extra }).eq('id', id)
     toast.success(`Marked as ${STATUS_LABEL[status]}`)
     fetchQuotes()
+  }
+
+  // Generates a real PDF of the quote, opens WhatsApp with it linked in a
+  // prefilled message, and only then marks the quote Sent -- with who it
+  // was sent to and when, not just a bare status flip nobody could
+  // actually answer "sent to who?" about.
+  async function sendViaWhatsApp(q: QuoteRow) {
+    if (!q.customer_phone) { toast.error('This quote has no customer phone number on file'); return }
+    setSendingWhatsAppId(q.id)
+    try {
+      const { data, error } = await supabase.functions.invoke('quotation-pdf', { body: { quotation_id: q.id } })
+      if (error || !data?.url) { toast.error('Could not generate the quotation PDF'); return }
+
+      const raw = q.customer_phone.replace(/\D/g, '')
+      const waNum = raw.startsWith('0') ? '6' + raw : raw
+      const vehicleDesc = [q.vehicle_year, q.vehicle_make, q.vehicle_model].filter(Boolean).join(' ')
+      const vehicle = vehicleDesc ? `${vehicleDesc} (${q.vehicle_plate})` : q.vehicle_plate
+      const message = encodeURIComponent(
+        `Hi ${q.customer_name}, here's your quotation *${q.quote_number}* for ${vehicle}:\n` +
+        `Total: ${formatRM(q.total_amount)}\n` +
+        `Valid until: ${q.valid_until ? formatDate(q.valid_until) : '—'}\n\n` +
+        `${data.url}\n\nThank you from our workshop team.`
+      )
+      window.open(`https://wa.me/${waNum}?text=${message}`, '_blank')
+
+      await supabase.from('quotations').update({
+        status: 'sent', sent_channel: 'whatsapp', sent_to: q.customer_phone, sent_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).eq('id', q.id)
+      toast.success('Sent via WhatsApp')
+      fetchQuotes()
+    } catch {
+      toast.error('Failed to send quotation')
+    } finally {
+      setSendingWhatsAppId(null)
+    }
   }
 
   async function duplicateQuote(q: QuoteRow) {
@@ -834,18 +877,27 @@ export function QuotationsPage() {
                 <span style={{ color: q.valid_until && new Date(q.valid_until) < new Date() ? C.red : C.text2, fontSize: 12 }}>
                   {q.valid_until ? formatDate(q.valid_until) : '—'}
                 </span>
-                <span style={{
-                  display: 'inline-block', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-                  background: (STATUS_COLOR[q.status] || C.text2) + '22',
-                  color: STATUS_COLOR[q.status] || C.text2,
-                  border: `1px solid ${(STATUS_COLOR[q.status] || C.text2)}44`,
-                  textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap',
-                }}>{STATUS_LABEL[q.status] || q.status}</span>
+                <div>
+                  <span style={{
+                    display: 'inline-block', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+                    background: (STATUS_COLOR[q.status] || C.text2) + '22',
+                    color: STATUS_COLOR[q.status] || C.text2,
+                    border: `1px solid ${(STATUS_COLOR[q.status] || C.text2)}44`,
+                    textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap',
+                  }}>{STATUS_LABEL[q.status] || q.status}</span>
+                  {q.sent_at && (
+                    <div style={{ color: C.text2, fontSize: 10, marginTop: 3, whiteSpace: 'nowrap' }}>
+                      {q.sent_channel === 'whatsapp' ? `via WhatsApp to ${q.sent_to}` : 'marked manually'}
+                    </div>
+                  )}
+                </div>
                 <div onClick={e => e.stopPropagation()}>
                   <ActionsMenu
                     quote={q}
+                    sendingWhatsApp={sendingWhatsAppId === q.id}
                     onView={() => { setEditQuote(q); setShowDrawer(true) }}
                     onDuplicate={() => duplicateQuote(q)}
+                    onSendWhatsApp={() => sendViaWhatsApp(q)}
                     onMarkSent={() => updateStatus(q.id, 'sent')}
                     onMarkAccepted={() => updateStatus(q.id, 'accepted')}
                     onMarkRejected={() => updateStatus(q.id, 'rejected')}
