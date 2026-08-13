@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Search,
   Plus,
@@ -566,6 +566,16 @@ function NewStaffDrawer({
   branchId: string | null
 }) {
   const { user } = useAuthStore()
+  // super_admin/ops_manager have no single implicit branch (see StaffPage's
+  // own branchId, which is null for both so the staff *list* can show
+  // every branch) -- reusing that same null as this new record's branch_id
+  // is exactly the bug this form had: the insert always submitted
+  // branch_id: null, and staff_profiles_insert's RLS check requires
+  // branch_id = get_my_branch() for anyone who isn't super_admin, so every
+  // ops_manager's "Add Staff Member" was silently rejected by RLS. Give
+  // these roles a real picker instead of trusting the list-filter value.
+  const needsBranchPicker = user?.role === 'super_admin' || user?.role === 'ops_manager'
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [form, setForm] = useState<NewStaffForm>({
     full_name: '', phone: '', email: '', ic_number: '',
     department: '', position: '', specialty_input: '', specialties: [],
@@ -578,6 +588,13 @@ function NewStaffDrawer({
   const [emergencyOpen, setEmergencyOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!needsBranchPicker || !user?.tenant_id) return
+    supabase.from('branches').select('id, name').eq('tenant_id', user.tenant_id).order('name')
+      .then(({ data }) => { if (data) setBranches(data) })
+  }, [needsBranchPicker, user?.tenant_id])
 
   const set = (key: keyof NewStaffForm, val: string | string[]) =>
     setForm(f => ({ ...f, [key]: val }))
@@ -592,32 +609,45 @@ function NewStaffDrawer({
   const removeSpecialty = (sp: string) =>
     setForm(f => ({ ...f, specialties: f.specialties.filter(s => s !== sp) }))
 
+  function failWith(message: string) {
+    setError(message)
+    contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const handleSubmit = async () => {
-    if (!form.full_name || !form.phone) { setError('Full name and phone are required.'); return }
+    if (!form.full_name || !form.phone) { failWith('Full name and phone are required.'); return }
+    if (!user?.tenant_id) { failWith('Could not determine your tenant. Please sign in again.'); return }
+    if (needsBranchPicker && !form.branch_id) { failWith('Please select a branch.'); return }
+
     setSaving(true); setError('')
-    const { error: err } = await supabase.from('staff_profiles').insert({
-      full_name: form.full_name,
-      phone: form.phone,
-      email: form.email || null,
-      ic_number: form.ic_number || null,
-      department: form.department || null,
-      position: form.position || null,
-      specialty: form.specialties.length > 0 ? form.specialties : null,
-      hire_date: form.hire_date || null,
-      employment_type: form.employment_type || null,
-      branch_id: form.branch_id || null,
-      bank_name: form.bank_name || null,
-      bank_account: form.bank_account || null,
-      emergency_name: form.emergency_name || null,
-      emergency_phone: form.emergency_phone || null,
-      emergency_relation: form.emergency_relation || null,
-      is_active: true,
-      tenant_id: user?.tenant_id,
-    })
-    setSaving(false)
-    if (err) { setError(err.message); return }
-    onSuccess()
-    onClose()
+    try {
+      const { error: err } = await supabase.from('staff_profiles').insert({
+        full_name: form.full_name,
+        phone: form.phone,
+        email: form.email || null,
+        ic_number: form.ic_number || null,
+        department: form.department || null,
+        position: form.position || null,
+        specialty: form.specialties.length > 0 ? form.specialties : null,
+        hire_date: form.hire_date || null,
+        employment_type: form.employment_type || null,
+        branch_id: form.branch_id || null,
+        bank_name: form.bank_name || null,
+        bank_account: form.bank_account || null,
+        emergency_name: form.emergency_name || null,
+        emergency_phone: form.emergency_phone || null,
+        emergency_relation: form.emergency_relation || null,
+        is_active: true,
+        tenant_id: user.tenant_id,
+      })
+      if (err) { failWith(err.message); return }
+      onSuccess()
+      onClose()
+    } catch (e) {
+      failWith(e instanceof Error ? e.message : 'Something went wrong. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const inputStyle: React.CSSProperties = {
@@ -634,7 +664,7 @@ function NewStaffDrawer({
         onClick={onClose}
         style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 49 }}
       />
-      <div style={{
+      <div ref={contentRef} style={{
         position: 'fixed', top: 0, right: 0, bottom: 0, width: 480, zIndex: 50,
         backgroundColor: '#0E0E0E', borderLeft: '1px solid #2A2A2A',
         display: 'flex', flexDirection: 'column', overflowY: 'auto',
@@ -740,16 +770,27 @@ function NewStaffDrawer({
           {/* Employment */}
           <div>
             <p style={{ fontSize: 11, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Employment Details</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div style={fieldStyle}>
-                <label style={labelStyle}>Hire Date</label>
-                <input style={inputStyle} type="date" value={form.hire_date} onChange={e => set('hire_date', e.target.value)} />
-              </div>
-              <div style={fieldStyle}>
-                <label style={labelStyle}>Employment Type</label>
-                <select style={inputStyle} value={form.employment_type} onChange={e => set('employment_type', e.target.value)}>
-                  {EMPLOYMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {needsBranchPicker && (
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Branch *</label>
+                  <select style={inputStyle} value={form.branch_id} onChange={e => set('branch_id', e.target.value)}>
+                    <option value="">Select a branch...</option>
+                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Hire Date</label>
+                  <input style={inputStyle} type="date" value={form.hire_date} onChange={e => set('hire_date', e.target.value)} />
+                </div>
+                <div style={fieldStyle}>
+                  <label style={labelStyle}>Employment Type</label>
+                  <select style={inputStyle} value={form.employment_type} onChange={e => set('employment_type', e.target.value)}>
+                    {EMPLOYMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
           </div>
