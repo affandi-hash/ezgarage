@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Plus, X, Shield, Check, Ban, Save, Search, Mail, Phone, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { Users, Plus, X, Shield, Check, Ban, Save, Search, Mail, Phone, Eye, EyeOff, KeyRound, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { logAudit } from '@/lib/audit';
@@ -147,8 +147,19 @@ interface InviteModalProps {
   onInvited: () => void;
 }
 
+interface StaffOption {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  branch_id: string | null;
+  position: string | null;
+}
+
 function InviteModal({ branches, onClose, onInvited }: InviteModalProps) {
+  const currentUser = useAuthStore((s) => s.user);
   const [form, setForm] = useState({
+    staff_profile_id: '',
     full_name: '',
     email: '',
     role: 'front_desk' as Role,
@@ -160,9 +171,54 @@ function InviteModal({ branches, onClose, onInvited }: InviteModalProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Every login should belong to an existing staff record, not a freshly
+  // typed name -- this is who can actually be invited: staff with an email
+  // on file (required to create the auth account) who don't already have
+  // a login. Fetched once; the dropdown filters this client-side since a
+  // staff roster is small enough that a live per-keystroke query is
+  // unnecessary.
+  const [staffOptions, setStaffOptions] = useState<StaffOption[] | null>(null);
+  const [nameSearch, setNameSearch] = useState('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    if (!currentUser?.tenant_id) return;
+    supabase
+      .from('staff_profiles')
+      .select('id, full_name, email, phone, branch_id, position')
+      .eq('tenant_id', currentUser.tenant_id)
+      .eq('is_active', true)
+      .is('user_id', null)
+      .not('email', 'is', null)
+      .order('full_name')
+      .then(({ data }) => setStaffOptions((data as StaffOption[] | null) ?? []));
+  }, [currentUser?.tenant_id]);
+
+  const filteredStaff = (staffOptions ?? []).filter((s) =>
+    s.full_name.toLowerCase().includes(nameSearch.toLowerCase())
+  );
+
+  function selectStaff(s: StaffOption) {
+    setForm((f) => ({
+      ...f,
+      staff_profile_id: s.id,
+      full_name: s.full_name,
+      email: s.email,
+      phone: s.phone ?? '',
+      branch_id: s.branch_id ?? f.branch_id,
+    }));
+    setNameSearch(s.full_name);
+    setDropdownOpen(false);
+  }
+
+  function clearStaffSelection() {
+    setForm((f) => ({ ...f, staff_profile_id: '', full_name: '', email: '', phone: '' }));
+    setNameSearch('');
+  }
+
   const handleSubmit = async () => {
-    if (!form.full_name.trim() || !form.email.trim()) {
-      setError('Name and email are required.');
+    if (!form.staff_profile_id) {
+      setError('Select a staff member to invite.');
       return;
     }
     if (!form.temp_password.trim()) {
@@ -180,12 +236,13 @@ function InviteModal({ branches, onClose, onInvited }: InviteModalProps) {
     // service-role key, so it now goes through the invite-user edge function.
     const { data, error: fnError } = await supabase.functions.invoke('invite-user', {
       body: {
-        email:         form.email.trim().toLowerCase(),
-        full_name:     form.full_name.trim(),
-        role:          form.role,
-        branch_id:     form.branch_id || null,
-        phone:         form.phone.trim() || null,
-        temp_password: form.temp_password,
+        email:             form.email.trim().toLowerCase(),
+        full_name:         form.full_name.trim(),
+        role:              form.role,
+        branch_id:         form.branch_id || null,
+        phone:             form.phone.trim() || null,
+        temp_password:     form.temp_password,
+        staff_profile_id:  form.staff_profile_id,
       },
     });
     setSaving(false);
@@ -249,32 +306,77 @@ function InviteModal({ branches, onClose, onInvited }: InviteModalProps) {
           </div>
         )}
 
-        {[
-          { label: 'Full Name', key: 'full_name', type: 'text',  autoComplete: 'name', icon: <Users size={14} /> },
-          { label: 'Email',     key: 'email',     type: 'email', autoComplete: 'off',  icon: <Mail size={14} /> },
-          { label: 'Phone',     key: 'phone',     type: 'tel',   autoComplete: 'tel',  icon: <Phone size={14} /> },
-        ].map(({ label, key, type, autoComplete, icon }) => (
-          <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <label style={{ color: '#A0A0A0', fontSize: 12, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-              {icon} {label}
-            </label>
+        {/* Staff picker -- selecting a name is what auto-fills email/phone/branch below */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, position: 'relative' }}>
+          <label style={{ color: '#A0A0A0', fontSize: 12, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Users size={14} /> Staff Member
+          </label>
+          <div style={{ position: 'relative' }}>
             <input
-              type={type}
-              autoComplete={autoComplete}
-              value={(form as Record<string, string>)[key]}
-              onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+              type="text"
+              value={nameSearch}
+              onChange={(e) => { setNameSearch(e.target.value); setDropdownOpen(true); if (form.staff_profile_id) clearStaffSelection(); }}
+              onFocus={() => setDropdownOpen(true)}
+              onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+              placeholder={staffOptions === null ? 'Loading staff…' : 'Search staff by name…'}
+              disabled={staffOptions === null}
               style={{
+                width: '100%',
                 background: '#0E0E0E',
                 border: '1px solid #2A2A2A',
                 borderRadius: 6,
-                padding: '8px 12px',
+                padding: '8px 32px 8px 12px',
                 color: '#F0F0F0',
                 fontSize: 14,
                 outline: 'none',
+                boxSizing: 'border-box',
               }}
             />
+            <ChevronDown size={14} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#6B7280', pointerEvents: 'none' }} />
+            {dropdownOpen && staffOptions !== null && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 10,
+                background: '#0E0E0E', border: '1px solid #2A2A2A', borderRadius: 6,
+                maxHeight: 220, overflowY: 'auto',
+              }}>
+                {filteredStaff.length === 0 ? (
+                  <div style={{ padding: '10px 12px', fontSize: 13, color: '#6B7280' }}>
+                    {staffOptions.length === 0
+                      ? 'No staff available to invite -- add one in Staff first, with an email on file.'
+                      : 'No match.'}
+                  </div>
+                ) : (
+                  filteredStaff.map((s) => (
+                    <div
+                      key={s.id}
+                      onMouseDown={() => selectStaff(s)}
+                      style={{ padding: '9px 12px', cursor: 'pointer', borderBottom: '1px solid #1E1E1E' }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#1E1E1E'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                    >
+                      <div style={{ color: '#F0F0F0', fontSize: 13, fontWeight: 600 }}>{s.full_name}</div>
+                      <div style={{ color: '#6B7280', fontSize: 12 }}>{s.email}{s.position ? ` · ${s.position}` : ''}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
-        ))}
+          <span style={{ fontSize: 11, color: '#6B7280' }}>Only staff without an existing login are shown.</span>
+        </div>
+
+        {form.staff_profile_id && (
+          <div style={{ background: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 8, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#A0A0A0', fontSize: 13 }}>
+              <Mail size={13} /> {form.email}
+            </div>
+            {form.phone && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#A0A0A0', fontSize: 13 }}>
+                <Phone size={13} /> {form.phone}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Temporary password */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

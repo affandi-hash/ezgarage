@@ -32,12 +32,33 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Insufficient permissions' }), { status: 403, headers: corsHeaders })
     }
 
-    const { email, full_name, role, branch_id, phone, temp_password } = await req.json()
+    const { email, full_name, role, branch_id, phone, temp_password, staff_profile_id } = await req.json()
     if (!email?.trim() || !full_name?.trim() || !role || !temp_password || temp_password.length < 6) {
       return new Response(JSON.stringify({ error: 'email, full_name, role, and temp_password (min 6 chars) are required' }), { status: 400, headers: corsHeaders })
     }
 
     const adminClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+
+    // Every login should belong to an existing staff record (the Invite
+    // modal now only lets you pick one, not type a fresh name) -- verify it
+    // server-side too, and fail before creating anything if it's already
+    // been claimed or doesn't belong to this tenant.
+    if (staff_profile_id) {
+      const { data: staffRow, error: staffErr } = await adminClient
+        .from('staff_profiles')
+        .select('id, user_id, tenant_id')
+        .eq('id', staff_profile_id)
+        .single()
+      if (staffErr || !staffRow) {
+        return new Response(JSON.stringify({ error: 'Selected staff record not found' }), { status: 400, headers: corsHeaders })
+      }
+      if (staffRow.tenant_id !== callerProfile.tenant_id) {
+        return new Response(JSON.stringify({ error: 'Selected staff record does not belong to your tenant' }), { status: 403, headers: corsHeaders })
+      }
+      if (staffRow.user_id) {
+        return new Response(JSON.stringify({ error: 'This staff member already has a login' }), { status: 400, headers: corsHeaders })
+      }
+    }
 
     const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
       email: email.trim().toLowerCase(),
@@ -64,6 +85,21 @@ Deno.serve(async (req) => {
       // Don't leave an orphaned auth user with no matching profile row.
       await adminClient.auth.admin.deleteUser(created.user.id)
       return new Response(JSON.stringify({ error: profileErr.message }), { status: 400, headers: corsHeaders })
+    }
+
+    // The insert above fires trg_sync_user_staff (050), which -- seeing no
+    // staff_profiles row yet references this brand-new user_id -- creates
+    // its own generic one (position/department derived from role alone).
+    // Link the real staff record the admin actually picked instead, and
+    // remove that auto-created duplicate so this person doesn't end up
+    // listed twice in Staff.
+    if (staff_profile_id) {
+      await adminClient.from('staff_profiles').delete().eq('user_id', created.user.id).neq('id', staff_profile_id)
+      const { error: linkErr } = await adminClient
+        .from('staff_profiles')
+        .update({ user_id: created.user.id, email: email.trim().toLowerCase(), full_name: full_name.trim(), phone: phone?.trim() || null })
+        .eq('id', staff_profile_id)
+      if (linkErr) console.error('Failed to link staff_profile to new user:', linkErr.message)
     }
 
     return new Response(JSON.stringify({ success: true, user_id: created.user.id }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
