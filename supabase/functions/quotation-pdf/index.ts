@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
       text([branch?.phone && `Tel: ${branch.phone}`, branch?.email].filter(Boolean).join(' · '), margin, 9, { color: GREY })
       y -= 12
     }
-    text('QUOTATION', pageWidth - margin, 16, { bold: true, align: 'right' })
+    text('PROFORMA INVOICE', pageWidth - margin, 16, { bold: true, align: 'right' })
     const headerRightY = y
     y -= 16
     text(`No: ${quote.quote_number}`, pageWidth - margin, 10, { align: 'right' })
@@ -170,13 +170,13 @@ Deno.serve(async (req) => {
 
     // Terms
     newPageIfNeeded(30)
-    text(`This quotation is valid for ${quote.validity_days} day${quote.validity_days !== 1 ? 's' : ''} from the date of issue.`, margin, 9, { color: GREY })
+    text(`This proforma invoice is valid for ${quote.validity_days} day${quote.validity_days !== 1 ? 's' : ''} from the date of issue.`, margin, 9, { color: GREY })
     y -= 12
     text('Prices are subject to change without prior notice after the validity period.', margin, 9, { color: GREY })
     y -= 24
 
     // Footer
-    text('Thank you for your enquiry! This quotation is computer-generated.', margin, 9, { color: rgb(0.7, 0.7, 0.7) })
+    text('Thank you for your enquiry! This proforma invoice is computer-generated.', margin, 9, { color: rgb(0.7, 0.7, 0.7) })
 
     const pdfBytes = await pdf.save()
     const path = `${quotation_id}/${Date.now()}.pdf`

@@ -700,7 +700,7 @@ export function QuotationsPage() {
       const vehicleDesc = [q.vehicle_year, q.vehicle_make, q.vehicle_model].filter(Boolean).join(' ')
       const vehicle = vehicleDesc ? `${vehicleDesc} (${q.vehicle_plate})` : q.vehicle_plate
       const message = encodeURIComponent(
-        `Hi ${q.customer_name}, here's your quotation *${q.quote_number}* for ${vehicle}:\n` +
+        `Hi ${q.customer_name}, here's your proforma invoice *${q.quote_number}* for ${vehicle}:\n` +
         `Total: ${formatRM(q.total_amount)}\n` +
         `Valid until: ${q.valid_until ? formatDate(q.valid_until) : '—'}\n\n` +
         `${data.url}\n\nThank you from our workshop team.`
@@ -935,7 +935,7 @@ export function QuotationsPage() {
 
           {/* Toolbar */}
           <div className="no-print" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', background: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
-            <span style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>Quotation — {printQuote.quote_number}</span>
+            <span style={{ fontSize: 13, color: '#555', fontWeight: 600 }}>Proforma Invoice — {printQuote.quote_number}</span>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setShowPrintView(false)} style={{ background: '#fff', border: '1px solid #ccc', borderRadius: 6, padding: '7px 16px', fontSize: 13, cursor: 'pointer' }}>Close</button>
               <button onClick={() => window.print()} style={{ background: '#F15A22', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -964,7 +964,7 @@ export function QuotationsPage() {
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 3, marginBottom: 4 }}>QUOTATION</div>
+                <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 3, marginBottom: 4 }}>PROFORMA INVOICE</div>
                 <div style={{ fontSize: 12, color: '#555' }}>No: <span style={{ fontWeight: 700, color: '#111', fontFamily: 'monospace' }}>{printQuote.quote_number}</span></div>
                 <div style={{ fontSize: 12, color: '#555' }}>Date: {new Date(printQuote.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
                 <div style={{ fontSize: 12, color: '#555' }}>Valid Until: <span style={{ fontWeight: 700 }}>{printQuote.valid_until ? new Date(printQuote.valid_until).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</span></div>
@@ -1075,7 +1075,7 @@ export function QuotationsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
               <div style={{ border: '1px solid #ccc', borderRadius: 4, padding: '10px 12px', background: '#fafafa' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#888', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>Terms</div>
-                <div style={{ fontSize: 12, color: '#555' }}>This quotation is valid for <strong>{printQuote.validity_days} day{printQuote.validity_days !== 1 ? 's' : ''}</strong> from the date of issue.</div>
+                <div style={{ fontSize: 12, color: '#555' }}>This proforma invoice is valid for <strong>{printQuote.validity_days} day{printQuote.validity_days !== 1 ? 's' : ''}</strong> from the date of issue.</div>
                 <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>Prices are subject to change without prior notice after the validity period.</div>
               </div>
               <div style={{ border: '1px solid #ccc', borderRadius: 4, padding: '10px 12px', minHeight: 70, background: '#fafafa' }}>
@@ -1086,7 +1086,7 @@ export function QuotationsPage() {
 
             {/* Footer */}
             <div style={{ textAlign: 'center', fontSize: 12, color: '#aaa', borderTop: '1px solid #eee', paddingTop: 8, marginBottom: 8 }}>
-              Thank you for your enquiry! · This quotation is computer-generated and does not require a physical signature.
+              Thank you for your enquiry! · This proforma invoice is computer-generated and does not require a physical signature.
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, paddingTop: 6, borderTop: '1px solid #f0f0f0' }}>
               <span style={{ fontSize: 12, color: '#bbb' }}>Powered by:</span>
