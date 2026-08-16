@@ -19,6 +19,7 @@ import {
   Eye,
   EyeOff,
   Copy,
+  Warehouse,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -39,6 +40,13 @@ interface JobType {
   id: string
   name: string
   default_duration_minutes: number
+  sort_order: number
+  is_active: boolean
+}
+
+interface Bay {
+  id: string
+  name: string
   sort_order: number
   is_active: boolean
 }
@@ -430,6 +438,131 @@ function JobTypesSection({ branchId, tenantId }: { branchId: string | null; tena
           </table>
           {jobTypes.length === 0 && (
             <div style={{ padding: 32, textAlign: 'center', color: '#666', fontSize: 13 }}>No job types yet.</div>
+          )}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Bays (physical service bays, feeds Workshop Occupancy) ───────────────────
+
+function BaysSection({ branchId, tenantId }: { branchId: string | null; tenantId: string | null }) {
+  const { user } = useAuthStore()
+  const [bays, setBays] = useState<Bay[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const fetch = useCallback(async () => {
+    if (!branchId) { setBays([]); setLoading(false); return }
+    setLoading(true)
+    const { data } = await supabase.from('bays').select('*').eq('branch_id', branchId).order('sort_order')
+    setBays(data ?? [])
+    setLoading(false)
+  }, [branchId])
+
+  useEffect(() => { fetch() }, [fetch])
+
+  const startEdit = (b: Bay) => { setEditingId(b.id); setEditName(b.name) }
+
+  const saveEdit = async () => {
+    if (!editingId) return
+    setSaving(true)
+    await supabase.from('bays').update({ name: editName }).eq('id', editingId)
+    setSaving(false); setEditingId(null); fetch()
+  }
+
+  const toggleActive = async (b: Bay) => {
+    await supabase.from('bays').update({ is_active: !b.is_active }).eq('id', b.id)
+    fetch()
+  }
+
+  const addBay = async () => {
+    if (!branchId || !tenantId) return
+    const maxOrder = bays.length > 0 ? Math.max(...bays.map(b => b.sort_order)) + 1 : 1
+    const { data, error } = await supabase.from('bays').insert({
+      name: `Bay ${bays.length + 1}`, is_active: true, sort_order: maxOrder, branch_id: branchId, tenant_id: tenantId,
+    }).select().single()
+    if (error) { alert('Failed to add bay: ' + error.message); return }
+    if (data) {
+      logAudit({ action: 'create', module: 'settings', record_id: data.id, record_type: 'bay', details: { name: data.name }, branch_id: user?.branch_id, user_id: user?.id, tenant_id: tenantId })
+      fetch(); setEditingId(data.id); setEditName(data.name)
+    }
+  }
+
+  const deleteBay = async (id: string) => {
+    if (!confirm('Delete this bay?')) return
+    await supabase.from('bays').delete().eq('id', id)
+    fetch()
+  }
+
+  return (
+    <Card>
+      <SectionHeader title="Bays" action={
+        <button
+          onClick={addBay}
+          disabled={!branchId}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+            backgroundColor: 'rgba(241,90,34,0.1)', border: '1px solid rgba(241,90,34,0.3)',
+            borderRadius: 8, color: '#F15A22', fontSize: 12, fontWeight: 600, cursor: branchId ? 'pointer' : 'not-allowed',
+            opacity: branchId ? 1 : 0.5,
+          }}
+        ><Plus size={13} /> Add Bay</button>
+      } />
+      <p style={{ padding: '12px 20px 0', fontSize: 12, color: '#A0A0A0', margin: 0 }}>
+        Physical service bays for this branch. Jobs get assigned a bay from the Workshop Board once work starts, which powers the real Workshop Occupancy % on the Sales &amp; Marketing dashboard.
+      </p>
+      {!branchId ? (
+        <div style={{ padding: 32, textAlign: 'center', color: '#666', fontSize: 13 }}>Select a branch above to manage its bays.</div>
+      ) : loading ? <Spinner /> : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #2A2A2A' }}>
+                {['Name', 'Active', 'Actions'].map(h => (
+                  <th key={h} style={{ padding: '10px 20px', textAlign: 'left', color: '#666', fontWeight: 500, fontSize: 11 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {bays.map(b => (
+                <tr key={b.id} style={{ borderBottom: '1px solid #1E1E1E', opacity: b.is_active ? 1 : 0.5 }}>
+                  <td style={{ padding: '10px 20px' }}>
+                    {editingId === b.id ? (
+                      <input style={{ ...inputStyle, width: 200 }} value={editName} onChange={e => setEditName(e.target.value)} />
+                    ) : (
+                      <span style={{ color: '#F0F0F0', fontWeight: 500 }}>{b.name}</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px 20px' }}>
+                    <Toggle value={b.is_active} onChange={() => toggleActive(b)} />
+                  </td>
+                  <td style={{ padding: '10px 20px' }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {editingId === b.id ? (
+                        <>
+                          <button onClick={saveEdit} disabled={saving} style={{ padding: '4px 10px', borderRadius: 6, backgroundColor: '#F15A22', border: 'none', color: '#fff', fontSize: 12, cursor: 'pointer' }}>
+                            {saving ? '…' : <><Check size={11} /> Save</>}
+                          </button>
+                          <button onClick={() => setEditingId(null)} style={{ padding: '4px 10px', borderRadius: 6, backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#A0A0A0', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => startEdit(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#666' }}><Edit2 size={14} /></button>
+                          <button onClick={() => deleteBay(b.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444' }}><Trash2 size={14} /></button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {bays.length === 0 && (
+            <div style={{ padding: 32, textAlign: 'center', color: '#666', fontSize: 13 }}>No bays yet. Click "+ Add Bay" to create one.</div>
           )}
         </div>
       )}
@@ -1454,11 +1587,12 @@ function CustomerPortalSection({ tenantId }: { tenantId: string | null }) {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-type SettingsTab = 'rules' | 'job_types' | 'wa_templates' | 'status_colors' | 'branch' | 'working_hours' | 'portal'
+type SettingsTab = 'rules' | 'job_types' | 'bays' | 'wa_templates' | 'status_colors' | 'branch' | 'working_hours' | 'portal'
 
 const TABS: { key: SettingsTab; label: string; icon: React.ElementType }[] = [
   { key: 'rules',         label: 'Workshop Rules',      icon: BookOpen },
   { key: 'job_types',     label: 'Job Types',           icon: Wrench },
+  { key: 'bays',          label: 'Bays',                icon: Warehouse },
   { key: 'wa_templates',  label: 'WhatsApp Templates',  icon: MessageSquare },
   { key: 'status_colors', label: 'Status Colors',       icon: Palette },
   { key: 'branch',        label: 'Branch Settings',     icon: Building2 },
@@ -1516,7 +1650,7 @@ export function SettingsPage() {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-        {activeTab === 'branch' && user?.role === 'super_admin' && branchList.length > 0 && (
+        {(activeTab === 'branch' || activeTab === 'bays') && user?.role === 'super_admin' && branchList.length > 0 && (
           <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
             <label style={{ fontSize: 12, color: '#A0A0A0', fontWeight: 600 }}>BRANCH</label>
             <select
@@ -1530,6 +1664,7 @@ export function SettingsPage() {
         )}
         {activeTab === 'rules'         && <WorkshopRulesSection branchId={branchId} tenantId={user?.tenant_id ?? null} />}
         {activeTab === 'job_types'     && <JobTypesSection branchId={branchId} tenantId={user?.tenant_id ?? null} />}
+        {activeTab === 'bays'          && <BaysSection branchId={effectiveBranchId} tenantId={user?.tenant_id ?? null} />}
         {activeTab === 'wa_templates'  && <WATemplatesSection tenantId={user?.tenant_id ?? null} branchId={branchId} />}
         {activeTab === 'status_colors' && <StatusColorsSection tenantId={user?.tenant_id ?? null} />}
         {activeTab === 'branch'        && <BranchSettingsSection branchId={effectiveBranchId} />}

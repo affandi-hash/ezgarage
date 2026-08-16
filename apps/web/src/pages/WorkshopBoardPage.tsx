@@ -155,11 +155,14 @@ interface JobRow extends Job {
   customer_name?: string | null
   tenant_id?: string | null
   invoice_id?: string | null
+  bay_id?: string | null
+  bays?: { name: string } | null
 }
 
 interface CustomerOption { id: string; full_name: string; phone: string }
 interface VehicleOption  { id: string; plate_number: string; make: string; model: string }
 interface StaffOption    { id: string; full_name: string; role: string }
+interface BayOption      { id: string; name: string }
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '8px 12px',
@@ -1619,6 +1622,8 @@ interface VehicleCardProps {
   onView: (job: JobRow) => void
   onDeliver: (job: JobRow) => void
   onRevertToReady: (job: JobRow) => void
+  bayOptions: BayOption[]
+  onAssignBay: (job: JobRow, bayId: string) => void
 }
 
 function useElapsed(checkedInAt: string | null) {
@@ -1639,7 +1644,7 @@ function useElapsed(checkedInAt: string | null) {
   return `${mins}m`
 }
 
-function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, onUpdateStatus, onAddNote, onView, onDeliver, onRevertToReady }: VehicleCardProps) {
+function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, onUpdateStatus, onAddNote, onView, onDeliver, onRevertToReady, bayOptions, onAssignBay }: VehicleCardProps) {
   const plate = job.vehicles?.plate_number ?? '—'
   const make = job.vehicles?.make ?? ''
   const model = job.vehicles?.model ?? ''
@@ -1721,6 +1726,19 @@ function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, o
               </span>
             )}
           </div>
+          {bayOptions.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ color: '#555', fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', minWidth: 28 }}>BAY</span>
+              <select
+                value={job.bay_id ?? ''}
+                onChange={e => onAssignBay(job, e.target.value)}
+                style={{ backgroundColor: '#0E0E0E', border: '1px solid #2A2A2A', borderRadius: 4, color: job.bay_id ? '#F0F0F0' : '#666', fontSize: 11, padding: '2px 4px' }}
+              >
+                <option value="">Unassigned</option>
+                {bayOptions.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+          )}
         </div>
         <span style={{ color: '#A0A0A0', fontSize: 11, fontFamily: 'monospace' }}>{job.job_number}</span>
       </div>
@@ -1761,7 +1779,7 @@ function VehicleCard({ job, userId, userRole, pendingRequest, rejectedRequest, o
 // ---------------------------------------------------------------------------
 // Kanban column
 // ---------------------------------------------------------------------------
-function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap, onUpdateStatus, onAddNote, onView, onDeliver, onRevertToReady }: {
+function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap, onUpdateStatus, onAddNote, onView, onDeliver, onRevertToReady, bayOptions, onAssignBay }: {
   status: JobStatus; jobs: JobRow[]; userId: string; userRole: string
   pendingMap: Map<string, StatusChangeRequest>
   rejectedMap: Map<string, StatusChangeRequest>
@@ -1770,6 +1788,8 @@ function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap,
   onView: (job: JobRow) => void
   onDeliver: (job: JobRow) => void
   onRevertToReady: (job: JobRow) => void
+  bayOptions: BayOption[]
+  onAssignBay: (job: JobRow, bayId: string) => void
 }) {
   const cfg = STATUS_CONFIG[status]
   const count = jobs.length
@@ -1793,6 +1813,8 @@ function KanbanColumn({ status, jobs, userId, userRole, pendingMap, rejectedMap,
               rejectedRequest={rejectedMap.get(job.id) ?? null}
               onUpdateStatus={onUpdateStatus} onAddNote={onAddNote} onView={onView} onDeliver={onDeliver}
               onRevertToReady={onRevertToReady}
+              bayOptions={bayOptions}
+              onAssignBay={onAssignBay}
             />
           ))
         )}
@@ -1871,6 +1893,13 @@ export function WorkshopBoardPage() {
   const tenantId = user?.tenant_id ?? ''
   const isForemanUser = canApprove(userRole)
 
+  const [bayOptions, setBayOptions] = useState<BayOption[]>([])
+  useEffect(() => {
+    if (!branchId) { setBayOptions([]); return }
+    supabase.from('bays').select('id, name').eq('branch_id', branchId).eq('is_active', true).order('sort_order')
+      .then(({ data }) => setBayOptions((data ?? []) as BayOption[]))
+  }, [branchId])
+
   // Derive pending/rejected maps
   const pendingMap = useMemo(() => {
     const map = new Map<string, StatusChangeRequest>()
@@ -1899,11 +1928,12 @@ export function WorkshopBoardPage() {
           internal_notes, next_action, checked_in_at, estimated_cost, status_updated_at,
           customer_complaint, diagnosis_summary, branch_id, tenant_id, customer_id, vehicle_id,
           assigned_foreman_id, assigned_mechanic_id, mechanic_ids, source, arrival_mode, payment_status,
-          archived_at, archived_by, invoice_id, mileage_in,
+          archived_at, archived_by, invoice_id, mileage_in, bay_id,
           customers!customer_id(full_name, phone),
           vehicles!vehicle_id(plate_number, make, model, year, vehicle_type, is_internal_fleet, esp_member_id),
           assigned_foreman:users!assigned_foreman_id(full_name),
-          assigned_mechanic:users!assigned_mechanic_id(full_name)`)
+          assigned_mechanic:users!assigned_mechanic_id(full_name),
+          bays!bay_id(name)`)
         .not('status', 'eq', 'closed')
         .not('status', 'eq', 'cancelled')
         .is('archived_at', null)
@@ -1932,6 +1962,13 @@ export function WorkshopBoardPage() {
       setLoading(false)
     }
   }, [branchId, isSuperAdmin])
+
+  const handleAssignBay = useCallback(async (job: JobRow, bayId: string) => {
+    const { error } = await supabase.from('jobs').update({ bay_id: bayId || null }).eq('id', job.id)
+    if (error) { toast.error('Failed to assign bay: ' + error.message); return }
+    logAudit({ action: 'update', module: 'workshop_board', record_id: job.id, record_type: 'job', details: { bay_id: bayId || null }, branch_id: user?.branch_id, user_id: user?.id, tenant_id: tenantId })
+    fetchJobs()
+  }, [fetchJobs, tenantId, user?.branch_id, user?.id])
 
   // Archive tab: anything cancelled OR explicitly archived, regardless of
   // status — this is the one place those jobs remain visible/searchable.
@@ -2272,6 +2309,8 @@ export function WorkshopBoardPage() {
                   onView={handleViewJob}
                   onDeliver={handleDeliver}
                   onRevertToReady={handleRevertToReady}
+                  bayOptions={bayOptions}
+                  onAssignBay={handleAssignBay}
                 />
               ))}
             </div>
