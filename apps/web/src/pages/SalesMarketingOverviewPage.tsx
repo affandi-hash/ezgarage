@@ -105,6 +105,9 @@ interface AlertItem { icon: React.ElementType; severity: string; text: string; s
 
 interface ChannelPerf { channel: string; reach: number; leads: number; prospects: number; spend: number }
 
+interface TopCampaign { name: string; period: string; status: string; spent: number; revenue: number | null; roi: number | null; progress: number }
+interface UpcomingCampaign { day: string; month: string; title: string; audience: string; status: string }
+
 interface OverviewData {
   primaryStats: StatTile[]
   secondaryStats: StatTile[]
@@ -121,6 +124,9 @@ interface OverviewData {
   revenueTotal: number
   revenueTargetTotal: number
   dayLabels: string[]
+  topCampaigns: TopCampaign[]
+  upcomingCampaigns: UpcomingCampaign[]
+  campaignRecommendation: string
 }
 
 // ─── Presentational pieces (unchanged visual design, now data-driven) ─────────
@@ -453,76 +459,55 @@ function DashboardTab({ data, loading }: { data: OverviewData | null; loading: b
   )
 }
 
-// ─── Campaigns & Planning tab -- still a design pass, wired up separately ─────
+// ─── Campaigns & Planning tab -- wired to sales_marketing_plans ───────────────
 
-const TOP_CAMPAIGNS = [
-  { name: 'Harley Full Service', period: '1 - 31 Aug 2026', status: 'Active', spent: 800, revenue: 18700, roi: 23.4, progress: 75 },
-  { name: 'Road Trip Ready', period: '1 - 31 Aug 2026', status: 'Active', spent: 600, revenue: 9250, roi: 15.4, progress: 60 },
-  { name: 'Ask Mia Campaign', period: '1 - 31 Aug 2026', status: 'Active', spent: 400, revenue: 3800, roi: 9.5, progress: 50 },
-  { name: 'ESP Community Drive', period: '1 - 31 Aug 2026', status: 'Planned', spent: 500, revenue: null, roi: null, progress: 0 },
-  { name: 'Google Review Drive', period: '1 - 31 Aug 2026', status: 'Active', spent: 200, revenue: null, roi: null, progress: 30 },
-]
-
-const UPCOMING_CAMPAIGNS = [
-  { day: '05', month: 'SEP', title: 'Harley Week Special', audience: 'Harley Owners', status: 'Upcoming' },
-  { day: '12', month: 'SEP', title: 'Community Ride Support', audience: 'Motorcycle Communities', status: 'Upcoming' },
-  { day: '17', month: 'SEP', title: 'ESP Roadshow', audience: 'All Communities & Clubs', status: 'Upcoming' },
-  { day: '25', month: 'SEP', title: 'Road Trip Ready Promo', audience: 'Car Owners', status: 'Planned' },
-]
-
-function CampaignsPlanningTab() {
+function CampaignsPlanningTab({ data, loading }: { data: OverviewData | null; loading: boolean }) {
+  if (loading || !data) {
+    return <div style={{ padding: 48, textAlign: 'center' as const, color: '#6A6A6A', fontSize: 13 }}>Loading real data…</div>
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ ...cardStyle, padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' as const, color: WARN, backgroundColor: `${WARN}1A`, padding: '3px 9px', borderRadius: 999 }}>
-          Preview -- sample data
-        </span>
-        <span style={{ fontSize: 11, color: '#6A6A6A' }}>Campaigns & Planning is still a design pass -- not wired to real data yet.</span>
-      </div>
-
       <div style={{ ...cardStyle, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <Sparkles size={14} color={ORANGE} />
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>AI Recommendation</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>Recommendation</div>
         </div>
-        <p style={{ fontSize: 12, color: '#C0C0C0', margin: 0 }}>Revenue below target. Priority this week:</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8 }}>
-          {['Ask Mia Campaign', 'Harley Full Service Package', 'E-Hailing Full Service Package'].map((p, i) => (
-            <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#E0E0E0', backgroundColor: '#1E1E1E', borderRadius: 999, padding: '5px 12px' }}>
-              <span style={{ width: 15, height: 15, borderRadius: '50%', backgroundColor: 'rgba(241,90,34,0.15)', color: ORANGE, fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</span>
-              {p}
-            </div>
-          ))}
-        </div>
+        <p style={{ fontSize: 12, color: '#C0C0C0', margin: 0 }}>{data.campaignRecommendation}</p>
       </div>
 
       <div style={{ ...cardStyle, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>Top Campaigns This Month</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>Campaigns This Period</div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {TOP_CAMPAIGNS.map(c => (
-            <div key={c.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 90px 90px 90px 70px minmax(0,1fr)', gap: 10, alignItems: 'center', padding: '10px 6px', borderBottom: '1px solid #202020' }}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#F0F0F0' }}>{c.name}</div>
-                <div style={{ fontSize: 10, color: '#6A6A6A' }}>{c.period}</div>
-              </div>
-              <span style={{
-                fontSize: 10, fontWeight: 700, textAlign: 'center' as const, padding: '3px 8px', borderRadius: 999,
-                color: c.status === 'Active' ? GOOD : INFO, backgroundColor: c.status === 'Active' ? `${GOOD}22` : `${INFO}22`, justifySelf: 'start',
-              }}>{c.status}</span>
-              <span style={{ fontSize: 12, color: '#C0C0C0' }}>{fmtRM(c.spent)}</span>
-              <span style={{ fontSize: 12, color: '#C0C0C0' }}>{c.revenue != null ? fmtRM(c.revenue) : '-'}</span>
-              <span style={{ fontSize: 12, color: c.roi != null ? GOOD : '#6A6A6A', fontWeight: c.roi != null ? 700 : 400 }}>{c.roi != null ? `${c.roi}x` : '-'}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ flex: 1, height: 5, borderRadius: 999, backgroundColor: '#2A2A2A', overflow: 'hidden' }}>
-                  <div style={{ width: `${c.progress}%`, height: '100%', backgroundColor: c.progress > 0 ? GOOD : '#3A3A3A' }} />
+        {data.topCampaigns.length === 0 ? (
+          <div style={{ padding: '24px 6px', textAlign: 'center' as const, color: '#6A6A6A', fontSize: 12 }}>
+            No campaigns in this period. Create one in Marketing Plan to see it here.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {data.topCampaigns.map(c => (
+              <div key={c.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 90px 90px 90px 70px minmax(0,1fr)', gap: 10, alignItems: 'center', padding: '10px 6px', borderBottom: '1px solid #202020' }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#F0F0F0' }}>{c.name}</div>
+                  <div style={{ fontSize: 10, color: '#6A6A6A' }}>{c.period}</div>
                 </div>
-                <span style={{ fontSize: 11, color: '#8A8A8A', width: 30, textAlign: 'right' as const }}>{c.progress}%</span>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, textAlign: 'center' as const, padding: '3px 8px', borderRadius: 999,
+                  color: c.status === 'active' ? GOOD : INFO, backgroundColor: c.status === 'active' ? `${GOOD}22` : `${INFO}22`, justifySelf: 'start',
+                }}>{c.status}</span>
+                <span style={{ fontSize: 12, color: '#C0C0C0' }}>{fmtRM(c.spent)}</span>
+                <span style={{ fontSize: 12, color: '#C0C0C0' }}>{c.revenue != null ? fmtRM(c.revenue) : '-'}</span>
+                <span style={{ fontSize: 12, color: c.roi != null ? GOOD : '#6A6A6A', fontWeight: c.roi != null ? 700 : 400 }}>{c.roi != null ? `${c.roi.toFixed(1)}x` : '-'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, height: 5, borderRadius: 999, backgroundColor: '#2A2A2A', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(100, c.progress)}%`, height: '100%', backgroundColor: c.progress > 0 ? GOOD : '#3A3A3A' }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: '#8A8A8A', width: 30, textAlign: 'right' as const }}>{c.progress > 0 ? `${c.progress.toFixed(0)}%` : '-'}</span>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ ...cardStyle, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -532,7 +517,9 @@ function CampaignsPlanningTab() {
             <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0' }}>Upcoming Campaigns</div>
           </div>
         </div>
-        {UPCOMING_CAMPAIGNS.map(u => (
+        {data.upcomingCampaigns.length === 0 ? (
+          <div style={{ padding: '24px 6px', textAlign: 'center' as const, color: '#6A6A6A', fontSize: 12 }}>No upcoming campaigns scheduled.</div>
+        ) : data.upcomingCampaigns.map(u => (
           <div key={u.title} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 44, height: 44, borderRadius: 8, border: `1px solid ${ORANGE}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0', lineHeight: 1 }}>{u.day}</span>
@@ -542,7 +529,7 @@ function CampaignsPlanningTab() {
               <div style={{ fontSize: 12, fontWeight: 700, color: '#F0F0F0' }}>{u.title}</div>
               <div style={{ fontSize: 11, color: INFO }}>{u.audience}</div>
             </div>
-            <span style={{ fontSize: 11, color: u.status === 'Upcoming' ? GOOD : '#8A8A8A', fontWeight: 600 }}>{u.status}</span>
+            <span style={{ fontSize: 11, color: u.status === 'draft' ? '#8A8A8A' : GOOD, fontWeight: 600 }}>{u.status}</span>
           </div>
         ))}
       </div>
@@ -809,11 +796,48 @@ export function SalesMarketingOverviewPage() {
       reach: vals.reach ?? 0, leads: vals.leads ?? 0, prospects: vals.prospects ?? 0, spend: vals.spend ?? 0,
     }))
 
+    // Campaigns & Planning -- real sales_marketing_plans, scoped through the
+    // tenant's business profile (a plan can't exist without one).
+    let topCampaigns: TopCampaign[] = []
+    let upcomingCampaigns: UpcomingCampaign[] = []
+    let campaignRecommendation = 'No campaign plans yet -- create one in Marketing Plan to see recommendations here.'
+    const { data: profile } = await supabase.from('sales_marketing_business_profile').select('id').eq('tenant_id', tenantId).maybeSingle()
+    if (profile) {
+      const [{ data: currentPlans }, { data: upcomingPlans }] = await Promise.all([
+        supabase.from('sales_marketing_plans').select('title, period_start, period_end, status, budget_allocated_myr, spent_myr, revenue_myr')
+          .eq('business_profile_id', profile.id).lte('period_start', bounds.end).gte('period_end', bounds.start).order('created_at', { ascending: false }),
+        supabase.from('sales_marketing_plans').select('title, period_start, target_segment_names, status')
+          .eq('business_profile_id', profile.id).gt('period_start', bounds.end).order('period_start').limit(5),
+      ])
+      topCampaigns = (currentPlans ?? []).map(p => {
+        const spent = p.spent_myr ?? 0
+        const revenue = p.revenue_myr
+        const progress = p.budget_allocated_myr ? (spent / p.budget_allocated_myr) * 100 : 0
+        return {
+          name: p.title, period: `${fmtDateLabel(p.period_start)} - ${fmtDateLabel(p.period_end)}`,
+          status: p.status, spent, revenue: revenue ?? null, roi: revenue != null && spent > 0 ? revenue / spent : null, progress,
+        }
+      })
+      upcomingCampaigns = (upcomingPlans ?? []).map(p => {
+        const d = new Date(p.period_start)
+        return {
+          day: String(d.getDate()).padStart(2, '0'), month: d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase(),
+          title: p.title, audience: (p.target_segment_names ?? []).join(', ') || 'All segments', status: p.status,
+        }
+      })
+      if (topCampaigns.length > 0) {
+        const lowest = topCampaigns.reduce((a, b) => a.progress < b.progress ? a : b)
+        campaignRecommendation = `"${lowest.name}" has the lowest progress this period (${lowest.progress.toFixed(0)}% of budget spent) -- worth checking if it needs a push.`
+      } else if (upcomingCampaigns.length > 0 && upcomingPlans?.[0]) {
+        campaignRecommendation = `No campaigns running this period. "${upcomingCampaigns[0].title}" starts ${fmtDateLabel(upcomingPlans[0].period_start)}.`
+      }
+    }
+
     setData({
       primaryStats, secondaryStats, bookingChannels, funnel, opportunities,
       aiSummaryText, aiPriorities, channelPerf, alerts, occupancy,
       revenueSeries, revenueTargetSeries, revenueTotal: curr.revenue, revenueTargetTotal: revenueTarget,
-      dayLabels,
+      dayLabels, topCampaigns, upcomingCampaigns, campaignRecommendation,
     })
     setLoading(false)
   }, [tenantId, branchFilter, bounds.start, bounds.end, prevBounds.start, prevBounds.end])
@@ -880,7 +904,7 @@ export function SalesMarketingOverviewPage() {
         ))}
       </div>
 
-      {tab === 'dashboard' ? <DashboardTab data={data} loading={loading} /> : <CampaignsPlanningTab />}
+      {tab === 'dashboard' ? <DashboardTab data={data} loading={loading} /> : <CampaignsPlanningTab data={data} loading={loading} />}
 
       {tenantId && (
         <MarketingMetricsEditor
