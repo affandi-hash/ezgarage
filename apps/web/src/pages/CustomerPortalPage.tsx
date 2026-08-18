@@ -795,14 +795,42 @@ export function CustomerPortalPage() {
   const [logoUrl, setLogoUrl] = useState('')
   const [whatsappNumber, setWhatsappNumber] = useState('')
 
+  // Tenant resolution failed -- either no slug in the URL, or a slug that no
+  // longer matches an active tenant. Rather than a dead-end, let the
+  // customer find their own workshop by name instead of guessing.
+  const [needsPicker, setNeedsPicker] = useState(false)
+  const [configLoading, setConfigLoading] = useState(true)
+  const [pickerQuery, setPickerQuery] = useState('')
+  const [pickerResults, setPickerResults] = useState<{ slug: string; name: string; logo_url: string | null }[]>([])
+  const [pickerSearching, setPickerSearching] = useState(false)
+
   useEffect(() => {
+    setConfigLoading(true)
     supabase.rpc('get_portal_config', { p_tenant_slug: tenantSlug || null }).then(({ data }) => {
-      if (data?.name) setTenantName(data.name)
+      if (data?.name) {
+        setTenantName(data.name)
+        setNeedsPicker(false)
+      } else {
+        setNeedsPicker(true)
+      }
       if (data?.logo_url) setLogoUrl(data.logo_url)
       if (data?.whatsapp_number) setWhatsappNumber(data.whatsapp_number.replace(/\D/g, ''))
+      setConfigLoading(false)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantSlug])
+
+  useEffect(() => {
+    if (pickerQuery.trim().length < 2) { setPickerResults([]); return }
+    setPickerSearching(true)
+    const timer = setTimeout(() => {
+      supabase.rpc('search_active_portal_tenants', { p_query: pickerQuery.trim() }).then(({ data }) => {
+        setPickerResults(data ?? [])
+        setPickerSearching(false)
+      })
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [pickerQuery])
 
   // Restore the session after returning from an external payment (FPX
   // requires leaving the app entirely). Everything needed lives in
@@ -895,7 +923,48 @@ export function CustomerPortalPage() {
       </div>
 
       <div style={{ maxWidth: 720, margin: '0 auto', padding: '40px 20px 80px' }}>
-        {/* Search form */}
+        {/* Workshop picker -- shown when tenant resolution failed (no slug, or a stale/wrong slug) */}
+        {!configLoading && needsPicker ? (
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 28, marginBottom: 28 }}>
+            <div style={{ marginBottom: 18 }}>
+              <h1 style={{ fontSize: 20, fontWeight: 800, color: C.textPrimary, margin: '0 0 6px' }}>Select Your Workshop</h1>
+              <p style={{ color: C.textSecondary, fontSize: 13, margin: 0 }}>We couldn't tell which workshop this link is for. Search for it by name below.</p>
+            </div>
+            <div style={{ position: 'relative' }}>
+              <input
+                value={pickerQuery}
+                onChange={e => setPickerQuery(e.target.value)}
+                placeholder="Type your workshop's name…"
+                autoFocus
+                style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.textPrimary, padding: '12px 14px', fontSize: 14, boxSizing: 'border-box', outline: 'none' }}
+              />
+              {pickerSearching && (
+                <Loader2 size={15} color={C.textSecondary} style={{ position: 'absolute', right: 14, top: 14, animation: 'spin 1s linear infinite' }} />
+              )}
+            </div>
+            {pickerResults.length > 0 && (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {pickerResults.map(t => (
+                  <button
+                    key={t.slug}
+                    onClick={() => { window.location.href = `/portal/${t.slug}` }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, color: C.textPrimary, fontSize: 14, cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    {t.logo_url ? (
+                      <img src={t.logo_url} alt={t.name} style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'contain', background: '#fff' }} />
+                    ) : (
+                      <Wrench size={14} color={C.orange} />
+                    )}
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {pickerQuery.trim().length >= 2 && !pickerSearching && pickerResults.length === 0 && (
+              <p style={{ color: C.textSecondary, fontSize: 12, marginTop: 12 }}>No workshop found matching "{pickerQuery.trim()}". Check the spelling, or contact your workshop directly for their portal link.</p>
+            )}
+          </div>
+        ) : (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 28, marginBottom: 28 }}>
           <div style={{ marginBottom: 22 }}>
             <h1 style={{ fontSize: 20, fontWeight: 800, color: C.textPrimary, margin: '0 0 6px' }}>Track Your Vehicle Service</h1>
@@ -945,9 +1014,10 @@ export function CustomerPortalPage() {
             </button>
           </form>
         </div>
+        )}
 
         {/* Error */}
-        {error && (
+        {!needsPicker && error && (
           <div style={{ background: '#1C1010', border: `1px solid ${C.red}44`, borderRadius: 8, padding: '12px 16px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
             <AlertCircle size={15} color={C.red} />
             <span style={{ color: C.red, fontSize: 13 }}>{error}</span>

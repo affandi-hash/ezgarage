@@ -691,6 +691,16 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
     ? Math.floor((Date.now() - new Date(job.checked_in_at).getTime()) / 86400000)
     : 0
 
+  // Fetched once for the "Track your service" link appended to WhatsApp
+  // status updates -- resolves the tenant's own portal slug so the link
+  // works regardless of how many other tenants are active on the platform.
+  const [tenantSlug, setTenantSlug] = useState('')
+  useEffect(() => {
+    if (!user?.tenant_id) return
+    supabase.from('tenants').select('slug').eq('id', user.tenant_id).single()
+      .then(({ data }) => setTenantSlug(data?.slug ?? ''))
+  }, [user?.tenant_id])
+
   // Edit mode state
   const [editMode, setEditMode] = useState(false)
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([])
@@ -868,10 +878,13 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
     const raw = phone.replace(/\D/g, '')
     const waNum = raw.startsWith('0') ? '6' + raw : raw
     const statusLabel = STATUS_CONFIG[job.status]?.label ?? job.status
+    const portalLink = tenantSlug ? `${window.location.origin}/portal/${tenantSlug}` : ''
     const msg = encodeURIComponent(
       `Hi ${customer}, your vehicle *${plate}* is currently at status: *${statusLabel}*.\n` +
       (job.next_action ? `Next step: ${job.next_action}\n` : '') +
-      `\nJob No: ${job.job_number}\nThank you from our workshop team.`
+      `\nJob No: ${job.job_number}\n` +
+      (portalLink ? `Track your service anytime: ${portalLink}\n` : '') +
+      `Thank you from our workshop team.`
     )
     window.open(`https://wa.me/${waNum}?text=${msg}`, '_blank')
   }
