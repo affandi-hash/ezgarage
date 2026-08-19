@@ -38,12 +38,15 @@ interface SupplierInvoice {
   due_date: string | null
   total_amount: number
   amount_paid: number
-  status: 'unpaid' | 'partial' | 'paid' | 'overdue'
+  status: 'unpaid' | 'partial' | 'paid' | 'overdue' | 'voided'
   payment_priority: 'low' | 'normal' | 'high' | 'urgent'
   file_url: string | null
   notes: string | null
   created_at: string
   updated_at: string
+  voided_at: string | null
+  voided_by: string | null
+  void_reason: string | null
   suppliers?: Supplier | null
 }
 
@@ -60,7 +63,7 @@ interface SupplierPayment {
   created_at: string
 }
 
-type StatusFilter = 'all' | 'unpaid' | 'partial' | 'paid' | 'overdue'
+type StatusFilter = 'all' | 'unpaid' | 'partial' | 'paid' | 'overdue' | 'voided'
 
 interface NewInvoiceForm {
   supplier_id: string
@@ -169,6 +172,7 @@ const STATUS_COLOR: Record<SupplierInvoice['status'], string> = {
   partial: '#F59E0B',
   paid: '#22C55E',
   overdue: '#EF4444',
+  voided: '#6B7280',
 }
 
 const STATUS_BG: Record<SupplierInvoice['status'], string> = {
@@ -176,6 +180,7 @@ const STATUS_BG: Record<SupplierInvoice['status'], string> = {
   partial: 'rgba(245,158,11,0.12)',
   paid: 'rgba(34,197,94,0.12)',
   overdue: 'rgba(239,68,68,0.12)',
+  voided: 'rgba(107,114,128,0.12)',
 }
 
 const EMPTY_NEW_INVOICE: NewInvoiceForm = {
@@ -589,6 +594,7 @@ interface DetailPanelProps {
   onInvoiceUpdated: (updated: SupplierInvoice) => void
   tenantId: string
   userId: string
+  canVoid: boolean
 }
 
 function DetailPanel({
@@ -600,6 +606,7 @@ function DetailPanel({
   onInvoiceUpdated,
   tenantId,
   userId,
+  canVoid,
 }: DetailPanelProps) {
   const supplier = invoice.suppliers
   const balance = invoice.total_amount - invoice.amount_paid
@@ -720,6 +727,36 @@ function DetailPanel({
     }
   }
 
+  const [voiding, setVoiding] = useState(false)
+
+  async function handleVoid() {
+    if (!window.confirm('Void this invoice? It will be excluded from payables totals and can no longer be edited or paid. This cannot be undone.')) return
+    const reason = window.prompt('Reason for voiding this invoice (optional):') ?? ''
+
+    setVoiding(true)
+    try {
+      const { data: updInv, error: updErr } = await supabase
+        .from('supplier_invoices')
+        .update({
+          status: 'voided',
+          voided_at: new Date().toISOString(),
+          voided_by: userId || null,
+          void_reason: reason.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', invoice.id)
+        .select('*, suppliers(*)')
+        .single()
+
+      if (updErr) throw updErr
+      onInvoiceUpdated(updInv as SupplierInvoice)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to void invoice')
+    } finally {
+      setVoiding(false)
+    }
+  }
+
   async function handleFileUpload(file: File) {
     setUploading(true)
     setUploadError(null)
@@ -830,6 +867,21 @@ function DetailPanel({
               Credit: {supplier.credit_days ?? '—'} days
               {supplier.credit_limit ? ` | Limit: ${formatRM(supplier.credit_limit)}` : ''}
             </p>
+          )}
+          {canVoid && invoice.status !== 'voided' && (
+            <button
+              onClick={handleVoid}
+              disabled={voiding}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, marginTop: 10,
+                background: 'none', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 6,
+                color: '#EF4444', padding: '5px 10px', fontSize: 12, fontWeight: 600,
+                cursor: voiding ? 'not-allowed' : 'pointer', opacity: voiding ? 0.6 : 1,
+              }}
+            >
+              {voiding ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : null}
+              Void Invoice
+            </button>
           )}
         </div>
         <button
@@ -1045,7 +1097,7 @@ function DetailPanel({
           )}
 
           {/* Add payment */}
-          {!showPaymentForm && invoice.status !== 'paid' && (
+          {!showPaymentForm && !['paid', 'voided'].includes(invoice.status) && (
             <button
               onClick={() => {
                 const currentBalance = invoice.total_amount - invoice.amount_paid
@@ -1199,7 +1251,17 @@ function DetailPanel({
           )}
         </div>
 
+        {/* Voided notice */}
+        {invoice.status === 'voided' && (
+          <div style={{ background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.3)', borderRadius: 8, padding: 14 }}>
+            <p style={{ color: '#9CA3AF', fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>This invoice has been voided.</p>
+            {invoice.void_reason && <p style={{ color: '#6B7280', fontSize: 12, margin: '0 0 4px' }}>Reason: {invoice.void_reason}</p>}
+            {invoice.voided_at && <p style={{ color: '#6B7280', fontSize: 12, margin: 0 }}>Voided {formatDate(invoice.voided_at)}</p>}
+          </div>
+        )}
+
         {/* Edit Invoice section */}
+        {invoice.status !== 'voided' && (
         <div>
           <button
             onClick={() => setEditOpen((v) => !v)}
@@ -1316,6 +1378,7 @@ function DetailPanel({
             </form>
           )}
         </div>
+        )}
       </div>
     </div>
   )
@@ -1436,19 +1499,19 @@ export function FinancePage() {
   const monthOutStr = addDays(todayStr, 30)
 
   const summaryOverdue = invoices
-    .filter((inv) => inv.due_date && inv.due_date < todayStr && inv.status !== 'paid')
+    .filter((inv) => inv.due_date && inv.due_date < todayStr && !['paid', 'voided'].includes(inv.status))
     .reduce((sum, inv) => sum + (inv.total_amount - inv.amount_paid), 0)
 
   const summaryDueWeek = invoices
-    .filter((inv) => inv.due_date && inv.due_date >= todayStr && inv.due_date <= weekOutStr && inv.status !== 'paid')
+    .filter((inv) => inv.due_date && inv.due_date >= todayStr && inv.due_date <= weekOutStr && !['paid', 'voided'].includes(inv.status))
     .reduce((sum, inv) => sum + (inv.total_amount - inv.amount_paid), 0)
 
   const summaryDue30 = invoices
-    .filter((inv) => inv.due_date && inv.due_date >= todayStr && inv.due_date <= monthOutStr && inv.status !== 'paid')
+    .filter((inv) => inv.due_date && inv.due_date >= todayStr && inv.due_date <= monthOutStr && !['paid', 'voided'].includes(inv.status))
     .reduce((sum, inv) => sum + (inv.total_amount - inv.amount_paid), 0)
 
   const summaryOutstanding = invoices
-    .filter((inv) => inv.status !== 'paid')
+    .filter((inv) => !['paid', 'voided'].includes(inv.status))
     .reduce((sum, inv) => sum + (inv.total_amount - inv.amount_paid), 0)
 
   // ── Filtering ─────────────────────────────────────────────────────────────────
@@ -1462,8 +1525,10 @@ export function FinancePage() {
       return true
     })
     .sort((a, b) => {
-      // Paid invoices sink to the bottom — this is a queue of what still needs paying
-      if ((a.status === 'paid') !== (b.status === 'paid')) return a.status === 'paid' ? 1 : -1
+      // Paid/voided invoices sink to the bottom — this is a queue of what still needs paying
+      const aSettled = a.status === 'paid' || a.status === 'voided'
+      const bSettled = b.status === 'paid' || b.status === 'voided'
+      if (aSettled !== bSettled) return aSettled ? 1 : -1
       const rankDiff = PRIORITY_RANK[a.payment_priority] - PRIORITY_RANK[b.payment_priority]
       if (rankDiff !== 0) return rankDiff
       if (a.due_date && b.due_date && a.due_date !== b.due_date) return a.due_date < b.due_date ? -1 : 1
@@ -1535,6 +1600,7 @@ export function FinancePage() {
     { key: 'partial', label: 'Partial' },
     { key: 'paid', label: 'Paid' },
     { key: 'overdue', label: 'Overdue' },
+    { key: 'voided', label: 'Voided' },
   ]
 
   return (
@@ -2009,6 +2075,7 @@ export function FinancePage() {
             onInvoiceUpdated={handleInvoiceUpdated}
             tenantId={tenantId}
             userId={userId}
+            canVoid={canPrioritize}
           />
         </>
       )}
