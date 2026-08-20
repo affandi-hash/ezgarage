@@ -33,6 +33,7 @@ const REFRESH_SENTINEL = '__REFRESH_ANALYSIS__'
 const SAVE_SENTINEL = '__SAVE_ANALYSIS__'
 const FEATURE = 'business_analysis_assistant'
 const HISTORY_MONTHS = 24
+const UPLOADS_BUCKET = 'sales-marketing-uploads'
 
 const SAVE_ANALYSIS_TOOL = {
   name: 'save_analysis',
@@ -81,7 +82,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Insufficient permissions' }), { status: 403, headers: corsHeaders })
     }
 
-    const { message } = await req.json()
+    const { message, filePath } = await req.json()
     if (!message?.trim()) return new Response(JSON.stringify({ error: 'message is required' }), { status: 400, headers: corsHeaders })
 
     const adminClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
@@ -89,6 +90,13 @@ Deno.serve(async (req) => {
 
     const { data: bpRow } = await adminClient.from('sales_marketing_business_profile').select('*').eq('tenant_id', tenantId).maybeSingle()
     if (!bpRow) return new Response(JSON.stringify({ error: 'Fill in the Business Profile first.' }), { status: 400, headers: corsHeaders })
+
+    // adminClient uses the service-role key, which bypasses storage RLS --
+    // the tenant scoping that normally keeps one tenant's files out of
+    // another's reach has to be re-checked explicitly here.
+    if (filePath && !filePath.startsWith(`${bpRow.id}/`)) {
+      return new Response(JSON.stringify({ error: 'Invalid file path' }), { status: 403, headers: corsHeaders })
+    }
 
     let { data: row } = await adminClient.from('sales_marketing_business_analysis').select('*').eq('tenant_id', tenantId).maybeSingle()
     if (!row) {
@@ -184,12 +192,35 @@ Rules:
 
     // meta (token count/timestamp) is for display only -- never resend it to
     // Claude as part of the message history, or a persisted field silently
-    // grows every historical turn's payload on every future turn.
-    const stripMeta = (t: Turn): Turn => ({ role: t.role, content: t.content })
+    // grows every historical turn's payload on every future turn. Likewise,
+    // a file_ref is never resent as raw bytes on later turns -- only the
+    // turn where it was actually attached carries the real content block.
+    const sanitizeForClaude = (content: Turn['content']): Turn['content'] => {
+      if (typeof content === 'string' || !Array.isArray(content)) return content
+      return content.map(b => b.type === 'file_ref' ? { type: 'text', text: '[File attached earlier -- not resent]' } : b)
+    }
+    const stripMeta = (t: Turn): Turn => ({ role: t.role, content: sanitizeForClaude(t.content) })
+
+    let claudeUserContent: Turn['content'] = message
+    let dbUserContent: Turn['content'] = message
+
+    if (filePath) {
+      const { data: fileBlob, error: dlErr } = await adminClient.storage.from(UPLOADS_BUCKET).download(filePath)
+      if (dlErr || !fileBlob) {
+        return new Response(JSON.stringify({ error: 'Could not read the attached file' }), { status: 400, headers: corsHeaders })
+      }
+      const base64 = bytesToBase64(new Uint8Array(await fileBlob.arrayBuffer()))
+      const mediaType = fileBlob.type || 'image/jpeg'
+      const fileContentBlock = mediaType === 'application/pdf'
+        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+        : { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }
+      claudeUserContent = [fileContentBlock, { type: 'text', text: message }]
+      dbUserContent = [{ type: 'file_ref', path: filePath, media_type: mediaType }, { type: 'text', text: message }]
+    }
 
     const conversation: Turn[] = Array.isArray(row.conversation) ? row.conversation : []
-    let claudeHistory: Turn[] = [...conversation.map(stripMeta), { role: 'user', content: message }]
-    let dbHistory: Turn[] = [...conversation, { role: 'user', content: message, meta: { at: new Date().toISOString() } }]
+    let claudeHistory: Turn[] = [...conversation.map(stripMeta), { role: 'user', content: claudeUserContent }]
+    let dbHistory: Turn[] = [...conversation, { role: 'user', content: dbUserContent, meta: { at: new Date().toISOString() } }]
 
     let currentAnalysis: string | null = row.current_analysis
     const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
