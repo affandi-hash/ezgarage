@@ -140,30 +140,14 @@ function listKnown(label: string, rows: Record<string, unknown>[], fields: strin
   return `${label}:\n${items.map(i => `- ${i}`).join('\n')}`
 }
 
-function systemPrompt(profile: Record<string, unknown>, related: {
-  competitors: Record<string, unknown>[]
-  audienceSegments: Record<string, unknown>[]
-  goals: Record<string, unknown>[]
-  seasonalEvents: Record<string, unknown>[]
-}) {
-  const known = PROFILE_FIELDS.filter(f => profile[f] !== null && profile[f] !== undefined && profile[f] !== '')
-    .map(f => `- ${f}: ${profile[f]}`).join('\n') || '(nothing yet)'
-  const missing = PROFILE_FIELDS.filter(f => profile[f] === null || profile[f] === undefined || profile[f] === '')
-
-  return `You are Izzy, an AI acting as the Chief Sales & Marketing Officer for a garage/workshop business (car and bike servicing), conducting a guided interview to fill in its Business Profile -- the permanent briefing every other AI feature in this app reads before doing anything else.
-
-Known so far (single-statement fields):
-${known}
-
-Still missing: ${missing.join(', ') || 'nothing -- these fields are complete'}
-
-${listKnown('Known competitors', related.competitors, ['name', 'competitor_type', 'notes', 'threat_level', 'our_counter'])}
-
-${listKnown('Known audience segments', related.audienceSegments, ['name', 'description', 'messaging_angle', 'priority'])}
-
-${listKnown('Known goals', related.goals, ['description', 'metric', 'target_value', 'current_value', 'deadline', 'priority_rank', 'status'])}
-
-${listKnown('Known seasonal events', related.seasonalEvents, ['period_label', 'theme', 'focus_notes', 'priority'])}
+// Split so the ever-changing "known so far" status (this literally IS the
+// interview's progress, rewritten by `updates` within the same turn's round
+// loop whenever a tool fires) sits after the cache boundary. The intro +
+// Rules below never change, so they're the only part worth caching --
+// bundling the volatile status into the same block would invalidate the
+// cache on almost every round, the same mistake made (and fixed) in
+// sales-marketing-analysis-assistant.
+const STABLE_SYSTEM_PROMPT = `You are Izzy, an AI acting as the Chief Sales & Marketing Officer for a garage/workshop business (car and bike servicing), conducting a guided interview to fill in its Business Profile -- the permanent briefing every other AI feature in this app reads before doing anything else.
 
 Rules:
 - Ask ONE focused, open-ended question at a time. Do not list multiple questions in one message.
@@ -174,6 +158,29 @@ Rules:
 - Keep replies short: 1-3 sentences plus your next question.
 - If the message is exactly "${START_SENTINEL}", this is a system trigger, not a real owner message -- introduce yourself as Izzy in one sentence and ask your first question. Do not acknowledge or repeat the sentinel text.
 - If everything important is filled in, say so plainly and offer to revisit any item, rather than inventing more questions.`
+
+function profileStatusBlock(profile: Record<string, unknown>, related: {
+  competitors: Record<string, unknown>[]
+  audienceSegments: Record<string, unknown>[]
+  goals: Record<string, unknown>[]
+  seasonalEvents: Record<string, unknown>[]
+}) {
+  const known = PROFILE_FIELDS.filter(f => profile[f] !== null && profile[f] !== undefined && profile[f] !== '')
+    .map(f => `- ${f}: ${profile[f]}`).join('\n') || '(nothing yet)'
+  const missing = PROFILE_FIELDS.filter(f => profile[f] === null || profile[f] === undefined || profile[f] === '')
+
+  return `Known so far (single-statement fields):
+${known}
+
+Still missing: ${missing.join(', ') || 'nothing -- these fields are complete'}
+
+${listKnown('Known competitors', related.competitors, ['name', 'competitor_type', 'notes', 'threat_level', 'our_counter'])}
+
+${listKnown('Known audience segments', related.audienceSegments, ['name', 'description', 'messaging_angle', 'priority'])}
+
+${listKnown('Known goals', related.goals, ['description', 'metric', 'target_value', 'current_value', 'deadline', 'priority_rank', 'status'])}
+
+${listKnown('Known seasonal events', related.seasonalEvents, ['period_label', 'theme', 'focus_notes', 'priority'])}`
 }
 
 type ContentBlock = Record<string, unknown>
@@ -280,6 +287,19 @@ Deno.serve(async (req) => {
     const eventUpserts: Record<string, unknown>[] = []
     const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
 
+    function withCacheBreakpoint(msgs: Turn[]): ContentBlock[] {
+      const out = msgs.map(m => ({ role: m.role, content: m.content }))
+      const last = out[out.length - 1]
+      if (!last) return out
+      const blocks: ContentBlock[] = typeof last.content === 'string'
+        ? [{ type: 'text', text: last.content }]
+        : [...last.content]
+      if (blocks.length === 0) return out
+      blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], cache_control: { type: 'ephemeral' } }
+      out[out.length - 1] = { role: last.role, content: blocks }
+      return out
+    }
+
     async function callClaude(msgs: Turn[]) {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -291,9 +311,12 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           model: 'claude-opus-5',
           max_tokens: 1536,
-          system: systemPrompt({ ...row, ...updates }, related),
+          system: [
+            { type: 'text', text: STABLE_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: profileStatusBlock({ ...row, ...updates }, related) },
+          ],
           tools: ALL_TOOLS,
-          messages: msgs,
+          messages: withCacheBreakpoint(msgs),
         }),
       })
       if (!res.ok) throw new Error(`Assistant call failed: ${await res.text()}`)

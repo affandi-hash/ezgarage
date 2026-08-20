@@ -216,6 +216,26 @@ Instructions:
 
     const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
 
+    // Unlike the Business Analysis assistant, systemPrompt here is fully
+    // static for the whole request -- it's built once above and never
+    // depends on anything that changes between calls. That makes this loop
+    // (1 set_plan_details + 4-8 add_initiative + 1 summary, all fired
+    // milliseconds apart) the cleanest possible caching case: the system
+    // prompt and the growing history both get cached in full and every call
+    // after the first reads most of it back instead of paying full price.
+    function withCacheBreakpoint(msgs: unknown[]): unknown[] {
+      const out = msgs.map(m => ({ ...(m as Record<string, unknown>) }))
+      const last = out[out.length - 1] as { role: string; content: unknown } | undefined
+      if (!last) return out
+      const blocks: Record<string, unknown>[] = typeof last.content === 'string'
+        ? [{ type: 'text', text: last.content }]
+        : [...(last.content as Record<string, unknown>[])]
+      if (blocks.length === 0) return out
+      blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], cache_control: { type: 'ephemeral' } }
+      out[out.length - 1] = { role: last.role, content: blocks }
+      return out
+    }
+
     async function callClaude(msgs: unknown[], toolChoice: Record<string, unknown>) {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -227,9 +247,9 @@ Instructions:
         body: JSON.stringify({
           model: 'claude-opus-5',
           max_tokens: 4096,
-          system: systemPrompt,
+          system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
           tools: [SET_PLAN_DETAILS_TOOL, ADD_INITIATIVE_TOOL],
-          messages: msgs,
+          messages: withCacheBreakpoint(msgs),
           tool_choice: toolChoice,
         }),
       })
