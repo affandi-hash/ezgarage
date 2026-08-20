@@ -4,6 +4,7 @@ import { Target, Plus, Loader2, X, Check, Trash2, ChevronLeft, Sparkles, Wallet,
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
+import { BusinessAnalysisPanel } from '@/components/sales-marketing/BusinessAnalysisPanel'
 
 const HISTORY_UPLOADS_BUCKET = 'sales-marketing-uploads'
 const ACCEPTED_HISTORY_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
@@ -298,6 +299,7 @@ export function MarketingPlanPage() {
   const [generating, setGenerating] = useState(false)
   const [addingInitiative, setAddingInitiative] = useState(false)
   const [lastReply, setLastReply] = useState<string | null>(null)
+  const [showAnalysisPanel, setShowAnalysisPanel] = useState(false)
 
   function load() {
     if (!user?.tenant_id) return
@@ -516,13 +518,21 @@ export function MarketingPlanPage() {
             <HistoricalImportSection businessProfileId={businessProfileId} tenantId={user.tenant_id} userId={user.id} />
           )}
 
-          {showGenerateForm ? (
+          {!showGenerateForm && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+              <button onClick={() => setShowAnalysisPanel(true)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 18px', borderRadius: 10, border: '1px solid #2A2A2A', background: 'none', color: '#C0C0C0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                <Sparkles size={15} color="#F15A22" /> Business Analysis
+              </button>
+              <button onClick={() => setShowGenerateForm(true)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 18px', borderRadius: 10, border: '1px dashed #F15A22', background: 'rgba(241,90,34,0.06)', color: '#F15A22', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                <Plus size={15} /> Generate new plan
+              </button>
+            </div>
+          )}
+
+          {showGenerateForm && (
             <GenerateForm onGenerate={handleGenerate} onCancel={() => setShowGenerateForm(false)} generating={generating} />
-          ) : (
-            <button onClick={() => setShowGenerateForm(true)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 18px', borderRadius: 10, border: '1px dashed #F15A22', background: 'rgba(241,90,34,0.06)', color: '#F15A22', fontSize: 13, fontWeight: 700, cursor: 'pointer', alignSelf: 'flex-start' }}>
-              <Plus size={15} /> Generate new plan
-            </button>
           )}
 
           {plans.length === 0 ? (
@@ -546,6 +556,10 @@ export function MarketingPlanPage() {
             </div>
           )}
         </div>
+      )}
+
+      {user?.tenant_id && (
+        <BusinessAnalysisPanel open={showAnalysisPanel} onClose={() => setShowAnalysisPanel(false)} tenantId={user.tenant_id} />
       )}
     </div>
   )

@@ -112,10 +112,11 @@ Deno.serve(async (req) => {
     const sinceIso = since.toISOString()
     const sinceDate = sinceIso.slice(0, 10)
 
-    const [jobsRes, invoicesRes, historicalRes] = await Promise.all([
+    const [jobsRes, invoicesRes, historicalRes, analysisRes] = await Promise.all([
       adminClient.from('jobs').select('checked_in_at, status').eq('tenant_id', tenantId).gte('checked_in_at', sinceIso),
       adminClient.from('invoices').select('issue_date, status, total_amount').eq('tenant_id', tenantId).gte('issue_date', sinceDate).in('status', ['sent', 'overdue', 'paid']),
       adminClient.from('sales_marketing_period_metrics').select('period_month, metric_key, value, source').eq('tenant_id', tenantId).is('channel', null).gte('period_month', sinceDate),
+      adminClient.from('sales_marketing_business_analysis').select('current_analysis').eq('tenant_id', tenantId).maybeSingle(),
     ])
 
     type MonthStat = { jobs: number; delivered: number; revenuePaid: number; revenueAll: number }
@@ -174,6 +175,8 @@ Deno.serve(async (req) => {
 
 PLAN BEING CREATED: "${title}", ${period_start} to ${period_end}.
 ${focus_notes ? `Owner's focus notes: ${focus_notes}` : ''}
+
+${analysisRes.data?.current_analysis ? `OWNER-RECONCILED BUSINESS ANALYSIS (read this first -- the owner has already discussed and corrected this with Izzy, so it accounts for context the raw data below cannot show. Build the plan on this understanding, not a re-derivation from scratch.)\n${analysisRes.data.current_analysis}\n` : ''}
 
 BUSINESS PROFILE
 Tagline: ${bpRow.tagline ?? '(none)'}
