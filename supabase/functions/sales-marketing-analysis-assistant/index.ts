@@ -158,8 +158,13 @@ Deno.serve(async (req) => {
     const known = (label: string, rows: Record<string, unknown>[] | null) =>
       !rows || rows.length === 0 ? `${label}: (none yet)` : `${label}:\n${rows.map(r => `- ${Object.entries(r).filter(([, v]) => v != null && v !== '').map(([k, v]) => `${k}=${v}`).join(', ')}`).join('\n')}`
 
-    function buildSystemPrompt(currentAnalysis: string | null) {
-      return `You are Izzy, an AI acting as Chief Sales & Marketing Officer for a garage/workshop business. You are having a "Business Analysis" conversation with the owner -- the purpose is NOT to write a report for them to passively read. It is to reconcile what the real data shows against what the owner actually knows, because a huge amount of real context (a competitor closing, a renovation, a planned price change, a regular customer's plans) will never appear in any table or uploaded document.
+    // Split from the volatile "previously agreed analysis" block below so
+    // that block can sit AFTER the cache boundary. current_analysis changes
+    // on nearly every turn by design (that's the whole point of this
+    // feature) -- if it were baked into the same cached block, the cache
+    // would invalidate on almost every call and never pay off. Everything
+    // here only changes when the underlying data actually changes.
+    const stableSystemPrompt = `You are Izzy, an AI acting as Chief Sales & Marketing Officer for a garage/workshop business. You are having a "Business Analysis" conversation with the owner -- the purpose is NOT to write a report for them to passively read. It is to reconcile what the real data shows against what the owner actually knows, because a huge amount of real context (a competitor closing, a renovation, a planned price change, a regular customer's plans) will never appear in any table or uploaded document.
 
 BUSINESS PROFILE
 Tagline: ${bpRow.tagline ?? '(none)'}
@@ -179,8 +184,6 @@ ${firstLiveMonth ? `This tenant's own recorded job/invoice history in this syste
 OTHER MARKETING METRICS ON FILE (manually entered and/or imported from uploaded documents)
 ${historicalTable}
 
-${currentAnalysis ? `YOUR PREVIOUSLY AGREED ANALYSIS (reconcile this against the fresh data above -- if something has changed, say so explicitly; if the owner already explained something here, do not ask about it again)\n${currentAnalysis}` : ''}
-
 Rules:
 - State your read of the real data plainly, then explicitly name your OWN key assumptions and uncertainties -- anything you are inferring rather than actually seeing in the data -- and invite the owner to confirm or correct it. This is the entire point of the conversation.
 - When the owner tells you something the data can't show (an explanation, an upcoming change, a correction), fold it into your understanding and call save_analysis again with the updated, reconciled summary. Call save_analysis after your very first analysis too, and again any time the picture changes -- not just once.
@@ -188,6 +191,11 @@ Rules:
 - If the message is exactly "${START_SENTINEL}", this is the very first analysis for this business -- introduce the analysis briefly and give your initial read, ending with the specific things you want the owner to confirm or correct.
 - If the message is exactly "${REFRESH_SENTINEL}", this is a request to re-check against fresh data -- compare it to your previously agreed analysis and call out ONLY what's new or changed, don't repeat everything. If nothing meaningful has changed, say so briefly.
 - If the message is exactly "${SAVE_SENTINEL}", this is a system trigger (not from the owner) forcing you to call save_analysis right now -- write the full current reconciled analysis_summary reflecting everything agreed in this conversation so far, not just the latest message.`
+
+    function buildAnalysisBlock(currentAnalysis: string | null) {
+      return currentAnalysis
+        ? `YOUR PREVIOUSLY AGREED ANALYSIS (reconcile this against the fresh data above -- if something has changed, say so explicitly; if the owner already explained something here, do not ask about it again)\n${currentAnalysis}`
+        : ''
     }
 
     // meta (token count/timestamp) is for display only -- never resend it to
@@ -225,6 +233,27 @@ Rules:
     let currentAnalysis: string | null = row.current_analysis
     const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
 
+    // A single turn here can round-trip Claude 2-3 times (initial reply, a
+    // tool-result follow-up, sometimes the forced-save call below) and the
+    // system prompt + growing history is resent whole on every one of them
+    // milliseconds apart -- prime caching territory. Marking the system
+    // prompt and the last message of each request cacheable lets every call
+    // after the first in a turn (and the next user message, within the
+    // 5-minute TTL) read most of that prefix back at a fraction of the price
+    // instead of paying full rate for identical tokens again.
+    function withCacheBreakpoint(msgs: Turn[]): ContentBlock[] {
+      const out = msgs.map(m => ({ role: m.role, content: m.content }))
+      const last = out[out.length - 1]
+      if (!last) return out
+      const blocks: ContentBlock[] = typeof last.content === 'string'
+        ? [{ type: 'text', text: last.content }]
+        : [...last.content]
+      if (blocks.length === 0) return out
+      blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], cache_control: { type: 'ephemeral' } }
+      out[out.length - 1] = { role: last.role, content: blocks }
+      return out
+    }
+
     async function callClaude(msgs: Turn[], toolChoice?: Record<string, unknown>) {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -241,9 +270,12 @@ Rules:
           // analysis_summary argument after that much text, so the tool
           // call came back with an empty input every time.
           max_tokens: 4096,
-          system: buildSystemPrompt(currentAnalysis),
+          system: [
+            { type: 'text', text: stableSystemPrompt, cache_control: { type: 'ephemeral' } },
+            ...(currentAnalysis ? [{ type: 'text', text: buildAnalysisBlock(currentAnalysis) }] : []),
+          ],
           tools: [SAVE_ANALYSIS_TOOL],
-          messages: msgs,
+          messages: withCacheBreakpoint(msgs),
           ...(toolChoice ? { tool_choice: toolChoice } : {}),
         }),
       })
