@@ -112,9 +112,10 @@ Deno.serve(async (req) => {
     const sinceIso = since.toISOString()
     const sinceDate = sinceIso.slice(0, 10)
 
-    const [jobsRes, invoicesRes] = await Promise.all([
+    const [jobsRes, invoicesRes, historicalRes] = await Promise.all([
       adminClient.from('jobs').select('checked_in_at, status').eq('tenant_id', tenantId).gte('checked_in_at', sinceIso),
       adminClient.from('invoices').select('issue_date, status, total_amount').eq('tenant_id', tenantId).gte('issue_date', sinceDate).in('status', ['sent', 'overdue', 'paid']),
+      adminClient.from('sales_marketing_period_metrics').select('period_month, metric_key, value, source').eq('tenant_id', tenantId).is('channel', null).gte('period_month', sinceDate),
     ])
 
     type MonthStat = { jobs: number; delivered: number; revenuePaid: number; revenueAll: number }
@@ -155,6 +156,17 @@ Deno.serve(async (req) => {
       .map(k => `${monthName(k)}: ${monthly[k].jobs} jobs (${monthly[k].delivered} delivered), RM${monthly[k].revenuePaid.toFixed(0)} paid revenue`)
       .join('\n') || '(no historical data for these specific calendar months yet)'
 
+    // sales_marketing_period_metrics rows -- both manually-entered live
+    // metrics (Reach/Leads/Prospects etc, otherwise invisible to this
+    // generator) and imported pre-adoption history, each labeled by
+    // source so the model never treats an uploaded document's numbers as
+    // if they were verified ezgarage records.
+    const historicalRows = (historicalRes.data ?? []).map(r =>
+      `${monthName(monthKey(r.period_month))}: ${r.metric_key}=${r.value} (${r.source === 'ai_extracted_historical' ? 'imported from an uploaded document -- treat as approximate' : 'manually entered by staff'})`
+    )
+    const historicalTable = historicalRows.length ? historicalRows.join('\n') : '(none on file)'
+    const firstLiveMonth = sortedMonths[0] ? monthName(sortedMonths[0]) : null
+
     const known = (label: string, rows: Record<string, unknown>[] | null) =>
       !rows || rows.length === 0 ? `${label}: (none yet)` : `${label}:\n${rows.map(r => `- ${Object.entries(r).filter(([, v]) => v != null && v !== '').map(([k, v]) => `${k}=${v}`).join(', ')}`).join('\n')}`
 
@@ -187,9 +199,15 @@ ${trendTable}
 Same calendar month(s) as this plan's period, across all available years:
 ${samePeriodHistory}
 
+${firstLiveMonth ? `This tenant's own recorded job/invoice history in this system begins at ${firstLiveMonth}. Do NOT interpret the absence of jobs/invoices data before that date as zero business activity -- it almost certainly means the business was using a different system before switching to this one, not that it didn't exist.` : `This tenant has no job/invoice history in this system yet.`}
+
+OTHER MARKETING METRICS ON FILE (manually entered and/or imported from uploaded documents -- see label per row)
+${historicalTable}
+
 Instructions:
 - Call set_plan_details exactly once. In ai_rationale, explicitly say whether the real data confirms or contradicts the owner's stated seasonal beliefs for this period, and size the plan accordingly (e.g. don't recommend an acquisition blitz into a month the data shows is structurally slow for reasons unrelated to marketing).
-- If there's no historical data for this period yet, say so plainly in the rationale rather than inventing a trend.
+- If there's no historical data for this period yet, say so plainly in the rationale rather than inventing a trend. Never present pre-adoption silence in the jobs/invoices data as if it were a real business slowdown.
+- Treat imported-document figures as approximate context, not verified fact -- if a plan decision hinges on one, say so.
 - Respect the guardrails and brand voice already on file.
 - Do not exceed the stated monthly budget across the plan unless the owner's focus notes say otherwise.`
 

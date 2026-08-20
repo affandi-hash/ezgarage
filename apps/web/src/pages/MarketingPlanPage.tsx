@@ -1,9 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Target, Plus, Loader2, X, Check, Trash2, ChevronLeft, Sparkles, Wallet, CalendarRange } from 'lucide-react'
+import { Target, Plus, Loader2, X, Check, Trash2, ChevronLeft, Sparkles, Wallet, CalendarRange, Upload, FileClock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
+
+const HISTORY_UPLOADS_BUCKET = 'sales-marketing-uploads'
+const ACCEPTED_HISTORY_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
+const HISTORICAL_METRIC_LABELS: Record<string, string> = {
+  revenue: 'Revenue (RM)', net_profit: 'Net Profit/Loss (RM)', reach: 'Reach',
+  leads: 'Leads', prospects: 'Prospects', google_reviews_count: 'Google Reviews (count)',
+  google_reviews_rating: 'Google Rating', spend: 'Spend (RM)',
+}
+const HISTORICAL_METRIC_KEYS = Object.keys(HISTORICAL_METRIC_LABELS)
+
+interface ExtractedEntry { period_month: string; metric_key: string; value: number }
 
 interface Plan {
   id: string
@@ -133,11 +144,152 @@ function AddInitiativeForm({ onSave, onCancel }: { onSave: (input: Partial<Initi
   )
 }
 
+function HistoricalImportSection({ businessProfileId, tenantId, userId }: {
+  businessProfileId: string
+  tenantId: string
+  userId: string
+}) {
+  const [uploading, setUploading] = useState(false)
+  const [entries, setEntries] = useState<ExtractedEntry[] | null>(null)
+  const [notes, setNotes] = useState('')
+  const [filePath, setFilePath] = useState<string | null>(null)
+  const [fileName, setFileName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!ACCEPTED_HISTORY_TYPES.includes(file.type)) { toast.error('Only JPEG, PNG, WebP, or PDF files are supported'); return }
+    if (file.size > 10 * 1024 * 1024) { toast.error('File must be under 10MB'); return }
+
+    setUploading(true)
+    setEntries(null)
+    setNotes('')
+    try {
+      const ext = file.name.split('.').pop() || 'bin'
+      const path = `${businessProfileId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+      const { error: uploadErr } = await supabase.storage.from(HISTORY_UPLOADS_BUCKET).upload(path, file, { contentType: file.type })
+      if (uploadErr) { toast.error('Upload failed: ' + uploadErr.message); return }
+
+      const { data, error } = await supabase.functions.invoke('sales-marketing-historical-import', { body: { filePath: path } })
+      if (error) { toast.error('Could not read this file right now'); return }
+      if (data?.error) { toast.error(data.error); return }
+
+      setEntries((data.entries ?? []) as ExtractedEntry[])
+      setNotes(data.notes ?? '')
+      setFilePath(path)
+      setFileName(file.name)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function updateEntry(i: number, patch: Partial<ExtractedEntry>) {
+    setEntries(prev => prev ? prev.map((e, idx) => idx === i ? { ...e, ...patch } : e) : prev)
+  }
+  function removeEntry(i: number) {
+    setEntries(prev => prev ? prev.filter((_, idx) => idx !== i) : prev)
+  }
+  function addEntry() {
+    setEntries(prev => [...(prev ?? []), { period_month: '', metric_key: 'revenue', value: 0 }])
+  }
+
+  async function handleSave() {
+    if (!entries || entries.length === 0) return
+    const valid = entries.filter(e => /^\d{4}-\d{2}-01$/.test(e.period_month) && HISTORICAL_METRIC_KEYS.includes(e.metric_key))
+    if (valid.length === 0) { toast.error('No valid rows to save -- period must be YYYY-MM-01'); return }
+
+    setSaving(true)
+    const { error } = await supabase.from('sales_marketing_period_metrics').insert(
+      valid.map(e => ({
+        tenant_id: tenantId, branch_id: null, period_month: e.period_month, channel: null,
+        metric_key: e.metric_key, value: e.value, source: 'ai_extracted_historical',
+        source_file_url: filePath, updated_by: userId,
+      }))
+    )
+    setSaving(false)
+    if (error) { toast.error(error.message); return }
+    toast.success(`Saved ${valid.length} historical entr${valid.length === 1 ? 'y' : 'ies'}`)
+    setEntries(null)
+    setNotes('')
+    setFilePath(null)
+  }
+
+  return (
+    <div style={{ ...cardStyle, padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <FileClock size={15} color="#F15A22" />
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#F0F0F0' }}>Import historical data</div>
+      </div>
+      <p style={{ fontSize: 12, color: '#6A6A6A', margin: 0, lineHeight: 1.5 }}>
+        Upload an old report (a chart screenshot, a dashboard export, a PDF) from before you started using this system.
+        Izzy will read it and pull out monthly figures for you to review -- nothing is saved until you confirm.
+      </p>
+
+      <input ref={fileInputRef} type="file" accept={ACCEPTED_HISTORY_TYPES.join(',')} onChange={handleFileSelect} style={{ display: 'none' }} />
+      {!entries && (
+        <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 8, border: '1px dashed #2A2A2A', background: 'none', color: '#A0A0A0', fontSize: 12, fontWeight: 600, cursor: uploading ? 'not-allowed' : 'pointer', alignSelf: 'flex-start' }}>
+          {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+          {uploading ? 'Reading file...' : 'Upload a file'}
+        </button>
+      )}
+
+      {entries && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 12, color: '#8A8A8A' }}>From <strong style={{ color: '#C0C0C0' }}>{fileName}</strong> -- review before saving:</div>
+          {notes && (
+            <div style={{ padding: 10, borderRadius: 8, backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', fontSize: 12, color: '#D9A441' }}>
+              {notes}
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {entries.map((entry, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="month" style={{ ...smallInputStyle, flex: 1 }}
+                  value={entry.period_month ? entry.period_month.slice(0, 7) : ''}
+                  onChange={e => updateEntry(i, { period_month: e.target.value ? `${e.target.value}-01` : '' })} />
+                <select style={{ ...smallInputStyle, flex: 1.3 }} value={entry.metric_key} onChange={e => updateEntry(i, { metric_key: e.target.value })}>
+                  {HISTORICAL_METRIC_KEYS.map(k => <option key={k} value={k}>{HISTORICAL_METRIC_LABELS[k]}</option>)}
+                </select>
+                <input type="number" style={{ ...smallInputStyle, flex: 1 }} value={entry.value}
+                  onChange={e => updateEntry(i, { value: Number(e.target.value) })} />
+                <button onClick={() => removeEntry(i)} style={{ background: 'none', border: 'none', color: '#6A6A6A', cursor: 'pointer', padding: 2, flexShrink: 0 }}>
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
+            <button onClick={addEntry} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#F15A22', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 4 }}>
+              <Plus size={12} /> Add row
+            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { setEntries(null); setNotes(''); setFilePath(null) }} disabled={saving}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 14px', borderRadius: 8, border: '1px solid #2A2A2A', background: 'none', color: '#A0A0A0', fontSize: 12, cursor: 'pointer' }}>
+                <X size={12} /> Discard
+              </button>
+              <button onClick={handleSave} disabled={saving}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                {saving ? 'Saving...' : `Save ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function MarketingPlanPage() {
   const { user } = useAuthStore()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
+  const [businessProfileId, setBusinessProfileId] = useState<string | null>(null)
   const [plans, setPlans] = useState<Plan[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null)
   const [initiatives, setInitiatives] = useState<Initiative[]>([])
@@ -154,6 +306,7 @@ export function MarketingPlanPage() {
       .then(async ({ data: profile, error }) => {
         if (error) { toast.error(error.message); setLoading(false); return }
         setHasProfile(!!profile)
+        setBusinessProfileId(profile?.id ?? null)
         if (!profile) { setLoading(false); return }
         const { data: planRows, error: plansErr } = await supabase.from('sales_marketing_plans')
           .select('*').eq('business_profile_id', profile.id).order('period_start', { ascending: false })
@@ -359,6 +512,10 @@ export function MarketingPlanPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {businessProfileId && user?.tenant_id && (
+            <HistoricalImportSection businessProfileId={businessProfileId} tenantId={user.tenant_id} userId={user.id} />
+          )}
+
           {showGenerateForm ? (
             <GenerateForm onGenerate={handleGenerate} onCancel={() => setShowGenerateForm(false)} generating={generating} />
           ) : (
