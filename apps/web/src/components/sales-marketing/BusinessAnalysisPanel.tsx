@@ -39,6 +39,7 @@ export function BusinessAnalysisPanel({ open, onClose, tenantId }: {
   const [starting, setStarting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   function load() {
     setLoading(true)
@@ -52,6 +53,12 @@ export function BusinessAnalysisPanel({ open, onClose, tenantId }: {
 
   useEffect(() => { if (open) load() }, [open, tenantId])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [analysis?.conversation])
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`
+  }, [chatInput])
 
   async function callAssistant(message: string) {
     const { data, error } = await supabase.functions.invoke('sales-marketing-analysis-assistant', { body: { message } })
@@ -156,12 +163,15 @@ export function BusinessAnalysisPanel({ open, onClose, tenantId }: {
               )}
               <div ref={chatEndRef} />
             </div>
-            <div style={{ padding: '12px 12px 16px', borderTop: '1px solid #2A2A2A', display: 'flex', gap: 8, flexShrink: 0 }}>
-              <input value={chatInput} onChange={e => setChatInput(e.target.value)}
+            <div style={{ padding: '12px 12px 16px', borderTop: '1px solid #2A2A2A', display: 'flex', gap: 8, flexShrink: 0, alignItems: 'flex-end' }}>
+              <textarea ref={textareaRef} value={chatInput} onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                placeholder="Confirm, correct, or add context..." style={{ ...inputStyle, flex: 1 }} disabled={sending} />
+                placeholder="Confirm, correct, or add context... (Shift+Enter for a new line)"
+                rows={1}
+                style={{ ...inputStyle, flex: 1, resize: 'none' as const, fontFamily: 'inherit', minHeight: 36, maxHeight: 140, overflowY: 'auto' as const }}
+                disabled={sending} />
               <button onClick={sendMessage} disabled={sending || !chatInput.trim()}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', cursor: 'pointer', opacity: sending || !chatInput.trim() ? 0.5 : 1, flexShrink: 0 }}>
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 8, border: 'none', backgroundColor: '#F15A22', color: '#fff', cursor: 'pointer', opacity: sending || !chatInput.trim() ? 0.5 : 1, flexShrink: 0 }}>
                 <Send size={14} />
               </button>
             </div>
