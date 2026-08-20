@@ -62,6 +62,13 @@ interface SeasonalEvent {
 interface ConversationTurn {
   role: 'user' | 'assistant'
   content: string | Array<{ type: string; text?: string; path?: string }>
+  meta?: { at: string; tokens?: number }
+}
+
+function fmtMeta(meta?: { at: string; tokens?: number }) {
+  if (!meta) return null
+  const time = new Date(meta.at).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+  return meta.tokens != null ? `${meta.tokens.toLocaleString()} tokens · ${time}` : time
 }
 
 const UPLOADS_BUCKET = 'sales-marketing-uploads'
@@ -535,6 +542,11 @@ export function BusinessProfilePage() {
                     }}>
                       {extractText(turn.content)}
                     </div>
+                    {turn.meta && (
+                      <div style={{ fontSize: 10, color: '#5A5A5A', textAlign: turn.role === 'user' ? 'right' as const : 'left' as const, padding: '0 3px' }}>
+                        {fmtMeta(turn.meta)}
+                      </div>
+                    )}
                   </div>
                 )
               })}

@@ -14,7 +14,13 @@ const START_SENTINEL = '__START_ANALYSIS__'
 const REFRESH_SENTINEL = '__REFRESH_ANALYSIS__'
 const SAVE_SENTINEL = '__SAVE_ANALYSIS__'
 
-interface ConversationTurn { role: string; content: string | { type: string; text?: string }[] }
+interface ConversationTurn { role: string; content: string | { type: string; text?: string }[]; meta?: { at: string; tokens?: number } }
+
+function fmtMeta(meta?: { at: string; tokens?: number }) {
+  if (!meta) return null
+  const time = new Date(meta.at).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+  return meta.tokens != null ? `${meta.tokens.toLocaleString()} tokens · ${time}` : time
+}
 interface AnalysisRow { id: string; current_analysis: string | null; conversation: ConversationTurn[] }
 
 function extractText(content: ConversationTurn['content']): string {
@@ -145,7 +151,7 @@ export function BusinessAnalysisPanel({ open, onClose, tenantId }: {
                 <p style={{ fontSize: 12, color: '#5A5A5A', fontStyle: 'italic' }}>Starting the analysis...</p>
               )}
               {visibleTurns.map((turn, i) => (
-                <div key={i} style={{ alignSelf: turn.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                <div key={i} style={{ alignSelf: turn.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%', display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <div style={{
                     padding: '9px 13px', borderRadius: 12,
                     backgroundColor: turn.role === 'user' ? '#F15A22' : '#1E1E1E',
@@ -154,6 +160,11 @@ export function BusinessAnalysisPanel({ open, onClose, tenantId }: {
                   }}>
                     {extractText(turn.content)}
                   </div>
+                  {turn.meta && (
+                    <div style={{ fontSize: 10, color: '#5A5A5A', textAlign: turn.role === 'user' ? 'right' as const : 'left' as const, padding: '0 3px' }}>
+                      {fmtMeta(turn.meta)}
+                    </div>
+                  )}
                 </div>
               ))}
               {(sending || refreshing) && (

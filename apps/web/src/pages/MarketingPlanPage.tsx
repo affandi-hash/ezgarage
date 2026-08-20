@@ -28,6 +28,7 @@ interface Plan {
   status: 'draft' | 'active' | 'completed' | 'archived'
   ai_rationale: string | null
   created_at: string
+  generation_tokens: number | null
 }
 
 interface Initiative {
@@ -60,6 +61,10 @@ const INITIATIVE_STATUS_COLOR: Record<Initiative['status'], string> = { todo: '#
 
 function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function fmtDateTime(iso: string) {
+  return new Date(iso).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 }
 
 function GenerateForm({ onGenerate, onCancel, generating }: {
@@ -466,6 +471,10 @@ export function MarketingPlanPage() {
               <div style={{ padding: 12, borderRadius: 8, border: '1px solid #2A2A2A', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#8A8A8A', textTransform: 'uppercase' as const, letterSpacing: '0.03em' }}>Why this plan</div>
                 <p style={{ fontSize: 12, color: '#A0A0A0', lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap' as const }}>{selectedPlan.ai_rationale}</p>
+                <div style={{ fontSize: 10, color: '#5A5A5A', marginTop: 2 }}>
+                  {selectedPlan.generation_tokens != null && `${selectedPlan.generation_tokens.toLocaleString()} tokens · `}
+                  Generated {fmtDateTime(selectedPlan.created_at)}
+                </div>
               </div>
             )}
           </div>

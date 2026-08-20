@@ -177,7 +177,7 @@ Rules:
 }
 
 type ContentBlock = Record<string, unknown>
-type Turn = { role: string; content: string | ContentBlock[] }
+type Turn = { role: string; content: string | ContentBlock[]; meta?: { at: string; tokens?: number } }
 
 // Historical image_ref blocks are never resent -- see file header. Every
 // other block (text, tool_use, tool_result, thinking) passes through as-is.
@@ -272,7 +272,7 @@ Deno.serve(async (req) => {
 
     const conversation: Turn[] = Array.isArray(row.conversation) ? row.conversation : []
     let claudeHistory: Turn[] = [...conversation.map(t => ({ role: t.role, content: sanitizeForClaude(t.content) })), { role: 'user', content: claudeUserContent }]
-    let dbHistory: Turn[] = [...conversation, { role: 'user', content: dbUserContent }]
+    let dbHistory: Turn[] = [...conversation, { role: 'user', content: dbUserContent, meta: { at: new Date().toISOString() } }]
     const updates: Record<string, unknown> = {}
     const competitorUpserts: Record<string, unknown>[] = []
     const segmentUpserts: Record<string, unknown>[] = []
@@ -306,6 +306,7 @@ Deno.serve(async (req) => {
     // -- capped at one extra round so a model that keeps calling tools
     // can't turn one chat message into an unbounded chain of API calls.
     let replyText = ''
+    let replyTurnRef: Turn | null = null
     for (let round = 0; round < 2; round++) {
       const anthropicMsg = await callClaude(claudeHistory)
       const u = anthropicMsg.usage ?? {}
@@ -332,12 +333,12 @@ Deno.serve(async (req) => {
         }
       }
 
-      const assistantTurn: Turn = { role: 'assistant', content }
-      claudeHistory = [...claudeHistory, assistantTurn]
-      dbHistory = [...dbHistory, assistantTurn]
+      claudeHistory = [...claudeHistory, { role: 'assistant', content }]
+      const dbAssistantTurn: Turn = { role: 'assistant', content }
+      dbHistory = [...dbHistory, dbAssistantTurn]
 
       const text = content.filter(b => b.type === 'text').map(b => b.text as string).join('\n').trim()
-      if (text) replyText = text
+      if (text) { replyText = text; replyTurnRef = dbAssistantTurn }
 
       if (toolUses.length === 0) break
       const toolResultTurn: Turn = {
@@ -348,6 +349,8 @@ Deno.serve(async (req) => {
       dbHistory = [...dbHistory, toolResultTurn]
       if (text) break
     }
+
+    if (replyTurnRef) replyTurnRef.meta = { at: new Date().toISOString(), tokens: usage.input_tokens + usage.output_tokens }
 
     const { data: updatedRow, error: updateErr } = await adminClient.from('sales_marketing_business_profile')
       .update({ ...updates, conversation: dbHistory, updated_by: caller.id })

@@ -63,7 +63,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 type ContentBlock = Record<string, unknown>
-type Turn = { role: string; content: string | ContentBlock[] }
+type Turn = { role: string; content: string | ContentBlock[]; meta?: { at: string; tokens?: number } }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -182,9 +182,14 @@ Rules:
 - If the message is exactly "${SAVE_SENTINEL}", this is a system trigger (not from the owner) forcing you to call save_analysis right now -- write the full current reconciled analysis_summary reflecting everything agreed in this conversation so far, not just the latest message.`
     }
 
+    // meta (token count/timestamp) is for display only -- never resend it to
+    // Claude as part of the message history, or a persisted field silently
+    // grows every historical turn's payload on every future turn.
+    const stripMeta = (t: Turn): Turn => ({ role: t.role, content: t.content })
+
     const conversation: Turn[] = Array.isArray(row.conversation) ? row.conversation : []
-    let claudeHistory: Turn[] = [...conversation, { role: 'user', content: message }]
-    let dbHistory: Turn[] = [...conversation, { role: 'user', content: message }]
+    let claudeHistory: Turn[] = [...conversation.map(stripMeta), { role: 'user', content: message }]
+    let dbHistory: Turn[] = [...conversation, { role: 'user', content: message, meta: { at: new Date().toISOString() } }]
 
     let currentAnalysis: string | null = row.current_analysis
     const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
@@ -217,6 +222,7 @@ Rules:
 
     let replyText = ''
     let savedThisTurn = false
+    let replyTurnRef: Turn | null = null
     for (let round = 0; round < 2; round++) {
       const anthropicMsg = await callClaude(claudeHistory)
       const u = anthropicMsg.usage ?? {}
@@ -243,12 +249,12 @@ Rules:
         }
       }
 
-      const assistantTurn: Turn = { role: 'assistant', content }
-      claudeHistory = [...claudeHistory, assistantTurn]
-      dbHistory = [...dbHistory, assistantTurn]
+      claudeHistory = [...claudeHistory, { role: 'assistant', content }]
+      const dbAssistantTurn: Turn = { role: 'assistant', content }
+      dbHistory = [...dbHistory, dbAssistantTurn]
 
       const text = content.filter(b => b.type === 'text').map(b => b.text as string).join('\n').trim()
-      if (text) replyText = text
+      if (text) { replyText = text; replyTurnRef = dbAssistantTurn }
 
       if (toolUses.length === 0) break
       const toolResultTurn: Turn = {
@@ -287,6 +293,11 @@ Rules:
       }
       dbHistory = [...dbHistory, { role: 'user', content: SAVE_SENTINEL }, { role: 'assistant', content }]
     }
+
+    // Attach the TRUE cost of this turn -- both the visible reply and the
+    // hidden forced-save call above -- to the message actually shown, not
+    // just whichever single API call happened to produce it.
+    if (replyTurnRef) replyTurnRef.meta = { at: new Date().toISOString(), tokens: usage.input_tokens + usage.output_tokens }
 
     const { data: updatedRow, error: updateErr } = await adminClient.from('sales_marketing_business_analysis')
       .update({ current_analysis: currentAnalysis, conversation: dbHistory, updated_by: caller.id, updated_at: new Date().toISOString() })

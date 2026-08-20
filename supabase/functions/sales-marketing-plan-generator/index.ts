@@ -298,6 +298,7 @@ Instructions:
         budget_allocated_myr: planDetails?.budget_allocated_myr ?? bpRow.monthly_budget_myr ?? null,
         ai_rationale: planDetails?.ai_rationale ?? null,
         created_by: caller.id,
+        generation_tokens: usage.input_tokens + usage.output_tokens,
       })
       .select('*').single()
 
