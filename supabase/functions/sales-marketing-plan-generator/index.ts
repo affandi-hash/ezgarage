@@ -33,28 +33,40 @@ const SET_PLAN_DETAILS_TOOL = {
       target_segment_names: { type: 'array', items: { type: 'string' }, description: 'Names of audience segments this plan focuses on -- must match names from the known segments list exactly' },
       budget_allocated_myr: { type: 'number' },
       ai_rationale: { type: 'string', description: 'Why this plan looks the way it does -- explicitly reference the real historical job/revenue data provided, not just the owner\'s stated beliefs. Call out where the data confirms or contradicts what the owner assumed.' },
-      initiative_count: { type: 'number', description: 'How many concrete initiatives you will add next via add_initiative, one call each. Pick between 4 and 8 based on how much this plan genuinely needs.' },
+      initiative_count: { type: 'number', description: 'Your ESTIMATE of how many concrete initiatives this plan needs. You will call add_initiative up to this many times, but call finish_initiatives as soon as you run out of genuinely distinct, actionable initiatives -- never pad to hit this number.' },
     },
     required: ['theme', 'ai_rationale', 'initiative_count'],
     additionalProperties: false,
   },
 }
 
-const ADD_INITIATIVE_TOOL = {
-  name: 'add_initiative',
-  description: 'Add ONE concrete marketing initiative/tactic to this plan. Call once per initiative -- aim for 4 to 8 specific, actionable initiatives, not vague ideas.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      description: { type: 'string', description: 'A specific, actionable initiative, e.g. "WhatsApp blast to ESP members offering pre-Raya brake & tyre check"' },
-      channel: { type: 'string', description: 'e.g. instagram, tiktok, facebook, whatsapp, in_person, email' },
-      owner_text: { type: 'string', description: 'Who should execute this, based on the business\'s stated execution capacity' },
-      due_date: { type: 'string', description: 'ISO date, if a specific timing makes sense within the plan period' },
-      priority_rank: { type: 'number', description: '1 = highest priority' },
+function buildAddInitiativeTool(staff: { id: string; label: string }[]) {
+  return {
+    name: 'add_initiative',
+    description: 'Add ONE concrete, atomic marketing initiative/tactic to this plan -- a single action one person can execute and mark done, not a bundle of sub-tasks and not commentary about the plan itself. Call once per initiative. Call finish_initiatives instead once you have covered everything this plan genuinely needs, even if that is fewer than your original estimate.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        description: { type: 'string', description: 'ONE specific, actionable initiative for ONE owner, e.g. "WhatsApp blast to ESP members offering pre-Raya brake & tyre check". If a real initiative naturally has several people involved (e.g. the owner visits SMEs AND the manager calls ESP partners), split it into separate add_initiative calls, one per owner. Never write a summary, consolidation note, kickoff briefing, or any other meta-commentary here -- those are not initiatives.' },
+        channel: { type: 'string', description: 'e.g. instagram, tiktok, facebook, whatsapp, in_person, email' },
+        assigned_to_user_id: {
+          type: 'string',
+          enum: staff.map(s => s.id),
+          description: `The single real staff member who owns this initiative -- must be exactly one id from this team:\n${staff.map(s => `${s.id} = ${s.label}`).join('\n')}`,
+        },
+        due_date: { type: 'string', description: 'ISO date, if a specific timing makes sense within the plan period' },
+        priority_rank: { type: 'number', description: '1 = highest priority' },
+      },
+      required: ['description', 'assigned_to_user_id'],
+      additionalProperties: false,
     },
-    required: ['description'],
-    additionalProperties: false,
-  },
+  }
+}
+
+const FINISH_INITIATIVES_TOOL = {
+  name: 'finish_initiatives',
+  description: 'Call this INSTEAD of add_initiative once you have added every genuinely distinct, actionable initiative this plan needs. Calling this with fewer initiatives than your original estimate is correct and expected if that is all the plan genuinely needs -- do not invent placeholder or filler initiatives to hit a number.',
+  input_schema: { type: 'object', properties: {}, additionalProperties: false },
 }
 
 function monthKey(dateStr: string) { return dateStr.slice(0, 7) }
@@ -97,12 +109,22 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Fill in the Business Profile first -- Izzy needs it to write a grounded plan.' }), { status: 400, headers: corsHeaders })
     }
 
-    const [competitorsRes, segmentsRes, goalsRes, eventsRes] = await Promise.all([
+    const [competitorsRes, segmentsRes, goalsRes, eventsRes, staffRes] = await Promise.all([
       adminClient.from('sales_marketing_competitors').select('name, competitor_type, threat_level, our_counter').eq('business_profile_id', bpRow.id),
       adminClient.from('sales_marketing_audience_segments').select('name, description, priority').eq('business_profile_id', bpRow.id),
       adminClient.from('sales_marketing_goals').select('description, metric, target_value, current_value, status').eq('business_profile_id', bpRow.id).eq('status', 'active'),
       adminClient.from('sales_marketing_seasonal_events').select('period_label, theme, focus_notes, priority').eq('business_profile_id', bpRow.id),
+      adminClient.from('users').select('id, full_name, role').eq('tenant_id', tenantId).eq('is_active', true),
     ])
+
+    // Every initiative needs exactly one REAL owner it can be assigned to,
+    // not a free-text role label like "Manager" that nobody can act on --
+    // that's what let the generator write things like "Owner leads the SME
+    // visits; Manager handles ESP partner calls" as a single unassignable
+    // row. Fall back to a placeholder only if the tenant somehow has no
+    // active staff yet, so add_initiative's enum is never empty.
+    const staff = (staffRes.data ?? []).map(u => ({ id: u.id as string, label: `${u.full_name} (${u.role})` }))
+    if (staff.length === 0) staff.push({ id: caller.id, label: 'Owner' })
 
     // Real historical data -- same conventions as ReportsPage/useDashboard:
     // job volume on checked_in_at + status='delivered', revenue on
@@ -195,6 +217,9 @@ ${known('Active goals', goalsRes.data)}
 
 ${known('Owner-stated seasonal context', eventsRes.data)}
 
+TEAM (assign every initiative to exactly one of these people)
+${staff.map(s => `- ${s.label}`).join('\n')}
+
 REAL HISTORICAL PERFORMANCE (this tenant's actual records, last ${HISTORY_MONTHS} months)
 Last 12 months trend:
 ${trendTable}
@@ -212,7 +237,9 @@ Instructions:
 - If there's no historical data for this period yet, say so plainly in the rationale rather than inventing a trend. Never present pre-adoption silence in the jobs/invoices data as if it were a real business slowdown.
 - Treat imported-document figures as approximate context, not verified fact -- if a plan decision hinges on one, say so.
 - Respect the guardrails and brand voice already on file.
-- Do not exceed the stated monthly budget across the plan unless the owner's focus notes say otherwise.`
+- Do not exceed the stated monthly budget across the plan unless the owner's focus notes say otherwise.
+- Every initiative must be a single atomic action for ONE named owner -- if a real tactic naturally involves two people (e.g. the owner visits SMEs and the manager calls partners), that is two initiatives, not one. Never use add_initiative to write a summary, consolidation note, kickoff briefing, or any other commentary about the plan -- that belongs in ai_rationale or the closing summary, not in the initiatives list.
+- Call finish_initiatives as soon as you've covered everything genuinely worth doing, even short of your own initiative_count estimate. A shorter list of real, atomic, assignable actions is correct; padding with filler is not.`
 
     const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
 
@@ -236,7 +263,10 @@ Instructions:
       return out
     }
 
-    async function callClaude(msgs: unknown[], toolChoice: Record<string, unknown>) {
+    const addInitiativeTool = buildAddInitiativeTool(staff)
+    const ALL_TOOLS = [SET_PLAN_DETAILS_TOOL, addInitiativeTool, FINISH_INITIATIVES_TOOL]
+
+    async function callClaude(msgs: unknown[], toolChoice: Record<string, unknown>, tools: Record<string, unknown>[] = ALL_TOOLS) {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -248,7 +278,7 @@ Instructions:
           model: 'claude-opus-5',
           max_tokens: 4096,
           system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
-          tools: [SET_PLAN_DETAILS_TOOL, ADD_INITIATIVE_TOOL],
+          tools,
           messages: withCacheBreakpoint(msgs),
           tool_choice: toolChoice,
         }),
@@ -276,31 +306,48 @@ Instructions:
     // the very next message, or the next API call is rejected outright --
     // this pushes both halves together unconditionally so a turn can never
     // leave a dangling tool_use, regardless of which tool actually fired.
-    function pushTurn(content: Array<Record<string, unknown>>, resultText: string) {
+    function pushTurn(content: Array<Record<string, unknown>>, resultTextFor: (tu: { name: string }) => string) {
       history = [...history, { role: 'assistant', content }]
       const toolUses = content.filter(b => b.type === 'tool_use') as { id: string; name: string; input?: Record<string, unknown> }[]
       if (toolUses.length > 0) {
-        history = [...history, { role: 'user', content: toolUses.map(tu => ({ type: 'tool_result', tool_use_id: tu.id, content: resultText })) }]
+        history = [...history, { role: 'user', content: toolUses.map(tu => ({ type: 'tool_result', tool_use_id: tu.id, content: resultTextFor(tu) })) }]
       }
       return toolUses
     }
 
     const planMsg = await callClaude(history, { type: 'tool', name: 'set_plan_details' })
-    const planToolUses = pushTurn(planMsg.content ?? [], 'Saved.')
+    const planToolUses = pushTurn(planMsg.content ?? [], () => 'Saved.')
     const planTu = planToolUses.find(tu => tu.name === 'set_plan_details')
     const planDetails: Record<string, unknown> = planTu?.input ?? {}
 
+    // tool_choice is still forced (never plain "auto") so the model can't
+    // silently write a prose list instead of calling a tool at all -- but it
+    // can now choose finish_initiatives over add_initiative, which is what
+    // lets it stop for real instead of inventing placeholder content once it
+    // runs out of genuine ideas before hitting its own estimate.
     const targetCount = Math.min(8, Math.max(4, Math.round(Number(planDetails.initiative_count)) || 6))
     const initiativeInputs: Record<string, unknown>[] = []
     for (let i = 0; i < targetCount; i++) {
-      const msg = await callClaude(history, { type: 'tool', name: 'add_initiative' })
-      const toolUses = pushTurn(msg.content ?? [], `Saved as initiative #${initiativeInputs.length + 1}.`)
+      const msg = await callClaude(history, { type: 'any' }, [addInitiativeTool, FINISH_INITIATIVES_TOOL])
+      const toolUses = pushTurn(msg.content ?? [], tu =>
+        tu.name === 'finish_initiatives' ? 'Understood -- moving on.' : `Saved as initiative #${initiativeInputs.length + 1}.`)
+      if (toolUses.some(t => t.name === 'finish_initiatives')) break
       const tu = toolUses.find(t => t.name === 'add_initiative')
       if (tu) initiativeInputs.push(tu.input ?? {})
     }
 
+    // finish_initiatives means the actual saved count can now legitimately
+    // differ from the initiative_count estimate in set_plan_details -- left
+    // to its own recollection, the model tends to anchor on that earlier
+    // estimate instead of what it actually just saved. Telling it the real
+    // count and list explicitly keeps the summary honest about what's
+    // really in the plan.
+    const savedDescriptions = initiativeInputs.map(i => i.description).filter(Boolean)
     const summaryMsg = await callClaude(
-      [...history, { role: 'user', content: 'Write a short 2-4 sentence summary of this plan for the owner. Do not call any tools.' }],
+      [...history, {
+        role: 'user',
+        content: `Write a short 2-4 sentence summary of this plan for the owner. You actually saved ${savedDescriptions.length} initiatives, not your earlier initiative_count estimate -- summarize only these: ${savedDescriptions.map((d, i) => `(${i + 1}) ${d}`).join(' ')}. Do not mention a different number or describe anything not in this list. Do not call any tools.`,
+      }],
       { type: 'none' },
     )
     const replyText = ((summaryMsg.content ?? []) as Array<Record<string, unknown>>)
@@ -332,12 +379,17 @@ Instructions:
       const description = typeof raw.description === 'string' ? raw.description.trim() : ''
       if (!description) continue
       const channel = typeof raw.channel === 'string' && raw.channel.trim() ? raw.channel.trim() : null
-      const owner_text = typeof raw.owner_text === 'string' && raw.owner_text.trim() ? raw.owner_text.trim() : null
+      // assigned_to_user_id is enum-constrained to real staff, but a model
+      // can still miss the schema -- fall back to unassigned rather than
+      // dropping otherwise-good initiative content over one bad field.
+      const matchedStaff = staff.find(s => s.id === raw.assigned_to_user_id)
+      const assigned_to = matchedStaff?.id ?? null
+      const owner_text = matchedStaff?.label ?? null
       const due_date = typeof raw.due_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.due_date) ? raw.due_date : null
       const priorityRankNum = Number(raw.priority_rank)
       const priority_rank = Number.isFinite(priorityRankNum) ? priorityRankNum : initiatives.length + 1
       const { data, error } = await adminClient.from('sales_marketing_plan_initiatives')
-        .insert({ tenant_id: tenantId, plan_id: plan.id, description, channel, owner_text, due_date, priority_rank })
+        .insert({ tenant_id: tenantId, plan_id: plan.id, description, channel, assigned_to, owner_text, due_date, priority_rank })
         .select('*').single()
       if (error) console.error('Failed to insert initiative:', error.message, description)
       else initiatives.push(data)
