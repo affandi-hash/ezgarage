@@ -238,6 +238,11 @@ ${firstLiveMonth ? `This tenant's own recorded job/invoice history in this syste
 OTHER MARKETING METRICS ON FILE (manually entered and/or imported from uploaded documents -- see label per row)
 ${historicalTable}
 
+IDEAS WORTH CONSIDERING (a menu to draw from, not a checklist to complete -- use only what's genuinely grounded in this business's real numbers and situation, and still call finish_initiatives the moment you run out of real ones)
+Sales: referral asks from happy customers, upsell/cross-sell while a vehicle is already on the lift or in for service, win-back outreach to customers who haven't returned in a while, tie-ins to a real upcoming seasonal/community event, a loyalty or bundled-service offer, outreach to clubs/fleets/corporate accounts, building Google reviews and profile completeness, real workshop content (before/after, honest process) instead of generic posts.
+Fixing: closing the gap between jobs raised and jobs actually delivered, chasing overdue invoices, capturing lead source and contact details on every booking so next month's numbers aren't a guess, correcting pricing that's no longer profitable at current supplier costs, fixing a measurement gap that's currently making a real question unanswerable.
+Other: turning on a tool that's already available but unused, setting up a simple tracking sheet, a one-off setup task that unblocks everything else this month.
+
 Instructions:
 - Call set_plan_details exactly once. In ai_rationale, explicitly say whether the real data confirms or contradicts the owner's stated seasonal beliefs for this period, and size the plan accordingly (e.g. don't recommend an acquisition blitz into a month the data shows is structurally slow for reasons unrelated to marketing).
 - If there's no historical data for this period yet, say so plainly in the rationale rather than inventing a trend. Never present pre-adoption silence in the jobs/invoices data as if it were a real business slowdown.
