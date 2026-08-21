@@ -165,9 +165,25 @@ Rules:
     history = planStep.history
     const planInput = planStep.toolUses.find(tu => tu.name === 'set_campaign_plan')?.input ?? {}
 
+    // Forcing tool_choice alone isn't enough of a bridge between the two
+    // roles -- with nothing but a bare "Saved." tool_result before the next
+    // forced call, the model once echoed that same word back as the copy
+    // itself instead of writing anything new. An explicit instruction turn
+    // fixes it, same principle as the save_analysis fallback elsewhere in
+    // this codebase: never rely on tool_choice pressure alone to carry
+    // intent the model hasn't actually been told in words.
+    history = [...history, {
+      role: 'user',
+      content: 'Good -- now write the actual copy for this campaign, following the plan you just set. This must be the real, final, ready-to-send text a customer would read, not a placeholder or restatement of the plan.',
+    }]
+
     const copyMsg = await callClaude(history, { type: 'tool', name: 'set_campaign_copy' })
     const copyStep = pushTurn(history, copyMsg.content ?? [], 'Saved.')
     const copyInput = copyStep.toolUses.find(tu => tu.name === 'set_campaign_copy')?.input ?? {}
+    // A real message is never this short -- leave it null (visibly missing
+    // in the UI) rather than store a degenerate one-word "copy" as if it
+    // were real, usable content.
+    const copyText = typeof copyInput.copy === 'string' && copyInput.copy.trim().length >= 20 ? copyInput.copy.trim() : null
 
     const { data: campaign, error: campaignErr } = await adminClient.from('sales_marketing_campaigns')
       .insert({
@@ -179,7 +195,7 @@ Rules:
         target_audience: typeof planInput.target_audience === 'string' ? planInput.target_audience : null,
         timing: typeof planInput.timing === 'string' ? planInput.timing : null,
         success_metric: typeof planInput.success_metric === 'string' ? planInput.success_metric : null,
-        copy: typeof copyInput.copy === 'string' ? copyInput.copy : null,
+        copy: copyText,
         alt_copy: typeof copyInput.alt_copy === 'string' ? copyInput.alt_copy : null,
         created_by: caller.id,
         generation_tokens: usage.input_tokens + usage.output_tokens,
