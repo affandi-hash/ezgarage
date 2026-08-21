@@ -604,13 +604,11 @@ export function MarketingPlanPage() {
                             <ChevronDown size={11} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
                           </button>
                         )}
-                        {category === 'sales' && (
-                          <button onClick={() => promoteToCampaign(item)} disabled={promotingId === item.id}
-                            style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'none', border: 'none', color: promotingId === item.id ? '#5A5A5A' : '#4F9DDE', fontSize: 11, fontWeight: 600, cursor: promotingId === item.id ? 'not-allowed' : 'pointer', padding: 0 }}>
-                            {promotingId === item.id ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                            {promotingId === item.id ? 'Writing campaign...' : 'Turn into Campaign'}
-                          </button>
-                        )}
+                        <button onClick={() => promoteToCampaign(item)} disabled={promotingId === item.id}
+                          style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'none', border: 'none', color: promotingId === item.id ? '#5A5A5A' : '#4F9DDE', fontSize: 11, fontWeight: 600, cursor: promotingId === item.id ? 'not-allowed' : 'pointer', padding: 0 }}>
+                          {promotingId === item.id ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                          {promotingId === item.id ? 'Writing campaign...' : 'Turn into Campaign'}
+                        </button>
                       </div>
                     </div>
                     <button onClick={() => deleteInitiative(item.id)} style={{ background: 'none', border: 'none', color: '#6A6A6A', cursor: 'pointer', padding: 2, flexShrink: 0 }}>

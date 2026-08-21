@@ -337,10 +337,22 @@ Instructions:
     // can now choose finish_initiatives over add_initiative, which is what
     // lets it stop for real instead of inventing placeholder content once it
     // runs out of genuine ideas before hitting its own estimate.
+    //
+    // finish_initiatives is withheld for the first MIN_INITIATIVES rounds --
+    // without a floor, the same prompt against the same data has been
+    // observed to produce anywhere from 2 to 7 initiatives run to run, since
+    // the model isn't deterministic and can decide it's "done" as early as
+    // round 1. A floor doesn't reintroduce padding (the model still can't be
+    // forced past real ideas once genuinely exhausted), it just stops it
+    // from bailing out before it's explored enough of the real situation.
+    const MIN_INITIATIVES = 3
     const targetCount = Math.min(8, Math.max(4, Math.round(Number(planDetails.initiative_count)) || 6))
     const initiativeInputs: Record<string, unknown>[] = []
     for (let i = 0; i < targetCount; i++) {
-      const msg = await callClaude(history, { type: 'any' }, [addInitiativeTool, FINISH_INITIATIVES_TOOL])
+      const canFinish = i >= MIN_INITIATIVES
+      const toolChoice = canFinish ? { type: 'any' } : { type: 'tool', name: 'add_initiative' }
+      const tools = canFinish ? [addInitiativeTool, FINISH_INITIATIVES_TOOL] : [addInitiativeTool]
+      const msg = await callClaude(history, toolChoice, tools)
       const toolUses = pushTurn(msg.content ?? [], tu =>
         tu.name === 'finish_initiatives' ? 'Understood -- moving on.' : `Saved as initiative #${initiativeInputs.length + 1}.`)
       if (toolUses.some(t => t.name === 'finish_initiatives')) break
