@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { BarChart3, Megaphone, Filter, Users, FileBarChart, Settings } from 'lucide-react'
+import { BarChart3, Filter, Users, FileBarChart, Settings } from 'lucide-react'
 
 function ComingSoonShell({ icon: Icon, title, description, bullets }: {
   icon: LucideIcon
@@ -40,20 +40,6 @@ export function PerformancePage() {
       bullets={[
         'Reach, leads, prospects, customers, transactions, and ROI per channel, not just a single blended number.',
         'Built on the same job and invoice data already trusted in Reports, so the numbers reconcile.',
-      ]}
-    />
-  )
-}
-
-export function CampaignsPage() {
-  return (
-    <ComingSoonShell
-      icon={Megaphone}
-      title="Campaigns"
-      description="Active and upcoming campaigns with budget, spend, and ROI tracked per campaign -- the execution layer under the Marketing Plan's initiatives."
-      bullets={[
-        'Each campaign tracks budget vs spend and attributes bookings back to it.',
-        'Initiatives from the Marketing Plan can be promoted into a running campaign here.',
       ]}
     />
   )

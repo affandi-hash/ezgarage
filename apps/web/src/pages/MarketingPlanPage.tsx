@@ -322,6 +322,7 @@ export function MarketingPlanPage() {
   const [categoryFilter, setCategoryFilter] = useState<'all' | Category>('all')
   const [sortBy, setSortBy] = useState<'priority' | 'due_date'>('priority')
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [promotingId, setPromotingId] = useState<string | null>(null)
   const [showGenerateForm, setShowGenerateForm] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [addingInitiative, setAddingInitiative] = useState(false)
@@ -407,6 +408,16 @@ export function MarketingPlanPage() {
     const { data, error } = await supabase.from('sales_marketing_plans').update({ status }).eq('id', selectedPlanId).select('*').single()
     if (error) { toast.error(error.message); return }
     setPlans(prev => prev.map(p => p.id === selectedPlanId ? (data as Plan) : p))
+  }
+
+  async function promoteToCampaign(item: Initiative) {
+    setPromotingId(item.id)
+    const { data, error } = await supabase.functions.invoke('sales-marketing-campaign-generator', { body: { initiative_id: item.id } })
+    setPromotingId(null)
+    if (error) { toast.error('Could not generate the campaign right now'); return }
+    if (data?.error) { toast.error(data.error); return }
+    toast.success('Campaign created')
+    navigate('/sales-marketing/campaigns')
   }
 
   function toggleExpanded(id: string) {
@@ -591,6 +602,13 @@ export function MarketingPlanPage() {
                             style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'none', border: 'none', color: '#F15A22', fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
                             {expanded ? 'Collapse' : 'Expand'}
                             <ChevronDown size={11} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                          </button>
+                        )}
+                        {category === 'sales' && (
+                          <button onClick={() => promoteToCampaign(item)} disabled={promotingId === item.id}
+                            style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'none', border: 'none', color: promotingId === item.id ? '#5A5A5A' : '#4F9DDE', fontSize: 11, fontWeight: 600, cursor: promotingId === item.id ? 'not-allowed' : 'pointer', padding: 0 }}>
+                            {promotingId === item.id ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                            {promotingId === item.id ? 'Writing campaign...' : 'Turn into Campaign'}
                           </button>
                         )}
                       </div>
