@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Target, Plus, Loader2, X, Check, Trash2, ChevronLeft, Sparkles, Wallet, CalendarRange, Upload, FileClock } from 'lucide-react'
+import { Target, Plus, Loader2, X, Check, Trash2, ChevronLeft, ChevronDown, Sparkles, Wallet, CalendarRange, Upload, FileClock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -35,6 +35,8 @@ interface Initiative {
   id: string
   plan_id: string
   description: string
+  summary: string | null
+  category: 'sales' | 'fixing' | 'other' | null
   channel: string | null
   owner_text: string | null
   due_date: string | null
@@ -58,6 +60,11 @@ const STATUS_COLORS: Record<Plan['status'], string> = { draft: '#6A6A6A', active
 const INITIATIVE_STATUS_CYCLE: Initiative['status'][] = ['todo', 'in_progress', 'done']
 const INITIATIVE_STATUS_LABEL: Record<Initiative['status'], string> = { todo: 'To do', in_progress: 'In progress', done: 'Done' }
 const INITIATIVE_STATUS_COLOR: Record<Initiative['status'], string> = { todo: '#6A6A6A', in_progress: '#F59E0B', done: '#7FB88F' }
+
+type Category = 'sales' | 'fixing' | 'other'
+const CATEGORY_LABEL: Record<Category, string> = { sales: 'Sales', fixing: 'Fixing', other: 'Other' }
+const CATEGORY_COLOR: Record<Category, string> = { sales: '#4F9DDE', fixing: '#F15A22', other: '#8A8A8A' }
+const categoryOf = (item: Initiative): Category => item.category ?? 'other'
 
 function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -125,23 +132,35 @@ function GenerateForm({ onGenerate, onCancel, generating }: {
 }
 
 function AddInitiativeForm({ onSave, onCancel }: { onSave: (input: Partial<Initiative>) => void; onCancel: () => void }) {
+  const [summary, setSummary] = useState('')
   const [description, setDescription] = useState('')
+  const [category, setCategory] = useState<Category>('other')
   const [channel, setChannel] = useState('')
   const [ownerText, setOwnerText] = useState('')
   const [dueDate, setDueDate] = useState('')
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRadius: 8, backgroundColor: '#1E1E1E' }}>
-      <input style={smallInputStyle} placeholder="Initiative description" value={description} onChange={e => setDescription(e.target.value)} autoFocus />
+      <input style={smallInputStyle} placeholder="Short summary, e.g. Chase unpaid invoices from July" value={summary} onChange={e => setSummary(e.target.value)} autoFocus />
+      <textarea style={{ ...smallInputStyle, resize: 'vertical' as const, fontFamily: 'inherit' }} rows={2}
+        placeholder="Fuller detail (optional) -- why this matters, what done looks like" value={description} onChange={e => setDescription(e.target.value)} />
       <div style={{ display: 'flex', gap: 6 }}>
+        <select style={smallInputStyle} value={category} onChange={e => setCategory(e.target.value as Category)}>
+          {(Object.keys(CATEGORY_LABEL) as Category[]).map(c => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}
+        </select>
         <input style={smallInputStyle} placeholder="Channel, e.g. instagram" value={channel} onChange={e => setChannel(e.target.value)} />
-        <input style={smallInputStyle} placeholder="Owner" value={ownerText} onChange={e => setOwnerText(e.target.value)} />
       </div>
-      <input style={smallInputStyle} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input style={smallInputStyle} placeholder="Owner" value={ownerText} onChange={e => setOwnerText(e.target.value)} />
+        <input style={smallInputStyle} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+      </div>
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
         <button onClick={onCancel} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: '1px solid #2A2A2A', background: 'none', color: '#A0A0A0', fontSize: 12, cursor: 'pointer' }}>
           <X size={12} /> Cancel
         </button>
-        <button onClick={() => description.trim() && onSave({ description: description.trim(), channel: channel || null, owner_text: ownerText || null, due_date: dueDate || null })}
+        <button onClick={() => summary.trim() && onSave({
+          summary: summary.trim(), description: description.trim() || summary.trim(), category,
+          channel: channel || null, owner_text: ownerText || null, due_date: dueDate || null,
+        })}
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: 'none', background: '#F15A22', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
           <Check size={12} /> Add
         </button>
@@ -300,6 +319,9 @@ export function MarketingPlanPage() {
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null)
   const [initiatives, setInitiatives] = useState<Initiative[]>([])
   const [loadingInitiatives, setLoadingInitiatives] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState<'all' | Category>('all')
+  const [sortBy, setSortBy] = useState<'priority' | 'due_date'>('priority')
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [showGenerateForm, setShowGenerateForm] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [addingInitiative, setAddingInitiative] = useState(false)
@@ -386,6 +408,27 @@ export function MarketingPlanPage() {
     if (error) { toast.error(error.message); return }
     setPlans(prev => prev.map(p => p.id === selectedPlanId ? (data as Plan) : p))
   }
+
+  function toggleExpanded(id: string) {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const visibleInitiatives = initiatives
+    .filter(item => categoryFilter === 'all' || categoryOf(item) === categoryFilter)
+    .slice()
+    .sort((a, b) => {
+      if (sortBy === 'due_date') {
+        if (!a.due_date && !b.due_date) return 0
+        if (!a.due_date) return 1
+        if (!b.due_date) return -1
+        return a.due_date.localeCompare(b.due_date)
+      }
+      return (a.priority_rank ?? 999) - (b.priority_rank ?? 999)
+    })
 
   const selectedPlan = plans.find(p => p.id === selectedPlanId) ?? null
 
@@ -490,32 +533,74 @@ export function MarketingPlanPage() {
               )}
             </div>
 
+            {initiatives.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' as const, gap: 8 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                  {(['all', 'sales', 'fixing', 'other'] as const).map(c => (
+                    <button key={c} onClick={() => setCategoryFilter(c)}
+                      style={{
+                        ...badgeStyle(c === 'all' ? '#A0A0A0' : CATEGORY_COLOR[c]),
+                        border: categoryFilter === c ? `1px solid ${c === 'all' ? '#A0A0A0' : CATEGORY_COLOR[c]}` : '1px solid transparent',
+                        cursor: 'pointer', opacity: categoryFilter === c ? 1 : 0.55,
+                      }}>
+                      {c === 'all' ? 'All' : CATEGORY_LABEL[c]}
+                    </button>
+                  ))}
+                </div>
+                <select value={sortBy} onChange={e => setSortBy(e.target.value as 'priority' | 'due_date')}
+                  style={{ ...smallInputStyle, width: 'auto', padding: '4px 8px', fontSize: 11 }}>
+                  <option value="priority">Sort: Priority</option>
+                  <option value="due_date">Sort: Due date</option>
+                </select>
+              </div>
+            )}
+
             {loadingInitiatives ? (
               <div style={{ fontSize: 12, color: '#6A6A6A' }}>Loading...</div>
             ) : initiatives.length === 0 && !addingInitiative ? (
               <p style={{ fontSize: 13, color: '#5A5A5A', fontStyle: 'italic', margin: 0 }}>No initiatives yet.</p>
+            ) : visibleInitiatives.length === 0 ? (
+              <p style={{ fontSize: 13, color: '#5A5A5A', fontStyle: 'italic', margin: 0 }}>No {categoryFilter} initiatives in this plan.</p>
             ) : (
-              initiatives.map(item => (
-                <div key={item.id} style={{ padding: 10, borderRadius: 8, backgroundColor: '#1E1E1E', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  <button onClick={() => cycleInitiativeStatus(item)} title="Click to change status"
-                    style={{ ...badgeStyle(INITIATIVE_STATUS_COLOR[item.status]), border: 'none', cursor: 'pointer', flexShrink: 0, marginTop: 2 }}>
-                    {INITIATIVE_STATUS_LABEL[item.status]}
-                  </button>
-                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <span style={{ fontSize: 13, color: '#F0F0F0', textDecoration: item.status === 'done' ? 'line-through' : 'none', opacity: item.status === 'done' ? 0.6 : 1 }}>
-                      {item.description}
-                    </span>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const, fontSize: 11, color: '#6A6A6A' }}>
-                      {item.channel && <span>{item.channel}</span>}
-                      {item.owner_text && <span>· {item.owner_text}</span>}
-                      {item.due_date && <span>· by {fmtDate(item.due_date)}</span>}
+              visibleInitiatives.map(item => {
+                const expanded = expandedIds.has(item.id)
+                const hasMore = !!item.summary && item.description && item.description !== item.summary
+                const category = categoryOf(item)
+                return (
+                  <div key={item.id} style={{ padding: 10, borderRadius: 8, backgroundColor: '#1E1E1E', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <button onClick={() => cycleInitiativeStatus(item)} title="Click to change status"
+                      style={{ ...badgeStyle(INITIATIVE_STATUS_COLOR[item.status]), border: 'none', cursor: 'pointer', flexShrink: 0, marginTop: 2 }}>
+                      {INITIATIVE_STATUS_LABEL[item.status]}
+                    </button>
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
+                        <span style={badgeStyle(CATEGORY_COLOR[category])}>{CATEGORY_LABEL[category]}</span>
+                        <span style={{ fontSize: 13, color: '#F0F0F0', textDecoration: item.status === 'done' ? 'line-through' : 'none', opacity: item.status === 'done' ? 0.6 : 1 }}>
+                          {item.summary || item.description}
+                        </span>
+                      </div>
+                      {hasMore && expanded && (
+                        <p style={{ fontSize: 12, color: '#A0A0A0', margin: '2px 0 0', lineHeight: 1.5 }}>{item.description}</p>
+                      )}
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const, fontSize: 11, color: '#6A6A6A', alignItems: 'center' }}>
+                        {item.channel && <span>{item.channel}</span>}
+                        {item.owner_text && <span>· {item.owner_text}</span>}
+                        {item.due_date && <span>· by {fmtDate(item.due_date)}</span>}
+                        {hasMore && (
+                          <button onClick={() => toggleExpanded(item.id)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'none', border: 'none', color: '#F15A22', fontSize: 11, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                            {expanded ? 'Collapse' : 'Expand'}
+                            <ChevronDown size={11} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                          </button>
+                        )}
+                      </div>
                     </div>
+                    <button onClick={() => deleteInitiative(item.id)} style={{ background: 'none', border: 'none', color: '#6A6A6A', cursor: 'pointer', padding: 2, flexShrink: 0 }}>
+                      <Trash2 size={12} />
+                    </button>
                   </div>
-                  <button onClick={() => deleteInitiative(item.id)} style={{ background: 'none', border: 'none', color: '#6A6A6A', cursor: 'pointer', padding: 2, flexShrink: 0 }}>
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))
+                )
+              })
             )}
 
             {addingInitiative && <AddInitiativeForm onSave={addInitiative} onCancel={() => setAddingInitiative(false)} />}

@@ -47,7 +47,13 @@ function buildAddInitiativeTool(staff: { id: string; label: string }[]) {
     input_schema: {
       type: 'object',
       properties: {
-        description: { type: 'string', description: 'ONE specific, actionable initiative for ONE owner, e.g. "WhatsApp blast to ESP members offering pre-Raya brake & tyre check". If a real initiative naturally has several people involved (e.g. the owner visits SMEs AND the manager calls ESP partners), split it into separate add_initiative calls, one per owner. Never write a summary, consolidation note, kickoff briefing, or any other meta-commentary here -- those are not initiatives.' },
+        category: {
+          type: 'string',
+          enum: ['sales', 'fixing', 'other'],
+          description: '"sales" = grows the business (gets more customers, more bookings). "fixing" = repairs something broken INSIDE the business that has to be right before sales even matters (a cash/collection problem, a data-logging gap, a capacity constraint). "other" = doesn\'t grow or fix, but still matters (setting up tracking, turning on a tool).',
+        },
+        summary: { type: 'string', description: 'ONE short, plain sentence a busy owner can scan in two seconds -- no numbers, no jargon, just the action. e.g. "Chase unpaid invoices from July." This is what shows by default; the fuller reasoning goes in description.' },
+        description: { type: 'string', description: 'The fuller version, shown only when the owner expands this item: WHY this matters, which real number it ties back to, and what "done" looks like. ONE specific, actionable initiative for ONE owner -- e.g. "WhatsApp blast to ESP members offering pre-Raya brake & tyre check, because reach fell 96% since May and this reactivates the audience we already have." If a real initiative naturally has several people involved (e.g. the owner visits SMEs AND the manager calls ESP partners), split it into separate add_initiative calls, one per owner. Never write a summary, consolidation note, kickoff briefing, or any other meta-commentary here -- those are not initiatives.' },
         channel: { type: 'string', description: 'e.g. instagram, tiktok, facebook, whatsapp, in_person, email' },
         assigned_to_user_id: {
           type: 'string',
@@ -57,7 +63,7 @@ function buildAddInitiativeTool(staff: { id: string; label: string }[]) {
         due_date: { type: 'string', description: 'ISO date, if a specific timing makes sense within the plan period' },
         priority_rank: { type: 'number', description: '1 = highest priority' },
       },
-      required: ['description', 'assigned_to_user_id'],
+      required: ['category', 'summary', 'description', 'assigned_to_user_id'],
       additionalProperties: false,
     },
   }
@@ -239,6 +245,7 @@ Instructions:
 - Respect the guardrails and brand voice already on file.
 - Do not exceed the stated monthly budget across the plan unless the owner's focus notes say otherwise.
 - Every initiative must be a single atomic action for ONE named owner -- if a real tactic naturally involves two people (e.g. the owner visits SMEs and the manager calls partners), that is two initiatives, not one. Never use add_initiative to write a summary, consolidation note, kickoff briefing, or any other commentary about the plan -- that belongs in ai_rationale or the closing summary, not in the initiatives list.
+- Tag every initiative's category honestly: most plans need a mix of "fixing" (repair something broken before it undermines everything else -- a collection gap, missing data, a capacity constraint) and "sales" (actions that actually grow bookings/customers). Don't label a fix as sales just because it appears in a sales plan.
 - Call finish_initiatives as soon as you've covered everything genuinely worth doing, even short of your own initiative_count estimate. A shorter list of real, atomic, assignable actions is correct; padding with filler is not.`
 
     const usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
@@ -378,6 +385,12 @@ Instructions:
     for (const raw of initiativeInputs) {
       const description = typeof raw.description === 'string' ? raw.description.trim() : ''
       if (!description) continue
+      // A model can still miss the enum despite the schema constraint --
+      // fall back to "other" rather than dropping otherwise-good content
+      // over one bad field, and fall back the short summary to the full
+      // description so the collapsed view never shows blank text.
+      const category = ['sales', 'fixing', 'other'].includes(raw.category as string) ? raw.category as string : 'other'
+      const summary = typeof raw.summary === 'string' && raw.summary.trim() ? raw.summary.trim() : description
       const channel = typeof raw.channel === 'string' && raw.channel.trim() ? raw.channel.trim() : null
       // assigned_to_user_id is enum-constrained to real staff, but a model
       // can still miss the schema -- fall back to unassigned rather than
@@ -389,7 +402,7 @@ Instructions:
       const priorityRankNum = Number(raw.priority_rank)
       const priority_rank = Number.isFinite(priorityRankNum) ? priorityRankNum : initiatives.length + 1
       const { data, error } = await adminClient.from('sales_marketing_plan_initiatives')
-        .insert({ tenant_id: tenantId, plan_id: plan.id, description, channel, assigned_to, owner_text, due_date, priority_rank })
+        .insert({ tenant_id: tenantId, plan_id: plan.id, category, summary, description, channel, assigned_to, owner_text, due_date, priority_rank })
         .select('*').single()
       if (error) console.error('Failed to insert initiative:', error.message, description)
       else initiatives.push(data)
