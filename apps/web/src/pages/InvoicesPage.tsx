@@ -444,6 +444,7 @@ export function InvoicesPage() {
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [proofFileError, setProofFileError] = useState<string | null>(null)
   const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; payment_method: string; payment_date: string; proof_url: string | null; proof_bucket: string | null; voided_at: string | null; void_reason: string | null }[]>([])
+  const [paymentFailures, setPaymentFailures] = useState<{ id: string; event: string; failure_code: string | null; failure_reason: string | null; created_at: string }[]>([])
   const [viewingProofId, setViewingProofId] = useState<string | null>(null)
   const [voidingId, setVoidingId] = useState<string | null>(null)
   const canVoidPayments = ['super_admin', 'ops_manager', 'foreman'].includes(user?.role ?? '')
@@ -459,6 +460,11 @@ export function InvoicesPage() {
   async function loadPaymentHistory(invoiceId: string) {
     const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url, proof_bucket, voided_at, void_reason').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
     setPaymentHistory(data ?? [])
+  }
+
+  async function loadPaymentFailures(invoiceId: string) {
+    const { data } = await supabase.from('invoice_payment_failures').select('id, event, failure_code, failure_reason, created_at').eq('invoice_id', invoiceId).order('created_at', { ascending: false })
+    setPaymentFailures(data ?? [])
   }
 
   async function handleVoidReceipt(receiptId: string) {
@@ -1098,6 +1104,7 @@ export function InvoicesPage() {
                       setPayment({ payment_method: 'cash', amount_paid: Math.max(0, editInvoice.total_amount - editInvoice.amount_paid), payment_date: todayStr(), payment_reference: '' })
                       setProofFile(null)
                       loadPaymentHistory(editInvoice.id)
+                      loadPaymentFailures(editInvoice.id)
                       setShowPaymentModal(true)
                     }}>
                       <CreditCard size={15} /> Record Payment
@@ -1106,6 +1113,7 @@ export function InvoicesPage() {
                   {editInvoice.status !== 'sent' && editInvoice.amount_paid > 0 && (
                     <button style={btnOutline} onClick={() => {
                       loadPaymentHistory(editInvoice.id)
+                      loadPaymentFailures(editInvoice.id)
                       setShowPaymentModal(true)
                     }}>
                       <CreditCard size={15} /> Payment History
@@ -1691,6 +1699,21 @@ export function InvoicesPage() {
                         </div>
                         {r.voided_at && (
                           <span style={{ color: '#EF4444', fontSize: 11 }}>VOIDED{r.void_reason ? ` — ${r.void_reason}` : ''}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {paymentFailures.length > 0 && (
+                <div>
+                  <label style={{ fontSize: 12, color: '#EF4444', fontWeight: 600, display: 'block', marginBottom: 6 }}>Failed Online Payment Attempts</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+                    {paymentFailures.map(f => (
+                      <div key={f.id} style={{ background: C.bg, borderRadius: 6, padding: '8px 10px', fontSize: 12 }}>
+                        <div>{new Date(f.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} · {f.event.replace('payment.', '')}</div>
+                        {(f.failure_code || f.failure_reason) && (
+                          <div style={{ color: C.text2 }}>{[f.failure_code, f.failure_reason].filter(Boolean).join(' — ')}</div>
                         )}
                       </div>
                     ))}

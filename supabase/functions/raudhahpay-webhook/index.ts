@@ -170,10 +170,29 @@ Deno.serve(async (req) => {
   const REFUND_EVENTS = new Set(['payment.refunded', 'payment.partial_refunded'])
 
   // These never created a receipt in the first place (the checkout never
-  // completed), so there's nothing in the ledger to reconcile — just ack
-  // with a clear, distinguishable log line per event type.
+  // completed) -- but the reason WHY is worth keeping around for staff to
+  // see without filing a support ticket, so persist it instead of only
+  // console.log'ing it. webhook_debug_log isn't a substitute for this: it's
+  // a temporary diagnostic table, documented as safe to drop once its
+  // original purpose (a signature-verification bug) was resolved.
   if (['payment.failed', 'payment.expired', 'payment.rejected', 'payment.cancelled'].includes(event.event)) {
     const invoiceId = (data.order_no as string) || (data.metadata as { invoice_id?: string })?.invoice_id
+    if (invoiceId) {
+      const supabaseForFailure = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+      const { data: invoiceForFailure } = await supabaseForFailure.from('invoices').select('tenant_id').eq('id', invoiceId).single()
+      if (invoiceForFailure) {
+        await supabaseForFailure.from('invoice_payment_failures').insert({
+          tenant_id: invoiceForFailure.tenant_id,
+          invoice_id: invoiceId,
+          bill_id: (data.bill_id as string) ?? null,
+          event: event.event,
+          failure_code: (data.failure_code as string) ?? null,
+          failure_reason: (data.failure_reason as string) ?? null,
+          gateway_status: (data.gateway_status as string) ?? null,
+          reference_number: (data.reference_number as string) ?? null,
+        }).then(({ error }) => { if (error) console.error('invoice_payment_failures insert failed:', error.message) })
+      }
+    }
     console.log(`RaudhahPay ${event.event}: bill ${data?.bill_id}, invoice ${invoiceId} — no receipt was recorded, no action needed`)
     return new Response('ok', { status: 200 })
   }
