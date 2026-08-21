@@ -1123,6 +1123,43 @@ function NewCustomerPanel({
     credit_limit: '',
   })
 
+  // Unlike esp_public_register() (which dedupes by phone server-side) and
+  // the Bookings/Quotations customer search, this form was a plain INSERT
+  // with no duplicate check at all -- the only customer-creation path in
+  // the app with none. Same normalization as the DB's normalize_my_phone()
+  // (strip non-digits, drop a leading 60 or 0) so "011-234 5678",
+  // "+60112345678", and "0112345678" all match the same existing customer.
+  const [dupMatch, setDupMatch] = useState<Customer | null>(null)
+  const [checkingDup, setCheckingDup] = useState(false)
+
+  useEffect(() => {
+    const digits = form.phone.replace(/[^0-9]/g, '')
+    const norm = digits.startsWith('60') ? digits.slice(2) : digits.startsWith('0') ? digits.slice(1) : digits
+    if (norm.length < 7) { setDupMatch(null); return }
+    setCheckingDup(true)
+    const t = setTimeout(async () => {
+      const { data } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('branch_id', branchId)
+        .ilike('phone', `%${norm.slice(-7)}%`)
+        .limit(10)
+      const hit = (data as Customer[] ?? []).find(c => {
+        const d = (c.phone || '').replace(/[^0-9]/g, '')
+        const n = d.startsWith('60') ? d.slice(2) : d.startsWith('0') ? d.slice(1) : d
+        return n === norm
+      })
+      setDupMatch(hit ?? null)
+      setCheckingDup(false)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [form.phone, branchId])
+
+  function useExisting() {
+    if (!dupMatch) return
+    onCreated(dupMatch)
+  }
+
   async function handleSubmit() {
     if (!form.full_name.trim() || !form.phone.trim()) {
       setError('Full Name and Phone are required.')
@@ -1236,6 +1273,19 @@ function NewCustomerPanel({
                 onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                 onBlur={e => setForm(f => ({ ...f, phone: formatPhone(e.target.value) }))}
               />
+              {checkingDup && !dupMatch && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#666' }}>Checking for an existing customer...</div>
+              )}
+              {dupMatch && (
+                <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12 }}>
+                  <div style={{ color: '#F59E0B', fontWeight: 600, marginBottom: 4 }}>Already a customer</div>
+                  <div style={{ color: '#A0A0A0', marginBottom: 8 }}>{dupMatch.full_name} · {dupMatch.phone}</div>
+                  <button type="button" onClick={useExisting}
+                    style={{ background: 'none', border: '1px solid #F59E0B', color: '#F59E0B', borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                    Use this customer instead
+                  </button>
+                </div>
+              )}
             </div>
             <div>
               <p style={labelStyle}>Email</p>
@@ -1433,8 +1483,11 @@ export function CustomersPage() {
   }
 
   function handleCreated(c: Customer) {
+    // Selecting an existing duplicate match (see NewCustomerPanel) reuses
+    // this same callback rather than a new one -- guard against appending
+    // it twice into the loaded list if it happens to already be there.
     setCustomers(cs =>
-      [...cs, c].sort((a, b) => a.full_name.localeCompare(b.full_name))
+      cs.some(x => x.id === c.id) ? cs : [...cs, c].sort((a, b) => a.full_name.localeCompare(b.full_name))
     )
     setSelectedId(c.id)
     setShowNewPanel(false)
