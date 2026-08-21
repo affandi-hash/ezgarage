@@ -45,6 +45,15 @@ const SORT_COLUMNS: { label: string; key: SortKey | null }[] = [
   { label: 'Actions', key: null },
 ]
 
+interface CustomerMatch {
+  id: string
+  full_name: string
+  phone: string
+  email: string | null
+  ic_number: string | null
+  vehicles: { plate_number: string; vehicle_type: 'car' | 'bike'; make: string | null; model: string | null }[]
+}
+
 function RegisterMemberModal({ communities, onClose, onSaved }: { communities: Community[]; onClose: () => void; onSaved: () => void }) {
   const [communityId, setCommunityId] = useState(communities[0]?.id ?? '')
   const [fullName, setFullName] = useState('')
@@ -58,6 +67,62 @@ function RegisterMemberModal({ communities, onClose, onSaved }: { communities: C
   const [model, setModel] = useState('')
   const [modelOther, setModelOther] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  // Looked up by phone/name so staff can see (and select into) an existing
+  // customer instead of typing blind -- esp_public_register already
+  // dedupes by phone server-side, but silently: it only fills in blanks on
+  // a match and never overwrites, so a staff-typed "correction" to an
+  // existing customer's name would otherwise vanish with no indication it
+  // was ever ignored.
+  const [matches, setMatches] = useState<CustomerMatch[]>([])
+  const [showMatches, setShowMatches] = useState(false)
+  const [matchedCustomerId, setMatchedCustomerId] = useState<string | null>(null)
+  const [matchedVehicles, setMatchedVehicles] = useState<CustomerMatch['vehicles']>([])
+
+  useEffect(() => {
+    const q = phone.trim() || fullName.trim()
+    if (q.length < 3) { setMatches([]); setShowMatches(false); return }
+    const t = setTimeout(async () => {
+      const { data } = await supabase
+        .from('customers')
+        .select('id, full_name, phone, email, ic_number, vehicles(plate_number, vehicle_type, make, model)')
+        .or(`phone.ilike.%${q}%,full_name.ilike.%${q}%`)
+        .limit(6)
+      const found = (data as CustomerMatch[]) ?? []
+      setMatches(found)
+      setShowMatches(found.length > 0)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [phone, fullName])
+
+  function editFullName(v: string) { setFullName(v); setMatchedCustomerId(null) }
+  function editPhone(v: string) { setPhone(v); setMatchedCustomerId(null) }
+
+  function selectMatch(m: CustomerMatch) {
+    setFullName(m.full_name)
+    setPhone(m.phone)
+    setEmail(m.email ?? '')
+    setIcNumber(m.ic_number ?? '')
+    setMatchedCustomerId(m.id)
+    setMatchedVehicles(m.vehicles ?? [])
+    setShowMatches(false)
+    setMatches([])
+  }
+
+  function selectVehicle(v: CustomerMatch['vehicles'][number]) {
+    changeVehicleType(v.vehicle_type)
+    setPlate(v.plate_number)
+    const makes = makeOptionsFor(v.vehicle_type)
+    if (v.make && makes.includes(v.make)) {
+      setMake(v.make); setMakeOther(false)
+      const models = modelOptionsFor(v.vehicle_type, v.make)
+      if (v.model && models.includes(v.model)) { setModel(v.model); setModelOther(false) }
+      else { setModel(v.model ?? ''); setModelOther(!!v.model) }
+    } else {
+      setMake(v.make ?? ''); setMakeOther(!!v.make)
+      setModel(v.model ?? ''); setModelOther(!!v.model)
+    }
+  }
 
   function changeVehicleType(t: 'car' | 'bike') {
     if (t === vehicleType) return
@@ -101,14 +166,32 @@ function RegisterMemberModal({ communities, onClose, onSaved }: { communities: C
               {communities.map(c => <option key={c.id} value={c.id}>{c.name} (RM {Number(c.membership_fee).toFixed(2)})</option>)}
             </select>
           </div>
-          <div>
+          <div style={{ position: 'relative' }}>
             <label style={labelStyle}>Full Name *</label>
-            <input style={inputStyle} value={fullName} onChange={e => setFullName(e.target.value)} />
+            <input style={inputStyle} value={fullName} onChange={e => editFullName(e.target.value)} />
+            {showMatches && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, marginTop: 4, background: '#1E1E1E', border: '1px solid #333', borderRadius: 8, overflow: 'hidden' }}>
+                {matches.map(m => (
+                  <button key={m.id} type="button" onClick={() => selectMatch(m)}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'none', border: 'none', borderBottom: '1px solid #2A2A2A', cursor: 'pointer', color: '#F0F0F0' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{m.full_name}</div>
+                    <div style={{ fontSize: 11, color: '#A0A0A0' }}>
+                      {m.phone}{m.vehicles?.length ? ` · ${m.vehicles.map(v => v.plate_number).join(', ')}` : ''}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+          {matchedCustomerId && (
+            <div style={{ fontSize: 11, color: '#7FB88F', background: 'rgba(127,184,143,0.1)', borderRadius: 6, padding: '6px 10px' }}>
+              Existing customer -- registering under this record, not a new one.
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelStyle}>Phone *</label>
-              <input style={inputStyle} value={phone} onChange={e => setPhone(e.target.value)} />
+              <input style={inputStyle} value={phone} onChange={e => editPhone(e.target.value)} />
             </div>
             <div>
               <label style={labelStyle}>Email</label>
@@ -119,6 +202,19 @@ function RegisterMemberModal({ communities, onClose, onSaved }: { communities: C
             <label style={labelStyle}>IC Number</label>
             <input style={inputStyle} value={icNumber} onChange={e => setIcNumber(e.target.value)} />
           </div>
+          {matchedVehicles.length > 0 && (
+            <div>
+              <label style={labelStyle}>Vehicles on File</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
+                {matchedVehicles.map(v => (
+                  <button key={v.plate_number} type="button" onClick={() => selectVehicle(v)}
+                    style={{ padding: '5px 10px', borderRadius: 999, border: `1px solid ${plate === v.plate_number ? '#F15A22' : '#333'}`, background: plate === v.plate_number ? 'rgba(241,90,34,0.12)' : 'none', color: plate === v.plate_number ? '#F15A22' : '#A0A0A0', fontSize: 12, cursor: 'pointer' }}>
+                    {v.plate_number} ({v.vehicle_type})
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
             <div>
               <label style={labelStyle}>Plate Number *</label>
