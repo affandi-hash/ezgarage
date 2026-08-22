@@ -355,6 +355,13 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Failed to start payment. Please try again.'); setLoading(null); return }
 
+      // Remembered across the redirect so the page can poll for
+      // confirmation the moment the customer comes back, instead of
+      // silently landing on a page that still looks unpaid with no
+      // acknowledgment either way -- FPX/DuitNow/card all leave the app
+      // entirely, so there's no in-page way to know the outcome otherwise.
+      sessionStorage.setItem('portal_pending_payment', JSON.stringify({ invoiceId }))
+
       // RaudhahPay's hosted checkout page renders the FPX bank list or DuitNow
       // QR itself based on the payment_method the bill was created with —
       // there's no separate inline QR asset for us to render.
@@ -795,6 +802,11 @@ export function CustomerPortalPage() {
   const [logoUrl, setLogoUrl] = useState('')
   const [whatsappNumber, setWhatsappNumber] = useState('')
 
+  // Tracks a payment started right before the customer left for RaudhahPay's
+  // hosted checkout, restored from sessionStorage the same way portal_session
+  // is -- see the polling effect below for why this exists at all.
+  const [paymentPoll, setPaymentPoll] = useState<{ invoiceId: string; attempts: number; resolved: boolean } | null>(null)
+
   // Tenant resolution failed -- either no slug in the URL, or a slug that no
   // longer matches an active tenant. Rather than a dead-end, let the
   // customer find their own workshop by name instead of guessing.
@@ -856,8 +868,53 @@ export function CustomerPortalPage() {
         }
       } catch { /* ignore malformed cache */ }
     }
+    const pendingPayment = sessionStorage.getItem('portal_pending_payment')
+    if (pendingPayment) {
+      try {
+        const { invoiceId } = JSON.parse(pendingPayment)
+        if (invoiceId) setPaymentPoll({ invoiceId, attempts: 0, resolved: false })
+      } catch { /* ignore malformed cache */ }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A single status check right after the RaudhahPay redirect can easily
+  // land before the webhook (or the once-a-minute cron backstop, 122) has
+  // actually processed the payment -- the customer would otherwise land
+  // back here to a page that still looks unpaid with no acknowledgment
+  // either way, and no signal whether they need to try again. Actively
+  // poke reconcile_invoice_now() every 3s (rather than passively re-reading
+  // possibly-stale status) for up to ~2 minutes, re-running the same search
+  // each tick so the job card's own payment status flips the moment it's
+  // confirmed, not just this banner. Same pattern as EspRegistrationPage's
+  // checkStatus() polling.
+  useEffect(() => {
+    if (!paymentPoll || paymentPoll.resolved) return
+    let attempts = paymentPoll.attempts
+    const interval = setInterval(() => {
+      attempts += 1
+      setPaymentPoll(pp => (pp ? { ...pp, attempts } : pp))
+      if (attempts > 40) { clearInterval(interval); return }
+      supabase.rpc('reconcile_invoice_now', { p_invoice_id: paymentPoll.invoiceId }).then(() => {
+        if (plate && phone && icFirst6) runSearch(plate, phone, icFirst6)
+      })
+    }, 3000)
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentPoll?.invoiceId, paymentPoll?.resolved])
+
+  // Flips the banner to "confirmed" the moment a refreshed search shows the
+  // polled invoice fully paid, and stops sessionStorage from re-triggering
+  // this poll on a later reload of the same cached session.
+  useEffect(() => {
+    if (!paymentPoll || paymentPoll.resolved || !result) return
+    const job = result.jobs.find(j => j.invoice_id === paymentPoll.invoiceId)
+    if (job && job.inv_total != null && job.inv_paid != null && job.inv_paid >= job.inv_total) {
+      setPaymentPoll(pp => (pp ? { ...pp, resolved: true } : pp))
+      sessionStorage.removeItem('portal_pending_payment')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, paymentPoll?.invoiceId, paymentPoll?.resolved])
 
   async function runSearch(p: string, ph: string, ic: string) {
     setError('')
@@ -1038,6 +1095,45 @@ export function CustomerPortalPage() {
               </div>
               <span style={{ fontSize: 13, color: C.textSecondary }}>Hi, <strong style={{ color: C.textPrimary }}>{result.customer.full_name}</strong></span>
             </div>
+
+            {/* Payment confirmation banner -- shown from the moment the
+                customer returns from RaudhahPay's checkout until their
+                payment is confirmed or they've waited long enough to be
+                offered the WhatsApp escape valve instead. */}
+            {paymentPoll && (
+              <div style={{
+                background: paymentPoll.resolved ? '#0D1F0D' : C.surface,
+                border: `1px solid ${paymentPoll.resolved ? C.green + '44' : C.border}`,
+                borderRadius: 10, padding: 18, marginBottom: 18, textAlign: 'center',
+              }}>
+                {paymentPoll.resolved ? (
+                  <CheckCircle size={26} color={C.green} style={{ marginBottom: 8 }} />
+                ) : paymentPoll.attempts < 20 ? (
+                  <Loader2 size={26} color={C.orange} style={{ marginBottom: 8, animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  <Clock size={26} color={C.textSecondary} style={{ marginBottom: 8 }} />
+                )}
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.textPrimary }}>
+                  {paymentPoll.resolved ? 'Payment Confirmed' : paymentPoll.attempts < 20 ? 'Confirming your payment…' : 'Payment Pending'}
+                </div>
+                {!paymentPoll.resolved && (
+                  <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 6, maxWidth: 380, marginLeft: 'auto', marginRight: 'auto' }}>
+                    {paymentPoll.attempts < 20
+                      ? "If you've already paid, this usually takes just a few seconds — no need to pay again or refresh."
+                      : "Still not showing? If your bank or e-wallet already confirmed the payment, you're covered — we're just taking a little longer than usual to update here."}
+                  </div>
+                )}
+                {!paymentPoll.resolved && paymentPoll.attempts >= 20 && whatsappNumber && (
+                  <a
+                    href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Hi, I already paid for my invoice on vehicle ${result.vehicle.plate_number} but it still shows Pending on my end.`)}`}
+                    target="_blank" rel="noreferrer"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 12, color: C.textSecondary, textDecoration: 'none' }}
+                  >
+                    <MessageCircle size={13} /> Already paid? Contact us on WhatsApp
+                  </a>
+                )}
+              </div>
+            )}
 
             {/* Jobs */}
             {result.jobs.length === 0 ? (
