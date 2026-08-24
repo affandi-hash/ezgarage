@@ -689,6 +689,13 @@ export function InvoicesPage() {
     const { id, balance_due: _balance_due, ...rest } = editInvoice
     const { error } = await supabase.from('invoices').update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id)
     if (error) { toast.error('Failed to save draft: ' + error.message); setSaving(false); return }
+    // createInvoice() sets jobs.final_amount to match at creation time, but
+    // an edit here (a discount, a corrected line item) never re-synced it --
+    // the job (and the customer portal's own "Final Amount" line) silently
+    // kept showing whatever total the invoice had at creation, forever.
+    if (editInvoice.job_id) {
+      await supabase.from('jobs').update({ final_amount: editInvoice.total_amount }).eq('id', editInvoice.job_id)
+    }
     await loadInvoices()
     toast.success('Draft saved')
     setSaving(false)
