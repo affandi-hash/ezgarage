@@ -686,16 +686,14 @@ export function InvoicesPage() {
     // -- Postgres rejects any UPDATE that tries to set it directly, and
     // since the error here was never checked, every single "Save Draft"
     // click failed with the edit never actually reaching the database.
+    // trg_sync_job_final_amount (146) keeps jobs.final_amount in sync with
+    // whichever invoice a job is actually pointed at -- syncing it again
+    // here too would repeat the exact bug that trigger just had to fix:
+    // blindly pushing THIS invoice's total onto job_id regardless of
+    // whether this invoice is even the job's current one.
     const { id, balance_due: _balance_due, ...rest } = editInvoice
     const { error } = await supabase.from('invoices').update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id)
     if (error) { toast.error('Failed to save draft: ' + error.message); setSaving(false); return }
-    // createInvoice() sets jobs.final_amount to match at creation time, but
-    // an edit here (a discount, a corrected line item) never re-synced it --
-    // the job (and the customer portal's own "Final Amount" line) silently
-    // kept showing whatever total the invoice had at creation, forever.
-    if (editInvoice.job_id) {
-      await supabase.from('jobs').update({ final_amount: editInvoice.total_amount }).eq('id', editInvoice.job_id)
-    }
     await loadInvoices()
     toast.success('Draft saved')
     setSaving(false)
