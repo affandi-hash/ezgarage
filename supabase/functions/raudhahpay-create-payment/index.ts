@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
 
     const { data: invoice, error: invErr } = await supabase
       .from('invoices')
-      .select('id, invoice_number, tenant_id, branch_id, customer_name, customer_email, customer_phone, total_amount, amount_paid, balance_due, status, esp_member_id')
+      .select('id, invoice_number, tenant_id, branch_id, customer_id, customer_name, customer_email, customer_phone, total_amount, amount_paid, balance_due, status, esp_member_id')
       .eq('id', invoice_id)
       .single()
 
@@ -96,7 +96,19 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Invalid amount' }), { status: 400, headers: corsHeaders })
     }
 
-    const email = invoice.customer_email?.trim() || `invoice-${invoice.id}@no-email.motoverse.local`
+    // invoices.customer_email is a snapshot taken when the invoice was
+    // created -- if staff added the customer's email to their profile
+    // afterward, that snapshot stays blank forever and RaudhahPay gets a
+    // fake @no-email.motoverse.local address instead (confirmed cause of
+    // an FPX checkout silently failing right after bank selection on
+    // MVG-INV-2026-0053). Prefer the live customers.email, falling back to
+    // the invoice's own snapshot, then the placeholder as a last resort.
+    let liveCustomerEmail: string | null = null
+    if (invoice.customer_id) {
+      const { data: customerRow } = await supabase.from('customers').select('email').eq('id', invoice.customer_id).single()
+      liveCustomerEmail = customerRow?.email?.trim() || null
+    }
+    const email = liveCustomerEmail || invoice.customer_email?.trim() || `invoice-${invoice.id}@no-email.motoverse.local`
     const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/raudhahpay-webhook`
 
     const payload: Record<string, unknown> = {
@@ -139,6 +151,22 @@ Deno.serve(async (req) => {
     if (!rpRes.ok) {
       return new Response(JSON.stringify({ error: rpData?.message || rpData?.error || 'RaudhahPay request failed' }), { status: rpRes.status, headers: corsHeaders })
     }
+
+    // Persist the bill reference now, while we know it, not just whenever
+    // (if ever) a webhook happens to arrive -- this is what lets
+    // raudhahpay-reconcile-payments ask RaudhahPay directly about a bill
+    // whose webhook never showed up. Without this, every invoice's
+    // raudhahpay_bill_id stays null and the reconciliation job has nothing
+    // to check -- confirmed happening on every invoice since this file's
+    // last deploy. Best-effort: a failure here shouldn't block checkout.
+    const { error: refUpdateErr } = await supabase.from('invoices').update({
+      raudhahpay_bill_id: rpData.bill_id ?? null,
+      raudhahpay_payment_session_id: rpData.payment_session_id ?? null,
+      raudhahpay_reference_number: rpData.gateway_bill_no ?? null,
+      raudhahpay_bill_created_at: new Date().toISOString(),
+      raudhahpay_payment_method: payment_method,
+    }).eq('id', invoice.id)
+    if (refUpdateErr) console.error(`Failed to persist RaudhahPay bill reference for invoice ${invoice.id}`, refUpdateErr)
 
     return new Response(JSON.stringify({
       payment_url: rpData.payment_url,
