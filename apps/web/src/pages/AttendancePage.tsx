@@ -105,6 +105,7 @@ interface MonthlySummary {
   present: number
   late: number
   absent: number
+  leave: number
   ot_hours: number
 }
 
@@ -795,6 +796,7 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
   })
   const [summary, setSummary] = useState<MonthlySummary[]>([])
   const [loading, setLoading] = useState(true)
+  const [detailStaff, setDetailStaff] = useState<{ id: string; name: string } | null>(null)
 
   const fetchReport = useCallback(async () => {
     setLoading(true)
@@ -818,11 +820,32 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
       .lte('date', to)
       .in('staff_id', staffList.map(s => s.id))
 
+    // Approved leave overlapping this month -- a leave spanning a month
+    // boundary must only count the days that actually fall inside it, so
+    // total_days (the request's own full span) can't be used directly.
+    const { data: leaveRows } = await supabase
+      .from('leave_requests')
+      .select('staff_id, date_from, date_to, status')
+      .eq('status', 'approved')
+      .lte('date_from', to)
+      .gte('date_to', from)
+      .in('staff_id', staffList.map(s => s.id))
+
+    const monthStartMs = new Date(from).getTime()
+    const monthEndMs = new Date(to).getTime()
+    function leaveDaysInMonth(dateFrom: string, dateTo: string) {
+      const start = Math.max(new Date(dateFrom).getTime(), monthStartMs)
+      const end = Math.min(new Date(dateTo).getTime(), monthEndMs)
+      return Math.max(0, Math.round((end - start) / 86400000) + 1)
+    }
+
     const recs = records ?? []
+    const leaves = leaveRows ?? []
     const workingDays = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86400000 * 5 / 7)
 
     const built: MonthlySummary[] = staffList.map(staff => {
       const mine = recs.filter(r => r.staff_id === staff.id)
+      const myLeave = leaves.filter(l => l.staff_id === staff.id)
       return {
         staff_id: staff.id,
         full_name: staff.full_name,
@@ -831,6 +854,7 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
         present: mine.filter(r => r.status === 'present' || r.status === 'late').length,
         late: mine.filter(r => r.status === 'late').length,
         absent: mine.filter(r => r.status === 'absent').length,
+        leave: myLeave.reduce((s, l) => s + leaveDaysInMonth(l.date_from, l.date_to), 0),
         ot_hours: mine.reduce((s, r) => s + (r.ot_hours ?? 0), 0),
       }
     })
@@ -841,9 +865,9 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
   useEffect(() => { fetchReport() }, [fetchReport])
 
   const exportCSV = () => {
-    const headers = ['Name', 'Position', 'Working Days', 'Present', 'Late', 'Absent', 'OT Hours', 'Compliance %']
+    const headers = ['Name', 'Position', 'Working Days', 'Present', 'Late', 'Absent', 'Leave', 'OT Hours', 'Compliance %']
     const rows = summary.map(s => [
-      s.full_name, s.position ?? '', s.working_days, s.present, s.late, s.absent,
+      s.full_name, s.position ?? '', s.working_days, s.present, s.late, s.absent, s.leave,
       s.ot_hours.toFixed(1), s.working_days > 0 ? ((s.present / s.working_days) * 100).toFixed(1) + '%' : '0%',
     ])
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
@@ -886,7 +910,7 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #2A2A2A' }}>
-                  {['Name', 'Working Days', 'Present', 'Late', 'Absent', 'OT Hours', 'Compliance'].map(h => (
+                  {['Name', 'Working Days', 'Present', 'Late', 'Absent', 'Leave', 'OT Hours', 'Compliance'].map(h => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: '#666', fontWeight: 500, fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -897,18 +921,25 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
                   return (
                     <tr key={s.staff_id} style={{ borderBottom: '1px solid #1E1E1E' }}>
                       <td style={{ padding: '10px 14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                          onClick={() => setDetailStaff({ id: s.staff_id, name: s.full_name })}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                        >
                           <Avatar name={s.full_name} />
                           <div>
-                            <p style={{ fontSize: 13, color: '#F0F0F0', margin: 0 }}>{s.full_name}</p>
+                            <p style={{ fontSize: 13, color: '#F0F0F0', margin: 0, textDecoration: 'underline', textDecorationColor: 'transparent' }}
+                              onMouseEnter={e => { e.currentTarget.style.textDecorationColor = '#666' }}
+                              onMouseLeave={e => { e.currentTarget.style.textDecorationColor = 'transparent' }}
+                            >{s.full_name}</p>
                             <p style={{ fontSize: 11, color: '#666', margin: 0 }}>{s.position ?? ''}</p>
                           </div>
-                        </div>
+                        </button>
                       </td>
                       <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12 }}>{s.working_days}</td>
                       <td style={{ padding: '10px 14px', color: '#22C55E', fontWeight: 600 }}>{s.present}</td>
                       <td style={{ padding: '10px 14px', color: '#F59E0B', fontWeight: 600 }}>{s.late}</td>
                       <td style={{ padding: '10px 14px', color: '#EF4444', fontWeight: 600 }}>{s.absent}</td>
+                      <td style={{ padding: '10px 14px', color: '#3B82F6', fontWeight: 600 }}>{s.leave}</td>
                       <td style={{ padding: '10px 14px', color: '#F15A22', fontWeight: 600 }}>{s.ot_hours.toFixed(1)}h</td>
                       <td style={{ padding: '10px 14px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -933,6 +964,23 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
           </div>
         )}
       </div>
+
+      {detailStaff && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={(e) => e.target === e.currentTarget && setDetailStaff(null)}
+        >
+          <div style={{ backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 12, width: '100%', maxWidth: 720, maxHeight: '85vh', overflowY: 'auto', padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Avatar name={detailStaff.name} />
+                <p style={{ color: '#F0F0F0', fontWeight: 700, fontSize: 15, margin: 0 }}>{detailStaff.name}</p>
+              </div>
+              <button onClick={() => setDetailStaff(null)} style={{ background: 'none', border: 'none', color: '#A0A0A0', cursor: 'pointer' }}><X size={16} /></button>
+            </div>
+            <MyAttendanceTab staffId={detailStaff.id} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
