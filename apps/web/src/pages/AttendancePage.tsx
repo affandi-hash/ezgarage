@@ -989,6 +989,7 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
 
 function MyAttendanceTab({ staffId }: { staffId: string }) {
   const [records, setRecords]   = useState<AttendanceRecord[]>([])
+  const [totalLeave, setTotalLeave] = useState(0)
   const [loading, setLoading]   = useState(true)
   const [month, setMonth]       = useState(() => new Date().toLocaleDateString('en-CA').slice(0, 7)) // YYYY-MM
 
@@ -1004,6 +1005,25 @@ function MyAttendanceTab({ staffId }: { staffId: string }) {
       .gte('date', from).lte('date', to)
       .order('date', { ascending: false })
       .then(({ data }) => { setRecords(data ?? []); setLoading(false) })
+
+    // Same overlap-clamping as MonthlyReportTab -- a leave spanning a month
+    // boundary must only count the days actually inside this month.
+    supabase.from('leave_requests')
+      .select('date_from, date_to')
+      .eq('staff_id', staffId)
+      .eq('status', 'approved')
+      .lte('date_from', to)
+      .gte('date_to', from)
+      .then(({ data }) => {
+        const monthStartMs = new Date(from).getTime()
+        const monthEndMs = new Date(to).getTime()
+        const days = (data ?? []).reduce((s, l) => {
+          const start = Math.max(new Date(l.date_from).getTime(), monthStartMs)
+          const end = Math.min(new Date(l.date_to).getTime(), monthEndMs)
+          return s + Math.max(0, Math.round((end - start) / 86400000) + 1)
+        }, 0)
+        setTotalLeave(days)
+      })
   }, [staffId, month])
 
   const totalPresent = records.filter(r => r.status === 'present' || r.status === 'late').length
@@ -1020,11 +1040,12 @@ function MyAttendanceTab({ staffId }: { staffId: string }) {
       </div>
 
       {/* Summary row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10 }}>
         {[
           { label: 'Present', value: totalPresent, color: '#22C55E' },
           { label: 'Late',    value: totalLate,    color: '#F59E0B' },
           { label: 'Absent',  value: totalAbsent,  color: '#EF4444' },
+          { label: 'Leave',   value: totalLeave,   color: '#3B82F6' },
           { label: 'OT hrs',  value: totalOT.toFixed(1), color: '#F15A22' },
         ].map(s => (
           <div key={s.label} style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 10, padding: '12px 16px', textAlign: 'center' }}>
