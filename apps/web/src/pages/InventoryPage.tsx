@@ -54,6 +54,7 @@ interface StockPurchaseForm {
   quantity: string
   unit_price: string
   markup: string
+  selling_price: string
   supplier: string
   supplier_id: string
   catalogue_part_id: string
@@ -80,6 +81,7 @@ const EMPTY_STOCK_FORM: StockPurchaseForm = {
   quantity: '',
   unit_price: '',
   markup: '1.5',
+  selling_price: '',
   supplier: '',
   supplier_id: '',
   catalogue_part_id: '',
@@ -157,6 +159,7 @@ const STATUS_BG: Record<PartRequest['status'], string> = {
 
 const inputStyle: React.CSSProperties = { background: '#0E0E0E', border: '1px solid #2A2A2A', color: '#F0F0F0', borderRadius: 8, padding: '8px 12px', fontSize: 14, width: '100%', outline: 'none' }
 const labelStyle: React.CSSProperties = { color: '#A0A0A0', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }
+const roundBtnStyle: React.CSSProperties = { background: '#0E0E0E', border: '1px solid #2A2A2A', color: '#F0F0F0', borderRadius: 8, width: 34, fontSize: 15, cursor: 'pointer', flexShrink: 0 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -322,27 +325,40 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={labelStyle}>Cost Price (RM)</label>
-                <input type="number" min="0" step="0.01" value={form.unit_price} onChange={e => set('unit_price', e.target.value)} placeholder="0.00" style={inputStyle} />
+                <input type="number" min="0" step="0.01" value={form.unit_price} onChange={e => {
+                  const cost = e.target.value
+                  const sell = form.markup && Number(form.markup) >= 1 && Number(cost) > 0 ? String(parseFloat((Number(cost) * Number(form.markup)).toFixed(2))) : form.selling_price
+                  setForm(f => ({ ...f, unit_price: cost, selling_price: sell }))
+                }} placeholder="0.00" style={inputStyle} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={labelStyle}>Markup ×</label>
-                <input type="number" min="1" step="0.05" value={form.markup} onChange={e => set('markup', e.target.value)} placeholder="1.5" style={inputStyle} />
+                <input type="number" min="1" step="0.05" value={form.markup} onChange={e => {
+                  const markup = e.target.value
+                  const sell = Number(markup) >= 1 && Number(form.unit_price) > 0 ? String(parseFloat((Number(form.unit_price) * Number(markup)).toFixed(2))) : form.selling_price
+                  setForm(f => ({ ...f, markup, selling_price: sell }))
+                }} placeholder="1.5" style={inputStyle} />
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={labelStyle}>Selling Price (RM)</label>
-                <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', borderRadius: 8, cursor: 'default' }}>
-                  {form.unit_price && form.markup && Number(form.unit_price) > 0 && Number(form.markup) >= 1 ? (
-                    <span style={{ color: '#22C55E', fontWeight: 700, fontSize: 15 }}>RM {(Number(form.unit_price) * Number(form.markup)).toFixed(2)}</span>
-                  ) : <span style={{ color: '#4A4A4A', fontSize: 13 }}>—</span>}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input type="number" min="0" step="0.01" value={form.selling_price} onChange={e => set('selling_price', e.target.value)} placeholder="0.00"
+                    style={{ ...inputStyle, flex: 1, color: form.selling_price && Number(form.selling_price) > 0 ? '#22C55E' : '#F0F0F0', fontWeight: form.selling_price && Number(form.selling_price) > 0 ? 700 : 400 }} />
+                  <button type="button" title="Round down to nearest RM"
+                    onClick={() => set('selling_price', form.selling_price ? String(Math.floor(Number(form.selling_price))) : form.selling_price)}
+                    disabled={!form.selling_price} style={{ ...roundBtnStyle, opacity: form.selling_price ? 1 : 0.4 }}>↓</button>
+                  <button type="button" title="Round up to nearest RM"
+                    onClick={() => set('selling_price', form.selling_price ? String(Math.ceil(Number(form.selling_price))) : form.selling_price)}
+                    disabled={!form.selling_price} style={{ ...roundBtnStyle, opacity: form.selling_price ? 1 : 0.4 }}>↑</button>
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={labelStyle}>Profit Margin %</label>
                 <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', borderRadius: 8, cursor: 'default' }}>
-                  {form.unit_price && form.markup && Number(form.unit_price) > 0 && Number(form.markup) >= 1 ? (
-                    <span style={{ color: '#22C55E', fontWeight: 700, fontSize: 15 }}>{((Number(form.markup) - 1) / Number(form.markup) * 100).toFixed(1)}%</span>
+                  {form.selling_price && form.unit_price && Number(form.selling_price) > 0 && Number(form.unit_price) > 0 ? (
+                    <span style={{ color: '#22C55E', fontWeight: 700, fontSize: 15 }}>{((Number(form.selling_price) - Number(form.unit_price)) / Number(form.selling_price) * 100).toFixed(1)}%</span>
                   ) : <span style={{ color: '#4A4A4A', fontSize: 13 }}>—</span>}
                 </div>
               </div>
@@ -1053,7 +1069,12 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
       }
       if (form.part_number.trim()) payload.part_number = form.part_number.trim()
       if (form.supplier.trim()) payload.supplier = form.supplier.trim()
-      if (form.unit_price) {
+      // Selling Price is directly editable (and round-able) now -- it's no
+      // longer purely cost*markup, so submit whatever the field actually
+      // shows rather than recomputing it from scratch.
+      if (form.selling_price && Number(form.selling_price) > 0) {
+        payload.selling_price = parseFloat(Number(form.selling_price).toFixed(2))
+      } else if (form.unit_price) {
         const cost = Number(form.unit_price)
         const markup = Number(form.markup)
         if (markup >= 1) payload.selling_price = parseFloat((cost * markup).toFixed(2))
