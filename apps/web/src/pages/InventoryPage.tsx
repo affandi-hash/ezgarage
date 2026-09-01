@@ -333,7 +333,12 @@ function NewStockPurchaseModal({ onClose, onSubmit, loading, tenantId }: NewStoc
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={labelStyle}>Markup ×</label>
-                <input type="number" min="1" step="0.05" value={form.markup} onChange={e => {
+                {/* step="any" -- a fixed step (0.05) rejected valid values
+                    like 2.28 with a native browser validation error that
+                    blocked this real <form onSubmit> from submitting at
+                    all, even though nothing here actually requires a
+                    0.05-increment markup. */}
+                <input type="number" min="1" step="any" value={form.markup} onChange={e => {
                   const markup = e.target.value
                   const sell = Number(markup) >= 1 && Number(form.unit_price) > 0 ? String(parseFloat((Number(form.unit_price) * Number(markup)).toFixed(2))) : form.selling_price
                   setForm(f => ({ ...f, markup, selling_price: sell }))
@@ -853,7 +858,7 @@ function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: stri
                   const sell = form.markup && Number(form.markup) >= 1 && Number(cost) > 0 ? String(parseFloat((Number(cost) * Number(form.markup)).toFixed(2))) : form.selling_price
                   setForm(f => ({ ...f, cost_price: cost, selling_price: sell }))
                 }} placeholder="0.00" style={inputStyle} /></div>
-                <div><label style={labelStyle}>Markup ×</label><input type="number" min="1" step="0.05" value={form.markup} onChange={e => {
+                <div><label style={labelStyle}>Markup ×</label><input type="number" min="1" step="any" value={form.markup} onChange={e => {
                   const markup = e.target.value
                   const sell = Number(markup) >= 1 && Number(form.cost_price) > 0 ? String(parseFloat((Number(form.cost_price) * Number(markup)).toFixed(2))) : form.selling_price
                   setForm(f => ({ ...f, markup, selling_price: sell }))
