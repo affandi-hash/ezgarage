@@ -1446,22 +1446,13 @@ export function FinancePage() {
 
       const rows = (data as SupplierInvoice[]) ?? []
 
-      // Batch update overdue invoices
-      const overdueIds = rows
-        .filter((inv) => inv.due_date && inv.due_date < today() && ['unpaid', 'partial'].includes(inv.status))
-        .map((inv) => inv.id)
-
-      if (overdueIds.length > 0) {
-        await supabase
-          .from('supplier_invoices')
-          .update({ status: 'overdue', updated_at: new Date().toISOString() })
-          .in('id', overdueIds)
-
-        rows.forEach((inv) => {
-          if (overdueIds.includes(inv.id)) inv.status = 'overdue'
-        })
-      }
-
+      // "Overdue" is derived (past due date + not paid/voided), never
+      // written back to status -- it used to overwrite status straight to
+      // 'overdue' here, permanently destroying whether an invoice had been
+      // untouched ('unpaid') or already part-paid ('partial'). isOverdue()
+      // and the summary tiles already compute overdueness this same way;
+      // the Overdue tab filter below now matches that instead of a stored
+      // value that can never coexist with the real payment state.
       setInvoices(rows)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load invoices')
@@ -1519,7 +1510,15 @@ export function FinancePage() {
   const filtered = invoices
     .filter((inv) => {
       if (supplierFilter !== 'all' && inv.supplier_id !== supplierFilter) return false
-      if (statusFilter !== 'all' && inv.status !== statusFilter) return false
+      if (statusFilter === 'overdue') {
+        // Derived, same condition as summaryOverdue above -- 'overdue' is
+        // never a stored status, so it can overlap with 'unpaid'/'partial'
+        // rather than being a fourth mutually-exclusive bucket.
+        const isOverdueRow = !!inv.due_date && inv.due_date < todayStr && !['paid', 'voided'].includes(inv.status)
+        if (!isOverdueRow) return false
+      } else if (statusFilter !== 'all' && inv.status !== statusFilter) {
+        return false
+      }
       if (dateFrom && inv.invoice_date && inv.invoice_date < dateFrom) return false
       if (dateTo && inv.invoice_date && inv.invoice_date > dateTo) return false
       return true
