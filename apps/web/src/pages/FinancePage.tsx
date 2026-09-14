@@ -63,7 +63,7 @@ interface SupplierPayment {
   created_at: string
 }
 
-type StatusFilter = 'all' | 'unpaid' | 'partial' | 'paid' | 'overdue' | 'voided'
+type StatusFilter = 'all' | 'outstanding' | 'unpaid' | 'partial' | 'paid' | 'overdue' | 'voided'
 
 interface NewInvoiceForm {
   supplier_id: string
@@ -1516,6 +1516,11 @@ export function FinancePage() {
         // rather than being a fourth mutually-exclusive bucket.
         const isOverdueRow = !!inv.due_date && inv.due_date < todayStr && !['paid', 'voided'].includes(inv.status)
         if (!isOverdueRow) return false
+      } else if (statusFilter === 'outstanding') {
+        // Unpaid + Partial together, same condition as summaryOutstanding
+        // above -- "everything still owing" regardless of due date, unlike
+        // Overdue which only catches the ones already past it.
+        if (['paid', 'voided'].includes(inv.status)) return false
       } else if (statusFilter !== 'all' && inv.status !== statusFilter) {
         return false
       }
@@ -1595,6 +1600,7 @@ export function FinancePage() {
 
   const STATUS_TABS: { key: StatusFilter; label: string }[] = [
     { key: 'all', label: 'All' },
+    { key: 'outstanding', label: 'Outstanding' },
     { key: 'unpaid', label: 'Unpaid' },
     { key: 'partial', label: 'Partial' },
     { key: 'paid', label: 'Paid' },
