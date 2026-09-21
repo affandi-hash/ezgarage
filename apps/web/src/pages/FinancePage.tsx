@@ -142,6 +142,101 @@ const PRIORITY_LABEL: Record<SupplierInvoice['payment_priority'], string> = {
   low: 'Low',
 }
 
+const STATUS_TAB_LABEL: Record<StatusFilter, string> = {
+  all: 'All',
+  outstanding: 'Outstanding',
+  unpaid: 'Unpaid',
+  partial: 'Partial',
+  paid: 'Paid',
+  overdue: 'Overdue',
+  voided: 'Voided',
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+}
+
+// Same "print an HTML tab, let the browser Save as PDF" pattern already used
+// for individual supplier/customer invoices elsewhere in the app -- no new
+// PDF library needed for what's really just a formatted snapshot of the
+// current filtered table.
+function openPrintTab(html: string) {
+  const blob = new Blob([html], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
+}
+
+function buildAccountsPayableReportHtml(
+  rows: SupplierInvoice[],
+  opts: { statusFilter: StatusFilter; supplierName: string; dateFrom: string; dateTo: string; total: number }
+): string {
+  const filterParts = [
+    `Status: ${STATUS_TAB_LABEL[opts.statusFilter]}`,
+    `Supplier: ${escapeHtml(opts.supplierName)}`,
+  ]
+  if (opts.dateFrom || opts.dateTo) {
+    filterParts.push(`Invoice date: ${opts.dateFrom ? formatDate(opts.dateFrom) : 'any'} – ${opts.dateTo ? formatDate(opts.dateTo) : 'any'}`)
+  }
+
+  const bodyRows = rows.map((inv) => {
+    const bal = inv.total_amount - inv.amount_paid
+    return `
+      <tr>
+        <td>${PRIORITY_LABEL[inv.payment_priority]}</td>
+        <td>${escapeHtml(inv.suppliers?.name ?? '—')}</td>
+        <td>${escapeHtml(inv.invoice_number ?? '—')}</td>
+        <td>${formatDate(inv.invoice_date)}</td>
+        <td>${formatDate(inv.due_date)}</td>
+        <td class="num">${formatRM(inv.total_amount)}</td>
+        <td class="num">${formatRM(inv.amount_paid)}</td>
+        <td class="num" style="font-weight:700">${formatRM(bal)}</td>
+        <td>${escapeHtml(inv.status)}</td>
+      </tr>`
+  }).join('')
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Accounts Payable Report</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; padding: 32px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .filters { font-size: 12px; color: #555; margin-bottom: 4px; }
+  .generated { font-size: 11px; color: #888; margin-bottom: 20px; }
+  .total { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border-bottom: 1px solid #ddd; padding: 8px 10px; text-align: left; white-space: nowrap; }
+  th { background: #f2f2f2; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+  td.num, th.num { text-align: right; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+  <h1>Motoverse Garage — Accounts Payable Report</h1>
+  <div class="filters">${filterParts.join(' &nbsp;·&nbsp; ')}</div>
+  <div class="generated">Generated ${new Date().toLocaleString('en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+  <div class="total">Total (${rows.length} ${rows.length === 1 ? 'invoice' : 'invoices'}): ${formatRM(opts.total)}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Priority</th><th>Supplier</th><th>Inv #</th><th>Invoice Date</th><th>Due Date</th>
+        <th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>${bodyRows || '<tr><td colspan="9" style="text-align:center;color:#888;padding:24px">No invoices match this filter</td></tr>'}</tbody>
+  </table>
+</body>
+</html>`
+}
+
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr)
   d.setDate(d.getDate() + days)
@@ -1805,11 +1900,29 @@ export function FinancePage() {
           </div>
 
           {filtered.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 12 }}>
-              <span style={{ fontSize: 12, color: '#A0A0A0' }}>
-                Total ({filtered.length} {filtered.length === 1 ? 'invoice' : 'invoices'}):
-              </span>
-              <span style={{ fontSize: 18, fontWeight: 700, color: '#F0F0F0' }}>{formatRM(filteredTotal)}</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 12, color: '#A0A0A0' }}>
+                  Total ({filtered.length} {filtered.length === 1 ? 'invoice' : 'invoices'}):
+                </span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: '#F0F0F0' }}>{formatRM(filteredTotal)}</span>
+              </div>
+              <button
+                onClick={() => openPrintTab(buildAccountsPayableReportHtml(filtered, {
+                  statusFilter,
+                  supplierName: supplierFilter === 'all' ? 'All Suppliers' : (suppliers.find((s) => s.id === supplierFilter)?.name ?? 'All Suppliers'),
+                  dateFrom,
+                  dateTo,
+                  total: filteredTotal,
+                }))}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: '#2A2A2A', color: '#F0F0F0', border: 'none',
+                  borderRadius: 8, fontSize: 13, cursor: 'pointer', padding: '8px 14px',
+                }}
+              >
+                Export PDF
+              </button>
             </div>
           )}
         </div>
