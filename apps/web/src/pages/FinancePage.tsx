@@ -223,7 +223,7 @@ function buildAccountsPayableReportHtml(
   <h1>Motoverse Garage — Accounts Payable Report</h1>
   <div class="filters">${filterParts.join(' &nbsp;·&nbsp; ')}</div>
   <div class="generated">Generated ${new Date().toLocaleString('en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-  <div class="total">Total (${rows.length} ${rows.length === 1 ? 'invoice' : 'invoices'}): ${formatRM(opts.total)}</div>
+  <div class="total">Total Balance (${rows.length} ${rows.length === 1 ? 'invoice' : 'invoices'}): ${formatRM(opts.total)}</div>
   <table>
     <thead>
       <tr>
@@ -1636,11 +1636,12 @@ export function FinancePage() {
       return b.created_at.localeCompare(a.created_at)
     })
 
-  // Sum of the Total column exactly as shown in the table, for whatever the
-  // user currently has filtered (status tab + supplier + date range) -- not
-  // outstanding balance, which is a separate figure shown in the summary
-  // tiles above.
-  const filteredTotal = filtered.reduce((sum, inv) => sum + inv.total_amount, 0)
+  // Sum of the Balance column, not the Total column -- an invoice with a
+  // partial payment already made (e.g. RM2,140 total, RM1,800 paid) should
+  // only count its remaining RM340 here, or this figure overstates what's
+  // actually still owed for whatever the user currently has filtered
+  // (status tab + supplier + date range).
+  const filteredTotal = filtered.reduce((sum, inv) => sum + (inv.total_amount - inv.amount_paid), 0)
 
   async function handlePriorityChange(inv: SupplierInvoice, priority: SupplierInvoice['payment_priority']) {
     setInvoices((prev) => prev.map((i) => (i.id === inv.id ? { ...i, payment_priority: priority } : i)))
@@ -1903,7 +1904,7 @@ export function FinancePage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                 <span style={{ fontSize: 12, color: '#A0A0A0' }}>
-                  Total ({filtered.length} {filtered.length === 1 ? 'invoice' : 'invoices'}):
+                  Total Balance ({filtered.length} {filtered.length === 1 ? 'invoice' : 'invoices'}):
                 </span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: '#F0F0F0' }}>{formatRM(filteredTotal)}</span>
               </div>
