@@ -26,12 +26,15 @@ const BOOKING_STATUS_CONFIG: Record<
   no_show:    { label: 'No Show',     bg: 'rgba(239,68,68,0.2)',   text: '#FCA5A5' },
 }
 
+// No 'completed' tab here -- nothing in the app (frontend, migrations,
+// or edge functions) ever sets a booking's status to 'completed', so it
+// was a permanently-empty, misleading filter. The STATUS_BADGE_COLORS
+// entry above stays in case a booking ever does end up in that status.
 const STATUS_TABS: { key: string; label: string }[] = [
   { key: 'all',       label: 'All' },
   { key: 'pending',   label: 'Tentative' },
   { key: 'confirmed', label: 'Confirmed' },
   { key: 'arrived',   label: 'Checked In' },
-  { key: 'completed', label: 'Completed' },
   { key: 'cancelled', label: 'Cancelled' },
   { key: 'no_show',   label: 'No Show' },
 ]
