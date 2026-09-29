@@ -664,7 +664,8 @@ export function BusinessProfilePage() {
                   </div>
                   {(g.target_value != null || g.current_value != null) && (
                     <p style={{ fontSize: 12, color: '#A0A0A0', margin: 0 }}>
-                      {g.metric ?? 'Progress'}: {g.current_value ?? '?'} → {g.target_value ?? '?'}
+                      {g.metric ?? 'Progress'}: {g.current_value ?? 'not tracked yet'}
+                      {g.target_value != null ? ` → ${g.target_value}` : ' (no target set yet)'}
                     </p>
                   )}
                   {g.deadline && <p style={{ fontSize: 12, color: '#6A6A6A', margin: 0 }}>By {g.deadline}</p>}
