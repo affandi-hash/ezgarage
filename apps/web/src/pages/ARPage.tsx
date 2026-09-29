@@ -119,11 +119,17 @@ function openPrintTab(html: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60000)
 }
 
+const FLEET_FILTER_LABEL: Record<string, string> = {
+  '': 'All Vehicles',
+  internal: 'Internal Fleet Only',
+  external: 'Non-Internal Only',
+}
+
 function buildARReportHtml(
   rows: (ARInvoice & { _status: string })[],
-  opts: { statusFilter: string; search: string; overdue: number; dueThisWeek: number; totalOutstanding: number; aging: Record<string, number> }
+  opts: { statusFilter: string; fleetFilter: string; search: string; overdue: number; dueThisWeek: number; totalOutstanding: number; aging: Record<string, number> }
 ): string {
-  const filterParts = [`Status: ${STATUS_FILTER_LABEL[opts.statusFilter] ?? 'All'}`]
+  const filterParts = [`Status: ${STATUS_FILTER_LABEL[opts.statusFilter] ?? 'All'}`, `Vehicles: ${FLEET_FILTER_LABEL[opts.fleetFilter] ?? 'All'}`]
   if (opts.search) filterParts.push(`Search: "${escapeHtml(opts.search)}"`)
 
   const bodyRows = rows.map((inv) => `
@@ -500,6 +506,7 @@ export function ARPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [filterFleet, setFilterFleet] = useState('')
   const [selected, setSelected] = useState<ARInvoice | null>(null)
 
   const load = useCallback(async () => {
@@ -548,7 +555,8 @@ export function ARPage() {
   const filtered = withStatus.filter(inv => {
     const matchSearch = !search || inv.customer_name.toLowerCase().includes(search.toLowerCase()) || inv.invoice_number.toLowerCase().includes(search.toLowerCase())
     const matchStatus = !filterStatus || inv._status === filterStatus
-    return matchSearch && matchStatus
+    const matchFleet = !filterFleet || (filterFleet === 'internal' ? !!inv.is_internal_fleet : !inv.is_internal_fleet)
+    return matchSearch && matchStatus && matchFleet
   })
 
   // Totals for whatever is currently filtered, so the exported PDF matches what's on screen.
@@ -610,9 +618,15 @@ export function ARPage() {
           <option value="partial">Partial</option>
           <option value="overdue">Overdue</option>
         </select>
+        <select value={filterFleet} onChange={e => setFilterFleet(e.target.value)} style={{ ...inputStyle, minWidth: 150 }}>
+          <option value="">All Vehicles</option>
+          <option value="internal">Internal Fleet Only</option>
+          <option value="external">Non-Internal Only</option>
+        </select>
         <button
           onClick={() => openPrintTab(buildARReportHtml(filtered, {
             statusFilter: filterStatus,
+            fleetFilter: filterFleet,
             search,
             overdue: filteredOverdue,
             dueThisWeek: filteredDueThisWeek,
@@ -628,7 +642,7 @@ export function ARPage() {
       {/* Filtered Total */}
       {!loading && (
         <div style={{ color: '#F0F0F0', fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
-          {search || filterStatus ? 'Selected' : 'Total'} Balance ({filtered.length} {filtered.length === 1 ? 'invoice' : 'invoices'}): {fmtAmt(filteredTotalOutstanding)}
+          {search || filterStatus || filterFleet ? 'Selected' : 'Total'} Balance ({filtered.length} {filtered.length === 1 ? 'invoice' : 'invoices'}): {fmtAmt(filteredTotalOutstanding)}
         </div>
       )}
 
