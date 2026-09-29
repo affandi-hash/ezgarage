@@ -467,8 +467,17 @@ export function ReportsPage() {
 
       // COGS = Total Parts + Total Labour
       const cogs = totalParts + totalLabour
-      const grossProfit = revenue - cogs
-      const grossProfitPct = revenue > 0 ? ((revenue - cogs) / revenue) * 100 : 0
+      // Gross Profit is computed against revenueAll (every real invoice --
+      // sent, overdue & paid), matching COGS's own scope just above and
+      // the "all revenue" definition now used everywhere else on this page
+      // (Daily Sales, Job List, Monthly Revenue). Subtracting COGS from
+      // paid-only "revenue" instead produced a nonsensical negative Gross
+      // Profit whenever unpaid invoices carried real cost -- e.g.
+      // RM19,087.25 paid minus RM26,465.69 COGS (which already included
+      // unpaid jobs' costs) read as -RM7,378.44 even though the shop's
+      // actual invoiced margin for the month was a healthy +RM14,232.56.
+      const grossProfit = revenueAll - cogs
+      const grossProfitPct = revenueAll > 0 ? ((revenueAll - cogs) / revenueAll) * 100 : 0
       const avgSpendPerTx = paidJobCount > 0 ? revenue / paidJobCount : 0
 
       const topJobType = Object.entries(svcMap).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—'
