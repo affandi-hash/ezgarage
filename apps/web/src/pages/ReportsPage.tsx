@@ -189,7 +189,7 @@ function buildDailySalesReportHtml(
 
 function buildJobListReportHtml(
   rows: { invoice_number: string; job_number: string | null; customer_name: string; vehicle_plate: string; issue_date: string; total_amount: number; status: string }[],
-  opts: { start: string; end: string; total: number }
+  opts: { start: string; end: string; total: number; paidTotal: number; unpaidTotal: number }
 ): string {
   const bodyRows = rows.map((r) => `
       <tr>
@@ -212,7 +212,8 @@ function buildJobListReportHtml(
   h1 { font-size: 18px; margin: 0 0 4px; }
   .filters { font-size: 12px; color: #555; margin-bottom: 4px; }
   .generated { font-size: 11px; color: #888; margin-bottom: 20px; }
-  .total { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+  .total { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .total-split { font-size: 12px; color: #555; font-weight: 400; margin-bottom: 16px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td { border-bottom: 1px solid #ddd; padding: 8px 10px; text-align: left; white-space: nowrap; }
   th { background: #f2f2f2; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
@@ -225,6 +226,7 @@ function buildJobListReportHtml(
   <div class="filters">Period: ${formatDateShort(opts.start)} – ${formatDateShort(opts.end)}</div>
   <div class="generated">Generated ${new Date().toLocaleString('en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
   <div class="total">Total (${rows.length} ${rows.length === 1 ? 'job' : 'jobs'}): ${formatRM(opts.total)}</div>
+  <div class="total-split">Paid ${formatRM(opts.paidTotal)} &nbsp;·&nbsp; Unpaid/Sent ${formatRM(opts.unpaidTotal)}</div>
   <table>
     <thead>
       <tr>
@@ -1064,10 +1066,15 @@ export function ReportsPage() {
 
                 return (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-                      <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: 0 }}>
-                        Daily Sales ({formatDateShort(bounds.start)} – {formatDateShort(bounds.end)})
-                      </h3>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+                      <div>
+                        <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: 0 }}>
+                          Daily Sales ({formatDateShort(bounds.start)} – {formatDateShort(bounds.end)})
+                        </h3>
+                        <p style={{ fontSize: 12, color: TEXT_SECONDARY, margin: '4px 0 0' }}>
+                          Paid invoices only — actual cash collected. Job List below includes unpaid invoices too, so its total will be higher.
+                        </p>
+                      </div>
                       <button
                         onClick={() => openPrintTab(buildDailySalesReportHtml(dailySales, {
                           start: bounds.start,
@@ -1128,10 +1135,15 @@ export function ReportsPage() {
             </div>
 
             <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: 0 }}>
-                  Job List ({formatDateShort(bounds.start)} – {formatDateShort(bounds.end)})
-                </h3>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: 0 }}>
+                    Job List ({formatDateShort(bounds.start)} – {formatDateShort(bounds.end)})
+                  </h3>
+                  <p style={{ fontSize: 12, color: TEXT_SECONDARY, margin: '4px 0 0' }}>
+                    Every invoiced job in this period, paid or not — see the Status column and the paid/unpaid split in the total row below.
+                  </p>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <input
@@ -1153,6 +1165,8 @@ export function ReportsPage() {
                       start: bounds.start,
                       end: bounds.end,
                       total: jobList.reduce((s, j) => s + j.total_amount, 0),
+                      paidTotal: jobList.filter((j) => j.status === 'paid').reduce((s, j) => s + j.total_amount, 0),
+                      unpaidTotal: jobList.filter((j) => j.status !== 'paid').reduce((s, j) => s + j.total_amount, 0),
                     }))}
                     style={{ display: 'flex', alignItems: 'center', gap: 6, background: BORDER, color: TEXT_PRIMARY, border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', padding: '8px 14px' }}
                   >
@@ -1194,15 +1208,24 @@ export function ReportsPage() {
                       ))}
                     </tbody>
                     <tfoot>
-                      <tr style={{ borderTop: `2px solid ${TEXT_SECONDARY}` }}>
-                        <td colSpan={5} style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700 }}>
-                          Total ({jobList.length} {jobList.length === 1 ? 'job' : 'jobs'})
-                        </td>
-                        <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                          {formatRM(jobList.reduce((s, j) => s + j.total_amount, 0))}
-                        </td>
-                        <td />
-                      </tr>
+                      {(() => {
+                        const paidTotal = jobList.filter((j) => j.status === 'paid').reduce((s, j) => s + j.total_amount, 0)
+                        const unpaidTotal = jobList.filter((j) => j.status !== 'paid').reduce((s, j) => s + j.total_amount, 0)
+                        return (
+                          <tr style={{ borderTop: `2px solid ${TEXT_SECONDARY}` }}>
+                            <td colSpan={5} style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700 }}>
+                              Total ({jobList.length} {jobList.length === 1 ? 'job' : 'jobs'})
+                              <span style={{ display: 'block', fontSize: 11, color: TEXT_SECONDARY, fontWeight: 400, marginTop: 2 }}>
+                                Paid {formatRM(paidTotal)} · Unpaid/Sent {formatRM(unpaidTotal)}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                              {formatRM(jobList.reduce((s, j) => s + j.total_amount, 0))}
+                            </td>
+                            <td />
+                          </tr>
+                        )
+                      })()}
                     </tfoot>
                   </table>
                 </div>
