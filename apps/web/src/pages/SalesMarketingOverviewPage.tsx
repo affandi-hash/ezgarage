@@ -557,10 +557,11 @@ async function loadPeriodCore(tenantId: string, branchFilter: string | null, bou
 
   const [{ data: invRows }, { count: custCount }, { data: bookRows }] = await Promise.all([invQ, custQ, bookQ])
 
-  let revenue = 0, totalParts = 0, totalLabour = 0, paidJobCount = 0
+  let revenue = 0, revenueAll = 0, totalParts = 0, totalLabour = 0, paidJobCount = 0
   const dayRevenue = new Map<string, number>()
   ;(invRows ?? []).forEach((inv: { line_items?: { item_type: string; qty?: number; cost_price?: number; amount?: number; unit_price?: number }[]; status: string; total_amount?: number; subtotal?: number; issue_date: string }) => {
     const invTotal = inv.total_amount ?? inv.subtotal ?? 0
+    revenueAll += invTotal
     if (inv.status === 'paid') {
       revenue += invTotal
       paidJobCount++
@@ -572,7 +573,14 @@ async function loadPeriodCore(tenantId: string, branchFilter: string | null, bou
       else if (li.item_type === 'labour') totalLabour += li.amount ?? qty * (li.unit_price ?? 0)
     })
   })
-  const grossProfit = revenue - (totalParts + totalLabour)
+  // COGS is accumulated over every real invoice (sent, overdue & paid) --
+  // cost is incurred at time of invoicing regardless of whether the
+  // customer has paid yet. Gross Profit must be measured against that same
+  // all-invoiced revenue, not paid-only "revenue" -- subtracting all-
+  // invoiced COGS from paid-only revenue produced a nonsensical negative
+  // Gross Profit whenever unpaid invoices carried real cost (the same
+  // scope-mismatch bug already fixed on the Reports page's Overview tab).
+  const grossProfit = revenueAll - (totalParts + totalLabour)
   const avgTrans = paidJobCount > 0 ? revenue / paidJobCount : 0
 
   const bookings = bookRows ?? []
