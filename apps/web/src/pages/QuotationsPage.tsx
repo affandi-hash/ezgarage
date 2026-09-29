@@ -754,21 +754,19 @@ export function QuotationsPage() {
     // caught while re-verifying the fix elsewhere on this page.
     if (!branchId) { toast.error('Select a specific branch (not "All Branches") before converting to a booking'); return }
     if (!tenantId) return
-    const today = new Date().toISOString().split('T')[0]
-    const { data: b, error } = await supabase.from('bookings').insert({
-      tenant_id: tenantId, branch_id: branchId,
-      customer_name: q.customer_name, customer_phone: q.customer_phone,
-      customer_email: q.customer_email,
-      vehicle_plate: q.vehicle_plate,
-      service_type: 'Workshop Service',
-      booking_date: today,
-      booking_time: '09:00:00',
-      arrival_mode: 'drop_off', status: 'confirmed', source: 'staff',
-      notes: `Converted from quotation ${q.quote_number}`,
-    }).select('id, booking_number').single()
+    // convert_quotation_to_booking() creates the booking and marks the
+    // quote as converted in one atomic call -- this used to be an insert
+    // followed by a SEPARATE update, so a failure in between (or a
+    // duplicate click) could create a second, orphaned booking from the
+    // same quote with no way to detect it on refetch.
+    const { data, error } = await supabase.rpc('convert_quotation_to_booking', { p_quotation_id: q.id })
     if (error) { toast.error('Booking failed: ' + error.message); return }
-    await supabase.from('quotations').update({ converted_to_booking_id: b!.id, updated_at: new Date().toISOString() }).eq('id', q.id)
-    toast.success(`Booking ${b!.booking_number} created from ${q.quote_number}`)
+    if (data?.error) {
+      toast.error(data.error === 'already_converted' ? 'This quote has already been converted to a booking' : 'Booking failed')
+      fetchQuotes()
+      return
+    }
+    toast.success(`Booking ${data.booking_number} created from ${q.quote_number}`)
     fetchQuotes()
   }
 

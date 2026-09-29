@@ -803,28 +803,22 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
         vehicleId = data.id
       }
 
-      // Create job card
-      const { error: jobErr } = await supabase.from('jobs').insert({
-        branch_id: branchId,
-        tenant_id: tenantId,
-        customer_id: customerId,
-        vehicle_id:  vehicleId,
-        service_type:  booking.service_type ?? 'service',
-        arrival_mode:  booking.arrival_mode  ?? 'booked',
-        status:        'checked_in',
-        vehicle_type:  'car',
-        source:        booking.source ?? 'website',
-        customer_complaint: (booking as any).problem_description ?? null,
-        checked_in_at: new Date().toISOString(),
-        payment_status: 'unpaid',
-        // Link back to the source booking so it can never be converted a
-        // second time -- this was never set before, so nothing stopped a
-        // distracted click from creating a duplicate job for the same visit.
-        booking_id: booking.id,
+      // convert_booking_to_job() creates the job and marks the booking
+      // 'arrived' in one atomic call -- this used to be a jobs insert
+      // followed by a SEPARATE bookings update, so a failure in between
+      // left a booking stuck showing as not-yet-arrived even though a job
+      // already existed for it. The function also re-checks jobs.booking_id
+      // itself, so a duplicate click can't create a second job either.
+      const { data: convData, error: convErr } = await supabase.rpc('convert_booking_to_job', {
+        p_booking_id: booking.id,
+        p_customer_id: customerId,
+        p_vehicle_id: vehicleId,
       })
-      if (jobErr) throw jobErr
+      if (convErr) throw convErr
+      if (convData?.error) {
+        throw new Error(convData.error === 'already_converted' ? 'This booking has already been converted to a job' : 'Failed to create job card')
+      }
 
-      await supabase.from('bookings').update({ status: 'arrived' }).eq('id', booking.id)
       toast('Job card created successfully')
       onCreated()
     } catch (e: unknown) {
