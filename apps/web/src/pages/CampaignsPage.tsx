@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Megaphone, Trash2, Copy, Check, ChevronLeft } from 'lucide-react'
+import { Megaphone, Trash2, Copy, Check, ChevronLeft, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -79,7 +79,11 @@ export function CampaignsPage() {
 
   const selected = campaigns.find(c => c.id === selectedId) ?? null
 
-  if (loading) return <div style={{ padding: 24, color: '#6A6A6A', fontSize: 13 }}>Loading...</div>
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 24, color: '#6A6A6A', fontSize: 13 }}>
+      <Loader2 size={15} className="animate-spin" /> Loading...
+    </div>
+  )
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>

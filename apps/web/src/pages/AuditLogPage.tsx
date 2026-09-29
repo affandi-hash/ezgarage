@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useCallback, useRef } from 'react';
-import { Shield, Search, Clock, User, ChevronRight, RefreshCw, Download } from 'lucide-react';
+import { Shield, Search, Clock, User, ChevronRight, RefreshCw, Download, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 
@@ -591,8 +591,8 @@ export function AuditLogPage() {
 
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {loading && logs.length === 0 ? (
-              <div style={{ padding: 32, textAlign: 'center', color: colors.textSecondary, fontSize: 13 }}>
-                Loading...
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 32, color: colors.textSecondary, fontSize: 13 }}>
+                <Loader2 size={16} className="animate-spin" /> Loading...
               </div>
             ) : logs.length === 0 ? (
               <div style={{ padding: 32, textAlign: 'center', color: colors.textSecondary, fontSize: 13 }}>

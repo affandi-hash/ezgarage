@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Plus, X, Shield, Check, Ban, Save, Search, Mail, Phone, Eye, EyeOff, KeyRound, ChevronDown } from 'lucide-react';
+import { Users, Plus, X, Shield, Check, Ban, Save, Search, Mail, Phone, Eye, EyeOff, KeyRound, ChevronDown, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { logAudit } from '@/lib/audit';
@@ -792,7 +792,9 @@ export function UsersPage() {
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {loading ? (
-            <div style={{ padding: 24, textAlign: 'center', color: '#A0A0A0', fontSize: 13 }}>Loading...</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24, color: '#A0A0A0', fontSize: 13 }}>
+              <Loader2 size={16} className="animate-spin" /> Loading...
+            </div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: 24, textAlign: 'center', color: '#A0A0A0', fontSize: 13 }}>No users found.</div>
           ) : (

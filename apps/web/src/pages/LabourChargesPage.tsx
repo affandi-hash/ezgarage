@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { Plus, X, Wrench, Edit2, Eye, EyeOff } from 'lucide-react'
+import { Plus, X, Wrench, Edit2, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { toast } from '@/components/ui/Toast'
 
 // ─── Interface ─────────────────────────────────────────────────────────────────
@@ -215,7 +215,9 @@ export function LabourChargesPage() {
 
           {/* Table */}
           {labourLoading ? (
-            <div style={{ textAlign: 'center', color: C.text2, padding: 40 }}>Loading...</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: C.text2, padding: 40 }}>
+              <Loader2 size={16} className="animate-spin" /> Loading...
+            </div>
           ) : labourCharges.length === 0 ? (
             <div style={{ textAlign: 'center', color: C.text2, padding: 60 }}>
               <Wrench size={48} color={C.border} />

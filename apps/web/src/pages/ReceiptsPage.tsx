@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
-import { Receipt, Search, X, Printer, ChevronRight } from 'lucide-react'
+import { Receipt, Search, X, Printer, ChevronRight, Loader2 } from 'lucide-react'
 
 // ─── Interface ─────────────────────────────────────────────────────────────────
 
@@ -362,7 +362,9 @@ export function ReceiptsPage() {
         {/* Table */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: C.text2 }}>Loading receipts…</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 40, color: C.text2 }}>
+              <Loader2 size={16} className="animate-spin" /> Loading receipts…
+            </div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: C.text2 }}>
               {search || methodFilter || dateFrom || dateTo ? 'No receipts match your filters.' : 'No payment receipts yet.'}

@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useCallback } from 'react';
-import { Car, Truck, MapPin, AlertTriangle, Wrench, Plus, X, Fuel, FlagOff, Trash2, CalendarClock, ChevronRight, CheckCircle2, Clock, FileText, Upload, BellRing, Droplets, Pencil } from 'lucide-react';
+import { Car, Truck, MapPin, AlertTriangle, Wrench, Plus, X, Fuel, FlagOff, Trash2, CalendarClock, ChevronRight, CheckCircle2, Clock, FileText, Upload, BellRing, Droplets, Pencil, Loader2 } from 'lucide-react';
 import { DatePickerInput } from '@/components/ui/DateTimePickers';
 import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
@@ -1202,7 +1202,9 @@ function MaintenanceTab({ branchFilter, isSuperAdmin }: { branchFilter: string |
           <span style={{ fontSize: 12, fontWeight: 700, color: C.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>Service History</span>
         </div>
         {loading ? (
-          <div style={{ color: C.textSecondary, textAlign: 'center', padding: 60 }}>Loading...</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: C.textSecondary, padding: 60 }}>
+            <Loader2 size={18} className="animate-spin" /> Loading...
+          </div>
         ) : records.length === 0 ? (
           <div style={{ color: C.textSecondary, textAlign: 'center', padding: 60, background: C.surface, borderRadius: 10, border: `1px solid ${C.border}` }}>
             <Wrench size={32} color={C.border} style={{ marginBottom: 10 }} />
@@ -1450,7 +1452,9 @@ function FuelLogTab({ branchFilter, isSuperAdmin }: { branchFilter: string | nul
         <Droplets size={13} /> Fuel History
       </div>
       {loading ? (
-        <div style={{ color: C.textSecondary, textAlign: 'center', padding: 40 }}>Loading…</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: C.textSecondary, padding: 40 }}>
+          <Loader2 size={16} className="animate-spin" /> Loading…
+        </div>
       ) : logs.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: C.textSecondary }}>
           <Fuel size={32} color={C.border} style={{ marginBottom: 8 }} />
@@ -1663,7 +1667,9 @@ function DocumentVaultTab({ branchFilter, isSuperAdmin }: { branchFilter: string
       )}
 
       {loading ? (
-        <div style={{ color: C.textSecondary, textAlign: 'center', padding: 40 }}>Loading…</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: C.textSecondary, padding: 40 }}>
+          <Loader2 size={16} className="animate-spin" /> Loading…
+        </div>
       ) : docs.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: C.textSecondary }}>
           <FileText size={32} color={C.border} style={{ marginBottom: 8 }} />
