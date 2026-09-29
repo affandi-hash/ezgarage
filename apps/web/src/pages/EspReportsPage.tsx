@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { BarChart3, Loader2 } from 'lucide-react'
+import { BarChart3, Loader2, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
@@ -20,6 +20,82 @@ interface CommunityStats {
 
 function formatRM(n: number) {
   return `RM ${Number(n).toFixed(2)}`
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+}
+
+// Same "print an HTML tab, let the browser Save as PDF" pattern already
+// used elsewhere in the app (Invoices, Accounts Payable/Receivable,
+// Reports) -- this page showed tenant-wide money totals with no way to
+// export/print them, unlike every other money-reporting page.
+function openPrintTab(html: string) {
+  const blob = new Blob([html], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
+}
+
+function buildEspReportHtml(rows: CommunityStats[], totals: { members: number; fees: number; discount: number }): string {
+  const bodyRows = rows.map((r) => `
+      <tr>
+        <td>${escapeHtml(r.community_name)}</td>
+        <td>${r.is_active ? 'Active' : 'Retired'}</td>
+        <td class="num">${r.active_members}</td>
+        <td class="num">${r.pending_members}</td>
+        <td class="num">${r.expired_members}</td>
+        <td class="num">${r.cancelled_members}</td>
+        <td class="num">${formatRM(r.fees_collected)}</td>
+        <td class="num">${formatRM(r.discount_given)}</td>
+      </tr>`).join('')
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ESP Report</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; padding: 32px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .generated { font-size: 11px; color: #888; margin-bottom: 20px; }
+  .summary { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 20px; }
+  .summary div { font-size: 12px; color: #555; }
+  .summary strong { display: block; font-size: 15px; color: #111; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border-bottom: 1px solid #ddd; padding: 8px 10px; text-align: left; white-space: nowrap; }
+  th { background: #f2f2f2; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+  td.num, th.num { text-align: right; }
+  .note { font-size: 11px; color: #888; margin-top: 16px; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+  <h1>ESP Report</h1>
+  <div class="generated">Generated ${new Date().toLocaleString('en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+  <div class="summary">
+    <div>Total Members (active + pending)<strong>${totals.members}</strong></div>
+    <div>Membership Fees Collected<strong>${formatRM(totals.fees)}</strong></div>
+    <div>Discount Given<strong>${formatRM(totals.discount)}</strong></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Community</th><th>Status</th><th class="num">Active</th><th class="num">Pending</th>
+        <th class="num">Expired</th><th class="num">Cancelled</th><th class="num">Fees Collected</th><th class="num">Discount Given</th>
+      </tr>
+    </thead>
+    <tbody>${bodyRows || '<tr><td colspan="8" style="text-align:center;color:#888;padding:24px">No ESP communities yet</td></tr>'}</tbody>
+  </table>
+  <div class="note">Discount given reflects invoices/quotations whose vehicle is currently linked to an ESP member -- a reporting view, not an immutable ledger.</div>
+</body>
+</html>`
 }
 
 export function EspReportsPage() {
@@ -47,7 +123,15 @@ export function EspReportsPage() {
 
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <h1 style={{ fontSize: 18, fontWeight: 700, color: '#F0F0F0' }}>ESP Reports</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: '#F0F0F0' }}>ESP Reports</h1>
+        <button
+          onClick={() => openPrintTab(buildEspReportHtml(rows, totals))}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#2A2A2A', color: '#F0F0F0', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', padding: '8px 14px' }}
+        >
+          <Download size={14} /> Export PDF
+        </button>
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         <div style={{ ...cardStyle, padding: 16 }}>

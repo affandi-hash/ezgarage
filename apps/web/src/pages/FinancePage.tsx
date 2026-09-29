@@ -10,6 +10,9 @@ import {
   CreditCard,
   Loader2,
   AlertCircle,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -235,6 +238,40 @@ function buildAccountsPayableReportHtml(
   </table>
 </body>
 </html>`
+}
+
+type APSortKey = 'payment_priority' | 'supplier' | 'invoice_number' | 'invoice_date' | 'due_date' | 'total_amount' | 'amount_paid' | 'balance' | 'status'
+
+const AP_SORT_COLUMNS: { label: string; key: APSortKey }[] = [
+  { label: 'Priority', key: 'payment_priority' },
+  { label: 'Supplier', key: 'supplier' },
+  { label: 'Inv #', key: 'invoice_number' },
+  { label: 'Invoice Date', key: 'invoice_date' },
+  { label: 'Due Date', key: 'due_date' },
+  { label: 'Total', key: 'total_amount' },
+  { label: 'Paid', key: 'amount_paid' },
+  { label: 'Balance', key: 'balance' },
+  { label: 'Status', key: 'status' },
+]
+
+function sortSupplierInvoices(rows: SupplierInvoice[], key: APSortKey | null, dir: 'asc' | 'desc'): SupplierInvoice[] {
+  if (!key) return rows
+  const value = (inv: SupplierInvoice): string | number => {
+    switch (key) {
+      case 'payment_priority': return PRIORITY_RANK[inv.payment_priority]
+      case 'supplier': return inv.suppliers?.name ?? ''
+      case 'balance': return inv.total_amount - inv.amount_paid
+      case 'invoice_date': case 'due_date': return inv[key] ?? ''
+      default: return inv[key] ?? ''
+    }
+  }
+  const sorted = [...rows].sort((a, b) => {
+    const av = value(a)
+    const bv = value(b)
+    if (typeof av === 'number' && typeof bv === 'number') return av - bv
+    return String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' })
+  })
+  return dir === 'asc' ? sorted : sorted.reverse()
 }
 
 function addDays(dateStr: string, days: number): string {
@@ -1501,6 +1538,8 @@ export function FinancePage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [apSortKey, setApSortKey] = useState<APSortKey | null>(null)
+  const [apSortDir, setApSortDir] = useState<'asc' | 'desc'>('asc')
 
   // Selected invoice (detail panel)
   const [selectedInvoice, setSelectedInvoice] = useState<SupplierInvoice | null>(null)
@@ -1642,6 +1681,19 @@ export function FinancePage() {
   // actually still owed for whatever the user currently has filtered
   // (status tab + supplier + date range).
   const filteredTotal = filtered.reduce((sum, inv) => sum + (inv.total_amount - inv.amount_paid), 0)
+
+  // Clicking a column header overrides the default priority/due-date queue
+  // order above; leaving it unsorted (apSortKey === null) keeps that order.
+  const sortedFiltered = sortSupplierInvoices(filtered, apSortKey, apSortDir)
+
+  function toggleApSort(key: APSortKey) {
+    if (apSortKey === key) {
+      setApSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setApSortKey(key)
+      setApSortDir('asc')
+    }
+  }
 
   async function handlePriorityChange(inv: SupplierInvoice, priority: SupplierInvoice['payment_priority']) {
     setInvoices((prev) => prev.map((i) => (i.id === inv.id ? { ...i, payment_priority: priority } : i)))
@@ -1909,7 +1961,7 @@ export function FinancePage() {
                 <span style={{ fontSize: 18, fontWeight: 700, color: '#F0F0F0' }}>{formatRM(filteredTotal)}</span>
               </div>
               <button
-                onClick={() => openPrintTab(buildAccountsPayableReportHtml(filtered, {
+                onClick={() => openPrintTab(buildAccountsPayableReportHtml(sortedFiltered, {
                   statusFilter,
                   supplierName: supplierFilter === 'all' ? 'All Suppliers' : (suppliers.find((s) => s.id === supplierFilter)?.name ?? 'All Suppliers'),
                   dateFrom,
@@ -1990,20 +2042,10 @@ export function FinancePage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                 <thead>
                   <tr style={{ background: '#161616', borderBottom: '1px solid #2A2A2A' }}>
-                    {[
-                      'Priority',
-                      'Supplier',
-                      'Inv #',
-                      'Invoice Date',
-                      'Due Date',
-                      'Total',
-                      'Paid',
-                      'Balance',
-                      'Status',
-                      '',
-                    ].map((h) => (
+                    {AP_SORT_COLUMNS.map((col) => (
                       <th
-                        key={h}
+                        key={col.key}
+                        onClick={() => toggleApSort(col.key)}
                         style={{
                           textAlign: 'left',
                           padding: '12px 16px',
@@ -2011,17 +2053,27 @@ export function FinancePage() {
                           fontWeight: 600,
                           textTransform: 'uppercase',
                           letterSpacing: '0.05em',
-                          color: '#A0A0A0',
+                          color: apSortKey === col.key ? '#F15A22' : '#A0A0A0',
                           whiteSpace: 'nowrap',
+                          cursor: 'pointer',
+                          userSelect: 'none',
                         }}
                       >
-                        {h}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {col.label}
+                          {apSortKey === col.key ? (
+                            apSortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+                          ) : (
+                            <ArrowUpDown size={11} style={{ opacity: 0.35 }} />
+                          )}
+                        </span>
                       </th>
                     ))}
+                    <th style={{ padding: '12px 16px' }} />
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((inv, idx) => {
+                  {sortedFiltered.map((inv, idx) => {
                     const bal = inv.total_amount - inv.amount_paid
                     const overdue = isOverdue(inv.due_date, inv.status)
                     const dueSoon = !overdue && isDueSoon(inv.due_date, inv.status)
