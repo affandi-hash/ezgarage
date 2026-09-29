@@ -319,6 +319,7 @@ export function DashboardPage() {
       value: loading ? '—' : formatRM(stats?.est_revenue ?? 0),
       icon: DollarSign,
       iconColor: '#10B981',
+      subtext: 'All invoiced (sent + overdue + paid)',
     },
     {
       label: 'Completed This Month',

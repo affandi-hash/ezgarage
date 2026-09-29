@@ -110,23 +110,23 @@ export function useDashboard(branchId?: string | null): UseDashboardReturn {
       if (branchId) closedQuery = closedQuery.eq('branch_id', branchId)
       const { count: closedCount } = await closedQuery
 
-      // Revenue (Month) -- actual cash collected this month, sourced from
-      // paid invoices (issue_date in the current month), the same
-      // definition "Revenue" already uses everywhere else in the app
-      // (Reports, Finance). This previously summed jobs.final_amount for
+      // Revenue (Month) -- every real invoice issued this month (sent,
+      // overdue & paid), matching the Reports page's "Total Revenue (All
+      // Statuses)" / "Monthly Revenue" figures exactly, rather than a
+      // paid-only cash figure -- so this tile and Reports never disagree
+      // for the same month again. (This used to sum jobs.final_amount for
       // delivered jobs CHECKED IN this month -- an entirely different,
-      // undocumented accrual-style figure that doesn't match "Revenue"
-      // anywhere else in the product and overstated real collections by
-      // ~62% (RM30,863.25 vs the true RM19,087.25 for September 2026).
+      // undocumented accrual-style figure that didn't match "Revenue"
+      // anywhere else in the product.)
       let revenueQuery = supabase
         .from('invoices')
         .select('total_amount, subtotal')
-        .eq('status', 'paid')
+        .in('status', ['sent', 'overdue', 'paid'])
         .gte('issue_date', monthStartDate)
         .lt('issue_date', monthEndDate)
 
       if (branchId) revenueQuery = revenueQuery.eq('branch_id', branchId)
-      const { data: paidInvoices } = await revenueQuery
+      const { data: monthInvoices } = await revenueQuery
 
       // Workshop snapshot count by status
       const statusCounts: Record<string, number> = {}
@@ -148,7 +148,7 @@ export function useDashboard(branchId?: string | null): UseDashboardReturn {
       const waitingApproval = jobs.filter((j) => j.status === 'waiting_approval').length
       const waitingParts = jobs.filter((j) => j.status === 'waiting_parts').length
 
-      const estRevenue = (paidInvoices || []).reduce(
+      const estRevenue = (monthInvoices || []).reduce(
         (sum: number, inv: { total_amount: number | null; subtotal: number | null }) => sum + (inv.total_amount ?? inv.subtotal ?? 0),
         0
       )
