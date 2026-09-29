@@ -621,20 +621,23 @@ export function ReportsPage() {
       const jobRowsOut: typeof jobList = []
       rangeInvoices?.forEach((inv: { id: string; invoice_number: string; customer_id: string | null; customer_name: string; vehicle_plate: string; issue_date: string; total_amount: number | null; subtotal: number | null; status: string; job_id: string | null; line_items: RangeLineItem[] | null }) => {
         const amt = inv.total_amount ?? inv.subtotal ?? 0
-        if (inv.status === 'paid') {
-          if (!dailyMap[inv.issue_date]) dailyMap[inv.issue_date] = { revenue: 0, count: 0, cogs: 0, customers: new Set() }
-          const day = dailyMap[inv.issue_date]
-          day.revenue += amt
-          day.count += 1
-          const custKey = inv.customer_id ?? inv.customer_name
-          day.customers.add(custKey)
-          periodCustomers.add(custKey)
-          ;(inv.line_items ?? []).forEach((li) => {
-            const qty = li.qty ?? 1
-            if (li.item_type === 'part') day.cogs += li.cost_price != null ? li.cost_price * qty : (li.amount ?? qty * (li.unit_price ?? 0))
-            else if (li.item_type === 'labour') day.cogs += li.amount ?? qty * (li.unit_price ?? 0)
-          })
-        }
+        // Every real invoice counts here (sent, overdue & paid) -- matching
+        // Job List, Dashboard's Revenue (Month), and the Monthly Revenue
+        // trend chart, all of which count invoiced value regardless of
+        // whether it's been collected yet. COGS/Gross Profit therefore
+        // reflect the cost/margin of work BILLED, not just work PAID for.
+        if (!dailyMap[inv.issue_date]) dailyMap[inv.issue_date] = { revenue: 0, count: 0, cogs: 0, customers: new Set() }
+        const day = dailyMap[inv.issue_date]
+        day.revenue += amt
+        day.count += 1
+        const custKey = inv.customer_id ?? inv.customer_name
+        day.customers.add(custKey)
+        periodCustomers.add(custKey)
+        ;(inv.line_items ?? []).forEach((li) => {
+          const qty = li.qty ?? 1
+          if (li.item_type === 'part') day.cogs += li.cost_price != null ? li.cost_price * qty : (li.amount ?? qty * (li.unit_price ?? 0))
+          else if (li.item_type === 'labour') day.cogs += li.amount ?? qty * (li.unit_price ?? 0)
+        })
         jobRowsOut.push({
           id: inv.id,
           invoice_number: inv.invoice_number,
@@ -1080,7 +1083,7 @@ export function ReportsPage() {
                           Daily Sales ({formatDateShort(bounds.start)} – {formatDateShort(bounds.end)})
                         </h3>
                         <p style={{ fontSize: 12, color: TEXT_SECONDARY, margin: '4px 0 0' }}>
-                          Paid invoices only — actual cash collected. Job List below includes unpaid invoices too, so its total will be higher.
+                          Every invoiced job in this period (sent, overdue &amp; paid) — matches the Job List total below.
                         </p>
                       </div>
                       <button
@@ -1099,7 +1102,7 @@ export function ReportsPage() {
                       </button>
                     </div>
                     {dailySales.length === 0 ? (
-                      <p style={{ color: TEXT_SECONDARY, fontSize: 13, margin: 0 }}>No paid invoices in this period.</p>
+                      <p style={{ color: TEXT_SECONDARY, fontSize: 13, margin: 0 }}>No invoices in this period.</p>
                     ) : (
                       <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
