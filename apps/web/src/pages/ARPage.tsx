@@ -5,7 +5,7 @@ import { useOutletContext } from 'react-router-dom'
 import { toast } from '@/components/ui/Toast'
 import {
   Search, AlertCircle, AlertTriangle, DollarSign,
-  FileText, X, Loader2, CheckCircle, Plus, Paperclip
+  FileText, X, Loader2, CheckCircle, Plus, Paperclip, ArrowUp, ArrowDown, ArrowUpDown
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -188,6 +188,34 @@ function buildARReportHtml(
   </table>
 </body>
 </html>`
+}
+
+type SortKey = 'customer_name' | 'invoice_number' | 'vehicle_plate' | 'issue_date' | 'due_date' | 'total_amount' | 'amount_paid' | 'balance_due' | '_status'
+
+const SORT_COLUMNS: { label: string; key: SortKey }[] = [
+  { label: 'Customer', key: 'customer_name' },
+  { label: 'Invoice #', key: 'invoice_number' },
+  { label: 'Vehicle', key: 'vehicle_plate' },
+  { label: 'Issue Date', key: 'issue_date' },
+  { label: 'Due Date', key: 'due_date' },
+  { label: 'Total', key: 'total_amount' },
+  { label: 'Paid', key: 'amount_paid' },
+  { label: 'Balance', key: 'balance_due' },
+  { label: 'Status', key: '_status' },
+]
+
+function sortInvoices<T extends ARInvoice & { _status: string }>(rows: T[], key: SortKey | null, dir: 'asc' | 'desc'): T[] {
+  if (!key) return rows
+  const sorted = [...rows].sort((a, b) => {
+    const av = a[key]
+    const bv = b[key]
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    if (typeof av === 'number' && typeof bv === 'number') return av - bv
+    return String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' })
+  })
+  return dir === 'asc' ? sorted : sorted.reverse()
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -508,6 +536,8 @@ export function ARPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterFleet, setFilterFleet] = useState('')
   const [selected, setSelected] = useState<ARInvoice | null>(null)
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -570,6 +600,17 @@ export function ARPage() {
     '60+': filtered.filter(i => agingBucket(i.due_date, i._status) === '60+').reduce((s, i) => s + i.balance_due, 0),
   }
 
+  const sortedFiltered = sortInvoices(filtered, sortKey, sortDir)
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
   const inputStyle: React.CSSProperties = { background: '#161616', border: '1px solid #2A2A2A', borderRadius: 8, color: '#F0F0F0', fontSize: 14, padding: '10px 12px', outline: 'none' }
 
   return (
@@ -624,7 +665,7 @@ export function ARPage() {
           <option value="external">Non-Internal Only</option>
         </select>
         <button
-          onClick={() => openPrintTab(buildARReportHtml(filtered, {
+          onClick={() => openPrintTab(buildARReportHtml(sortedFiltered, {
             statusFilter: filterStatus,
             fleetFilter: filterFleet,
             search,
@@ -659,13 +700,22 @@ export function ARPage() {
           <table style={{ width: '100%', minWidth: 700, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #2A2A2A' }}>
-                {['Customer', 'Invoice #', 'Vehicle', 'Issue Date', 'Due Date', 'Total', 'Paid', 'Balance', 'Status'].map(h => (
-                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, color: '#4A4A4A', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+                {SORT_COLUMNS.map(col => (
+                  <th key={col.key} onClick={() => toggleSort(col.key)} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, color: sortKey === col.key ? '#F15A22' : '#4A4A4A', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      {col.label}
+                      {sortKey === col.key ? (
+                        sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+                      ) : (
+                        <ArrowUpDown size={11} style={{ opacity: 0.35 }} />
+                      )}
+                    </span>
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map(inv => (
+              {sortedFiltered.map(inv => (
                 <tr key={inv.id} onClick={() => setSelected(inv)} style={{ borderBottom: '1px solid #1E1E1E', cursor: 'pointer' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#1A1A1A')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
