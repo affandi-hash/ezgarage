@@ -91,6 +91,98 @@ const STATUS_BG: Record<string, string> = {
   overdue: 'rgba(239,68,68,0.1)', unpaid: 'rgba(160,160,160,0.1)',
 }
 
+const STATUS_FILTER_LABEL: Record<string, string> = {
+  '': 'All (Unpaid + Partial + Overdue)',
+  unpaid: 'Unpaid',
+  partial: 'Partial',
+  overdue: 'Overdue',
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+}
+
+// Same "print an HTML tab, let the browser Save as PDF" pattern already used
+// for individual invoices and the Accounts Payable report -- no new PDF
+// library needed for a formatted snapshot of the current filtered table.
+function openPrintTab(html: string) {
+  const blob = new Blob([html], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
+}
+
+function buildARReportHtml(
+  rows: (ARInvoice & { _status: string })[],
+  opts: { statusFilter: string; search: string; overdue: number; dueThisWeek: number; totalOutstanding: number; aging: Record<string, number> }
+): string {
+  const filterParts = [`Status: ${STATUS_FILTER_LABEL[opts.statusFilter] ?? 'All'}`]
+  if (opts.search) filterParts.push(`Search: "${escapeHtml(opts.search)}"`)
+
+  const bodyRows = rows.map((inv) => `
+      <tr>
+        <td>${escapeHtml(inv.customer_name || '—')}</td>
+        <td>${escapeHtml(inv.invoice_number)}</td>
+        <td>${escapeHtml(inv.vehicle_plate || '—')}</td>
+        <td>${fmtDate(inv.issue_date)}</td>
+        <td>${fmtDate(inv.due_date)}</td>
+        <td class="num">${fmtAmt(inv.total_amount)}</td>
+        <td class="num">${fmtAmt(inv.amount_paid)}</td>
+        <td class="num" style="font-weight:700">${fmtAmt(inv.balance_due)}</td>
+        <td>${escapeHtml(inv._status)}</td>
+      </tr>`).join('')
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Accounts Receivable Report</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; padding: 32px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .filters { font-size: 12px; color: #555; margin-bottom: 4px; }
+  .generated { font-size: 11px; color: #888; margin-bottom: 20px; }
+  .summary { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 16px; }
+  .summary div { font-size: 12px; color: #555; }
+  .summary strong { display: block; font-size: 15px; color: #111; }
+  .aging { font-size: 12px; color: #555; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border-bottom: 1px solid #ddd; padding: 8px 10px; text-align: left; white-space: nowrap; }
+  th { background: #f2f2f2; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+  td.num, th.num { text-align: right; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+  <h1>Motoverse Garage — Accounts Receivable Report</h1>
+  <div class="filters">${filterParts.join(' &nbsp;·&nbsp; ')}</div>
+  <div class="generated">Generated ${new Date().toLocaleString('en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+  <div class="summary">
+    <div>Overdue<strong>${fmtAmt(opts.overdue)}</strong></div>
+    <div>Due This Week<strong>${fmtAmt(opts.dueThisWeek)}</strong></div>
+    <div>Total Outstanding<strong>${fmtAmt(opts.totalOutstanding)}</strong></div>
+    <div>Open Invoices<strong>${rows.length}</strong></div>
+  </div>
+  <div class="aging">Aging — Not Yet Due: ${fmtAmt(opts.aging.current)} &nbsp;·&nbsp; 1–30 Days: ${fmtAmt(opts.aging['1-30'])} &nbsp;·&nbsp; 31–60 Days: ${fmtAmt(opts.aging['31-60'])} &nbsp;·&nbsp; 60+ Days: ${fmtAmt(opts.aging['60+'])}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Customer</th><th>Invoice #</th><th>Vehicle</th><th>Issue Date</th><th>Due Date</th>
+        <th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>${bodyRows || '<tr><td colspan="9" style="text-align:center;color:#888;padding:24px">No invoices match this filter</td></tr>'}</tbody>
+  </table>
+</body>
+</html>`
+}
+
 function StatusBadge({ status }: { status: string }) {
   return (
     <span style={{ background: STATUS_BG[status] ?? STATUS_BG.unpaid, color: STATUS_COLOR[status] ?? STATUS_COLOR.unpaid, borderRadius: 9999, padding: '3px 10px', fontSize: 11, fontWeight: 600, textTransform: 'capitalize' as const, whiteSpace: 'nowrap' as const }}>
@@ -458,6 +550,17 @@ export function ARPage() {
     return matchSearch && matchStatus
   })
 
+  // Totals for whatever is currently filtered, so the exported PDF matches what's on screen.
+  const filteredOverdue = filtered.filter(i => i._status === 'overdue').reduce((s, i) => s + i.balance_due, 0)
+  const filteredDueThisWeek = filtered.filter(i => i._status !== 'paid' && i.due_date && i.due_date >= todayStr && i.due_date <= weekStr).reduce((s, i) => s + i.balance_due, 0)
+  const filteredTotalOutstanding = filtered.reduce((s, i) => s + i.balance_due, 0)
+  const filteredAging = {
+    current: filtered.filter(i => agingBucket(i.due_date, i._status) === 'current').reduce((s, i) => s + i.balance_due, 0),
+    '1-30': filtered.filter(i => agingBucket(i.due_date, i._status) === '1-30').reduce((s, i) => s + i.balance_due, 0),
+    '31-60': filtered.filter(i => agingBucket(i.due_date, i._status) === '31-60').reduce((s, i) => s + i.balance_due, 0),
+    '60+': filtered.filter(i => agingBucket(i.due_date, i._status) === '60+').reduce((s, i) => s + i.balance_due, 0),
+  }
+
   const inputStyle: React.CSSProperties = { background: '#161616', border: '1px solid #2A2A2A', borderRadius: 8, color: '#F0F0F0', fontSize: 14, padding: '10px 12px', outline: 'none' }
 
   return (
@@ -506,6 +609,19 @@ export function ARPage() {
           <option value="partial">Partial</option>
           <option value="overdue">Overdue</option>
         </select>
+        <button
+          onClick={() => openPrintTab(buildARReportHtml(filtered, {
+            statusFilter: filterStatus,
+            search,
+            overdue: filteredOverdue,
+            dueThisWeek: filteredDueThisWeek,
+            totalOutstanding: filteredTotalOutstanding,
+            aging: filteredAging,
+          }))}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#2A2A2A', color: '#F0F0F0', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', padding: '0 14px' }}
+        >
+          <FileText size={14} /> Export PDF
+        </button>
       </div>
 
       {/* Table */}
