@@ -100,6 +100,81 @@ function last6MonthsKeys(): string[] {
   return months
 }
 
+function formatDateShort(d: string) {
+  return new Date(d).toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+}
+
+// Same "print an HTML tab, let the browser Save as PDF" pattern already used
+// elsewhere in the app (Invoices, Accounts Payable/Receivable) -- no new PDF
+// library needed for a formatted snapshot of the current job list.
+function openPrintTab(html: string) {
+  const blob = new Blob([html], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
+}
+
+function buildJobListReportHtml(
+  rows: { invoice_number: string; job_number: string | null; customer_name: string; vehicle_plate: string; issue_date: string; total_amount: number; status: string }[],
+  opts: { start: string; end: string; total: number }
+): string {
+  const bodyRows = rows.map((r) => `
+      <tr>
+        <td>${escapeHtml(r.job_number ?? '—')}</td>
+        <td>${escapeHtml(r.invoice_number)}</td>
+        <td>${escapeHtml(r.customer_name || '—')}</td>
+        <td>${escapeHtml(r.vehicle_plate || '—')}</td>
+        <td>${formatDateShort(r.issue_date)}</td>
+        <td class="num">${formatRM(r.total_amount)}</td>
+        <td>${escapeHtml(r.status)}</td>
+      </tr>`).join('')
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Job List Report</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; padding: 32px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .filters { font-size: 12px; color: #555; margin-bottom: 4px; }
+  .generated { font-size: 11px; color: #888; margin-bottom: 20px; }
+  .total { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border-bottom: 1px solid #ddd; padding: 8px 10px; text-align: left; white-space: nowrap; }
+  th { background: #f2f2f2; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+  td.num, th.num { text-align: right; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+  <h1>Job List Report</h1>
+  <div class="filters">Period: ${formatDateShort(opts.start)} – ${formatDateShort(opts.end)}</div>
+  <div class="generated">Generated ${new Date().toLocaleString('en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+  <div class="total">Total (${rows.length} ${rows.length === 1 ? 'job' : 'jobs'}): ${formatRM(opts.total)}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Job #</th><th>Invoice #</th><th>Customer</th><th>Vehicle</th><th>Date</th>
+        <th class="num">Amount</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>${bodyRows || '<tr><td colspan="7" style="text-align:center;color:#888;padding:24px">No jobs in this period</td></tr>'}</tbody>
+  </table>
+</body>
+</html>`
+}
+
 interface StatCardProps {
   label: string
   value: string | number
@@ -207,6 +282,26 @@ export function ReportsPage() {
     labourTotal: number
     outstanding: number
   } | null>(null)
+
+  const [dailySales, setDailySales] = useState<{
+    date: string
+    customers: number
+    avgPerTxn: number
+    count: number
+    revenue: number
+    cogs: number
+    grossProfit: number
+  }[]>([])
+  const [jobList, setJobList] = useState<{
+    id: string
+    invoice_number: string
+    job_number: string | null
+    customer_name: string
+    vehicle_plate: string
+    issue_date: string
+    total_amount: number
+    status: string
+  }[]>([])
 
   const [staffData, setStaffData] = useState<{
     id: string
@@ -428,10 +523,74 @@ export function ReportsPage() {
         labourTotal,
         outstanding,
       })
+
+      // Daily Sales + Job List -- scoped to whatever date range is selected
+      // above (unlike the fixed 6-month trend chart), so the owner can drill
+      // into exactly which days/jobs made up the revenue for a given period.
+      type RangeLineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number; cost_price?: number }
+      let rangeQ = supabase
+        .from('invoices')
+        .select('id, invoice_number, customer_id, customer_name, vehicle_plate, issue_date, total_amount, subtotal, status, job_id, line_items')
+        .gte('issue_date', bounds.start)
+        .lte('issue_date', bounds.end)
+        .in('status', ['sent', 'overdue', 'paid'])
+        .order('issue_date', { ascending: false })
+      if (branchFilter) rangeQ = rangeQ.eq('branch_id', branchFilter)
+      const { data: rangeInvoices } = await rangeQ
+
+      const jobIds = [...new Set((rangeInvoices ?? []).map((inv: { job_id: string | null }) => inv.job_id).filter(Boolean))] as string[]
+      const jobNumberMap: Record<string, string> = {}
+      if (jobIds.length > 0) {
+        const { data: jobRows } = await supabase.from('jobs').select('id, job_number').in('id', jobIds)
+        jobRows?.forEach((j: { id: string; job_number: string }) => { jobNumberMap[j.id] = j.job_number })
+      }
+
+      const dailyMap: Record<string, { revenue: number; count: number; cogs: number; customers: Set<string> }> = {}
+      const jobRowsOut: typeof jobList = []
+      rangeInvoices?.forEach((inv: { id: string; invoice_number: string; customer_id: string | null; customer_name: string; vehicle_plate: string; issue_date: string; total_amount: number | null; subtotal: number | null; status: string; job_id: string | null; line_items: RangeLineItem[] | null }) => {
+        const amt = inv.total_amount ?? inv.subtotal ?? 0
+        if (inv.status === 'paid') {
+          if (!dailyMap[inv.issue_date]) dailyMap[inv.issue_date] = { revenue: 0, count: 0, cogs: 0, customers: new Set() }
+          const day = dailyMap[inv.issue_date]
+          day.revenue += amt
+          day.count += 1
+          day.customers.add(inv.customer_id ?? inv.customer_name)
+          ;(inv.line_items ?? []).forEach((li) => {
+            const qty = li.qty ?? 1
+            if (li.item_type === 'part') day.cogs += li.cost_price != null ? li.cost_price * qty : (li.amount ?? qty * (li.unit_price ?? 0))
+            else if (li.item_type === 'labour') day.cogs += li.amount ?? qty * (li.unit_price ?? 0)
+          })
+        }
+        jobRowsOut.push({
+          id: inv.id,
+          invoice_number: inv.invoice_number,
+          job_number: inv.job_id ? jobNumberMap[inv.job_id] ?? null : null,
+          customer_name: inv.customer_name,
+          vehicle_plate: inv.vehicle_plate,
+          issue_date: inv.issue_date,
+          total_amount: amt,
+          status: inv.status,
+        })
+      })
+
+      setDailySales(
+        Object.entries(dailyMap)
+          .map(([date, v]) => ({
+            date,
+            customers: v.customers.size,
+            avgPerTxn: v.count > 0 ? v.revenue / v.count : 0,
+            count: v.count,
+            revenue: v.revenue,
+            cogs: v.cogs,
+            grossProfit: v.revenue - v.cogs,
+          }))
+          .sort((a, b) => b.date.localeCompare(a.date))
+      )
+      setJobList(jobRowsOut)
     } finally {
       setLoading(false)
     }
-  }, [branchFilter])
+  }, [bounds.start, bounds.end, branchFilter])
 
   const fetchStaff = useCallback(async () => {
     setLoading(true)
@@ -608,45 +767,43 @@ export function ReportsPage() {
       </div>
 
       <div style={{ padding: '20px 28px 40px' }}>
-        {activeTab !== 'revenue' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
-            {(['this_month', 'last_month', 'last_3_months', 'custom'] as DateRange[]).map((r) => (
-              <button
-                key={r}
-                onClick={() => setDateRange(r)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 6,
-                  border: `1px solid ${dateRange === r ? ORANGE : BORDER}`,
-                  background: dateRange === r ? `${ORANGE}18` : SURFACE,
-                  color: dateRange === r ? ORANGE : TEXT_SECONDARY,
-                  fontSize: 12,
-                  cursor: 'pointer',
-                  fontWeight: dateRange === r ? 600 : 400,
-                }}
-              >
-                {r === 'this_month' ? 'This Month' : r === 'last_month' ? 'Last Month' : r === 'last_3_months' ? 'Last 3 Months' : 'Custom'}
-              </button>
-            ))}
-            {dateRange === 'custom' && (
-              <>
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => setCustomStart(e.target.value)}
-                  style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT_PRIMARY, fontSize: 12 }}
-                />
-                <span style={{ color: TEXT_SECONDARY, fontSize: 12 }}>to</span>
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => setCustomEnd(e.target.value)}
-                  style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT_PRIMARY, fontSize: 12 }}
-                />
-              </>
-            )}
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+          {(['this_month', 'last_month', 'last_3_months', 'custom'] as DateRange[]).map((r) => (
+            <button
+              key={r}
+              onClick={() => setDateRange(r)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 6,
+                border: `1px solid ${dateRange === r ? ORANGE : BORDER}`,
+                background: dateRange === r ? `${ORANGE}18` : SURFACE,
+                color: dateRange === r ? ORANGE : TEXT_SECONDARY,
+                fontSize: 12,
+                cursor: 'pointer',
+                fontWeight: dateRange === r ? 600 : 400,
+              }}
+            >
+              {r === 'this_month' ? 'This Month' : r === 'last_month' ? 'Last Month' : r === 'last_3_months' ? 'Last 3 Months' : 'Custom'}
+            </button>
+          ))}
+          {dateRange === 'custom' && (
+            <>
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT_PRIMARY, fontSize: 12 }}
+              />
+              <span style={{ color: TEXT_SECONDARY, fontSize: 12 }}>to</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: SURFACE, color: TEXT_PRIMARY, fontSize: 12 }}
+              />
+            </>
+          )}
+        </div>
 
         {loading && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 0', color: TEXT_SECONDARY, gap: 10 }}>
@@ -827,6 +984,94 @@ export function ReportsPage() {
                   </div>
                 )
               })()}
+            </div>
+
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: '0 0 16px' }}>
+                Daily Sales ({formatDateShort(bounds.start)} – {formatDateShort(bounds.end)})
+              </h3>
+              {dailySales.length === 0 ? (
+                <p style={{ color: TEXT_SECONDARY, fontSize: 13, margin: 0 }}>No paid invoices in this period.</p>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                        {['Date', 'Customers', 'Avg $ / Txn', 'Transactions', 'Sales Revenue', 'COGS', 'Gross Profit'].map((h) => (
+                          <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: TEXT_SECONDARY, fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dailySales.map((d) => (
+                        <tr key={d.date} style={{ borderBottom: `1px solid ${BORDER}` }}>
+                          <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, whiteSpace: 'nowrap' }}>{formatDateShort(d.date)}</td>
+                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY }}>{d.customers}</td>
+                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY, whiteSpace: 'nowrap' }}>{formatRM(d.avgPerTxn)}</td>
+                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY }}>{d.count}</td>
+                          <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 600, whiteSpace: 'nowrap' }}>{formatRM(d.revenue)}</td>
+                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY, whiteSpace: 'nowrap' }}>{formatRM(d.cogs)}</td>
+                          <td style={{ padding: '10px 14px', color: d.grossProfit >= 0 ? '#4ade80' : '#f87171', fontWeight: 600, whiteSpace: 'nowrap' }}>{formatRM(d.grossProfit)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: 0 }}>
+                  Job List ({formatDateShort(bounds.start)} – {formatDateShort(bounds.end)})
+                </h3>
+                <button
+                  onClick={() => openPrintTab(buildJobListReportHtml(jobList, {
+                    start: bounds.start,
+                    end: bounds.end,
+                    total: jobList.reduce((s, j) => s + j.total_amount, 0),
+                  }))}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: BORDER, color: TEXT_PRIMARY, border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', padding: '8px 14px' }}
+                >
+                  <Download size={14} /> Export PDF
+                </button>
+              </div>
+              {jobList.length === 0 ? (
+                <p style={{ color: TEXT_SECONDARY, fontSize: 13, margin: 0 }}>No jobs invoiced in this period.</p>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                        {['Job #', 'Invoice #', 'Customer', 'Vehicle', 'Date', 'Amount', 'Status'].map((h) => (
+                          <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: TEXT_SECONDARY, fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {jobList.map((j) => (
+                        <tr key={j.id} style={{ borderBottom: `1px solid ${BORDER}` }}>
+                          <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontFamily: 'monospace', fontSize: 12 }}>{j.job_number ?? '—'}</td>
+                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY, fontFamily: 'monospace', fontSize: 12 }}>{j.invoice_number}</td>
+                          <td style={{ padding: '10px 14px', color: TEXT_PRIMARY }}>{j.customer_name || '—'}</td>
+                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY }}>{j.vehicle_plate || '—'}</td>
+                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY, whiteSpace: 'nowrap' }}>{formatDateShort(j.issue_date)}</td>
+                          <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 600, whiteSpace: 'nowrap' }}>{formatRM(j.total_amount)}</td>
+                          <td style={{ padding: '10px 14px' }}>
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: 12, fontSize: 12, fontWeight: 600, textTransform: 'capitalize',
+                              background: j.status === 'paid' ? 'rgba(74,222,128,0.12)' : j.status === 'overdue' ? 'rgba(248,113,113,0.12)' : 'rgba(160,160,160,0.12)',
+                              color: j.status === 'paid' ? '#4ade80' : j.status === 'overdue' ? '#f87171' : TEXT_SECONDARY,
+                            }}>
+                              {j.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
