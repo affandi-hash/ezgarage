@@ -207,7 +207,7 @@ export function ChangePasswordPage() {
         </form>
 
         <div style={{ textAlign: 'center', fontSize: 11, color: '#4B5563' }}>
-          EZGarage OS · Your password is encrypted and never stored in plain text.
+          EZWerkFlo · Your password is encrypted and never stored in plain text.
         </div>
       </div>
     </div>

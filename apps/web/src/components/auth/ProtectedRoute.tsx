@@ -6,7 +6,7 @@ interface ProtectedRouteProps {
   children: React.ReactNode
   allowedRoles?: Role[]
   // Gates on the separate is_platform_admin flag instead of `role` — for
-  // EZGarage-wide admin tooling that must stay independent of any tenant's
+  // EZWerkFlo-wide admin tooling that must stay independent of any tenant's
   // own role hierarchy. Independent of allowedRoles; if both are given,
   // requirePlatformAdmin takes precedence.
   requirePlatformAdmin?: boolean

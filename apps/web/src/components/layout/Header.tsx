@@ -38,7 +38,7 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange, onM
   const [branches, setBranches] = useState<Branch[]>([])
   const [userMenuOpen, setUserMenuOpen] = useState(false)
 
-  const pageTitle = titleProp ?? ROUTE_LABELS[location.pathname] ?? 'EZGarage OS'
+  const pageTitle = titleProp ?? ROUTE_LABELS[location.pathname] ?? 'EZWerkFlo'
   const pathParts = location.pathname.split('/').filter(Boolean)
 
   const isSuperAdmin = user?.role === 'super_admin'

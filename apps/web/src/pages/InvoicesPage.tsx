@@ -280,7 +280,7 @@ function buildInvoiceHtml(inv: Invoice, branch: BranchPrintInfo | null): string 
   </div>
   <div style="text-align:center;font-size:12px;color:#aaa;border-top:1px solid #eee;padding-top:8px;margin-bottom:12px">Thank you for your business! · This is a computer-generated invoice.</div>
   <div style="display:flex;align-items:center;justify-content:center;gap:6px;padding-top:8px;border-top:1px solid #f0f0f0">
-    <span style="font-size:12px;color:#bbb">Powered by:</span><span style="font-size:12px;color:#aaa;font-weight:600">EZ Garage</span><span style="font-size:12px;color:#ccc">·</span><span style="font-size:12px;color:#aaa">http://ezgarage.app</span>
+    <span style="font-size:12px;color:#bbb">Powered by:</span><span style="font-size:12px;color:#aaa;font-weight:600">EZWerkFlo</span><span style="font-size:12px;color:#ccc">·</span><span style="font-size:12px;color:#aaa">http://ezwerkflo.com</span>
   </div>
 </div></body></html>`
 }
@@ -335,7 +335,7 @@ function buildReceiptHtml(inv: Invoice, branch: BranchPrintInfo | null): string 
   </div>
   <div style="text-align:center;font-size:12px;color:#aaa;border-top:1px solid #eee;padding-top:8px;margin-bottom:6px">Thank you for your payment! Please keep this receipt for your records.</div>
   <div style="display:flex;align-items:center;justify-content:center;gap:6px">
-    <span style="font-size:11px;color:#ccc">Powered by:</span><span style="font-size:11px;color:#bbb;font-weight:600">EZ Garage</span><span style="font-size:11px;color:#ccc">·</span><span style="font-size:11px;color:#bbb">http://ezgarage.app</span>
+    <span style="font-size:11px;color:#ccc">Powered by:</span><span style="font-size:11px;color:#bbb;font-weight:600">EZWerkFlo</span><span style="font-size:11px;color:#ccc">·</span><span style="font-size:11px;color:#bbb">http://ezwerkflo.com</span>
   </div>
 </div></body></html>`
 }

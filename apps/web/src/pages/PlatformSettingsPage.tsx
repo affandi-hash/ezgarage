@@ -286,7 +286,7 @@ export function PlatformSettingsPage() {
               padding: '12px 16px', borderRadius: 8, backgroundColor: '#1A1A1A', border: '1px solid #2A2A2A',
               fontSize: 12, color: '#6B7280', lineHeight: 1.6,
             }}>
-              Every night at 7pm (MYT), EZGarage emails Chip In Sdn Bhd a PDF statement of the previous day's
+              Every night at 7pm (MYT), EZWerkFlo emails Chip In Sdn Bhd a PDF statement of the previous day's
               RaudhahPay transactions across every tenant, so they know what to disburse and to whom.
             </div>
 

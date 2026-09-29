@@ -258,7 +258,7 @@ function CommunityModal({ initial, branches, onClose, onSaved }: {
             }} placeholder="e.g. Sportster Malaysia" />
           </div>
           <div>
-            <label style={labelStyle}>Public Link Slug * -- used as ezgarage.app/esp/{'<slug>'}</label>
+            <label style={labelStyle}>Public Link Slug * -- used as ezwerkflo.com/esp/{'<slug>'}</label>
             <input style={inputStyle} value={form.slug} onChange={e => { setSlugTouched(true); set('slug', e.target.value) }} placeholder="sportster-malaysia" />
             <p style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>Must be unique across every workshop on the platform, not just yours.</p>
           </div>

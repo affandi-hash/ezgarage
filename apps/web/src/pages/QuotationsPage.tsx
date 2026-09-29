@@ -1088,9 +1088,9 @@ export function QuotationsPage() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, paddingTop: 6, borderTop: '1px solid #f0f0f0' }}>
               <span style={{ fontSize: 12, color: '#bbb' }}>Powered by:</span>
-              <span style={{ fontSize: 12, color: '#aaa', fontWeight: 600 }}>EZ Garage</span>
+              <span style={{ fontSize: 12, color: '#aaa', fontWeight: 600 }}>EZWerkFlo</span>
               <span style={{ fontSize: 12, color: '#ccc' }}>·</span>
-              <span style={{ fontSize: 12, color: '#aaa' }}>http://ezgarage.app</span>
+              <span style={{ fontSize: 12, color: '#aaa' }}>http://ezwerkflo.com</span>
             </div>
           </div>
         </div>

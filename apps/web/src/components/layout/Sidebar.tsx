@@ -132,7 +132,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ]
 
-function EZGarageLogo({ collapsed, branchLogoUrl }: { collapsed: boolean; branchLogoUrl?: string | null }) {
+function BrandLogo({ collapsed, branchLogoUrl }: { collapsed: boolean; branchLogoUrl?: string | null }) {
   const logoSrc = branchLogoUrl || '/logo.png'
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: collapsed ? '12px 8px' : '16px 16px 12px', borderBottom: '1px solid #2A2A2A' }}>
@@ -160,7 +160,7 @@ function SidebarContent({
 }: ContentProps) {
   return (
     <>
-      <EZGarageLogo collapsed={collapsed} branchLogoUrl={branchLogoUrl} />
+      <BrandLogo collapsed={collapsed} branchLogoUrl={branchLogoUrl} />
 
       {showCollapseToggle && (
         <button

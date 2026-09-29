@@ -74,8 +74,8 @@ Deno.serve(async (req) => {
     ]
 
     const html = `
-      <h2>New EZGarage tenant — RaudhahPay onboarding details</h2>
-      <p>The following workshop has joined EZGarage and needs to be set up for RaudhahPay payment disbursement.</p>
+      <h2>New EZWerkFlo tenant — RaudhahPay onboarding details</h2>
+      <p>The following workshop has joined EZWerkFlo and needs to be set up for RaudhahPay payment disbursement.</p>
       <table cellpadding="6" style="border-collapse: collapse;">
         ${rows.map(([label, value]) => `
           <tr>
@@ -96,9 +96,9 @@ Deno.serve(async (req) => {
         // Resend's shared sandbox sender — works with no domain setup.
         // Swap for a verified custom domain address once one is added
         // to the Resend account.
-        from: 'EZGarage <onboarding@resend.dev>',
+        from: 'EZWerkFlo <onboarding@resend.dev>',
         to: [picEmail],
-        subject: `New EZGarage tenant onboarded: ${tenant.name}`,
+        subject: `New EZWerkFlo tenant onboarded: ${tenant.name}`,
         html,
       }),
     })

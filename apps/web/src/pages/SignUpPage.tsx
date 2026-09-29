@@ -163,17 +163,17 @@ export function SignUpPage() {
         {/* Logo + centered brand block */}
         <div style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '28px', width: '100%', maxWidth: '420px' }}>
 
-          {/* EZGarage OS logo mark */}
+          {/* EZWerkFlo logo mark */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <div style={{ width: 56, height: 56, background: '#F15A22', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 24px rgba(241,90,34,0.4)' }}>
               <span style={{ color: '#fff', fontWeight: 900, fontSize: 24, fontFamily: 'system-ui', letterSpacing: -1 }}>EZ</span>
             </div>
             <div style={{ textAlign: 'left' }}>
               <div style={{ color: '#F0F0F0', fontWeight: 900, fontSize: 22, fontFamily: 'system-ui', letterSpacing: 1 }}>
-                EZGarage <span style={{ color: '#F15A22' }}>OS</span>
+                EZWerkFlo
               </div>
               <div style={{ color: '#6B7280', fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', marginTop: 2 }}>
-                Garage Operating System
+                Workshop Operating System
               </div>
             </div>
           </div>
@@ -188,10 +188,10 @@ export function SignUpPage() {
           {/* Tagline */}
           <div>
             <h2 style={{ fontSize: '28px', fontWeight: 700, color: '#F0F0F0', marginBottom: '8px', lineHeight: 1.3 }}>
-              Power your garage<br />with EZGarage OS
+              Power your workshop<br />with EZWerkFlo
             </h2>
             <p style={{ fontSize: '14px', color: '#A0A0A0' }}>
-              The all-in-one garage operating system for modern workshops
+              The all-in-one operating system for modern workshops
             </p>
           </div>
 
@@ -208,7 +208,7 @@ export function SignUpPage() {
         {/* Footer */}
         <div style={{ position: 'absolute', bottom: 24, zIndex: 10 }}>
           <p style={{ fontSize: '12px', color: '#4B5563' }}>
-            EZGarage OS &copy; 2025. All rights reserved.
+            EZWerkFlo &copy; 2025. All rights reserved.
           </p>
         </div>
       </div>
@@ -231,8 +231,8 @@ export function SignUpPage() {
             <span style={{ color: '#fff', fontWeight: 900, fontSize: 17, fontFamily: 'system-ui', letterSpacing: -1 }}>EZ</span>
           </div>
           <div>
-            <div style={{ color: '#F0F0F0', fontWeight: 800, fontSize: 16, fontFamily: 'system-ui' }}>EZGarage <span style={{ color: '#F15A22' }}>OS</span></div>
-            <div style={{ color: '#6B7280', fontSize: 10, letterSpacing: 2, textTransform: 'uppercase' }}>Garage Operating System</div>
+            <div style={{ color: '#F0F0F0', fontWeight: 800, fontSize: 16, fontFamily: 'system-ui' }}>EZWerkFlo</div>
+            <div style={{ color: '#6B7280', fontSize: 10, letterSpacing: 2, textTransform: 'uppercase' }}>Workshop Operating System</div>
           </div>
         </div>
 
@@ -438,7 +438,7 @@ export function SignUpPage() {
           </p>
 
           <p style={{ textAlign: 'center', fontSize: '12px', color: '#4B5563', marginTop: '24px' }}>
-            EZGarage OS &copy; 2025
+            EZWerkFlo &copy; 2025
           </p>
         </div>
       </div>

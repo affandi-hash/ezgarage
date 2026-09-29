@@ -139,7 +139,7 @@ Deno.serve(async (req) => {
       page.drawText(str, { x, y, size, font: bold ? fontBold : font, color })
     }
 
-    text('EZGarage — RaudhahPay Daily Reconciliation Statement', margin, 16, true)
+    text('EZWerkFlo — RaudhahPay Daily Reconciliation Statement', margin, 16, true)
     y -= 22
     text(`Statement date: ${targetDate}`, margin, 11)
     y -= 16
@@ -202,9 +202,9 @@ Deno.serve(async (req) => {
       method: 'POST',
       headers: { Authorization: `Bearer ${Deno.env.get('RESEND_API_KEY')}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'EZGarage <onboarding@resend.dev>',
+        from: 'EZWerkFlo <onboarding@resend.dev>',
         to: recipients,
-        subject: `EZGarage RaudhahPay Statement — ${targetDate}`,
+        subject: `EZWerkFlo RaudhahPay Statement — ${targetDate}`,
         html: `<p>Attached is the RaudhahPay reconciliation statement for <strong>${targetDate}</strong>.</p>
                <p>${rows.length} transaction(s) across ${byTenant.size} tenant(s), grand total RM ${grandTotal.toFixed(2)}.</p>`,
         attachments: [{ filename: `raudhahpay-statement-${targetDate}.pdf`, content: pdfBase64 }],

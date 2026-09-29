@@ -47,7 +47,7 @@ async function buildReceiptPdf(input: ReceiptPdfInput): Promise<Uint8Array> {
     page.drawText(str, { x, y, size, font: bold ? fontBold : font, color })
   }
 
-  text(input.branch?.name || 'EZGarage', margin, 16, true)
+  text(input.branch?.name || 'EZWerkFlo', margin, 16, true)
   y -= 18
   if (input.branch?.address) { text(input.branch.address, margin, 9, false, rgb(0.4, 0.4, 0.4)); y -= 12 }
   if (input.branch?.phone) { text(`Tel: ${input.branch.phone}`, margin, 9, false, rgb(0.4, 0.4, 0.4)); y -= 12 }

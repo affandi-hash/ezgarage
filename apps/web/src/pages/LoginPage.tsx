@@ -76,7 +76,7 @@ export function LoginPage() {
       >
         <img
           src="/login-banner.png"
-          alt="EZGarage OS"
+          alt="EZWerkFlo — Workshop Operating System"
           style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', display: 'block' }}
         />
       </div>
@@ -95,8 +95,8 @@ export function LoginPage() {
             <span style={{ color: '#fff', fontWeight: 900, fontSize: 16 }}>EZ</span>
           </div>
           <div>
-            <div style={{ color: '#F0F0F0', fontWeight: 800, fontSize: 16 }}>EZGarage <span style={{ color: '#F15A22' }}>OS</span></div>
-            <div style={{ color: '#6B7280', fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', marginTop: 2 } as React.CSSProperties}>Garage Operating System</div>
+            <div style={{ color: '#F0F0F0', fontWeight: 800, fontSize: 16 }}>EZWerkFlo</div>
+            <div style={{ color: '#6B7280', fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', marginTop: 2 } as React.CSSProperties}>Workshop Operating System</div>
           </div>
         </div>
 
@@ -115,7 +115,7 @@ export function LoginPage() {
               Welcome <span style={{ color: '#F15A22' }}>Back!</span>
             </h2>
             <p style={{ color: '#6B7280', fontSize: 14, margin: 0 }}>
-              Sign in to your EZGarage workspace
+              Sign in to your EZWerkFlo workspace
             </p>
           </div>
 
@@ -229,7 +229,7 @@ export function LoginPage() {
           </form>
 
           <p style={{ textAlign: 'center', fontSize: 13, color: '#6B7280', marginTop: 24, marginBottom: 0 }}>
-            New to EZGarage OS?{' '}
+            New to EZWerkFlo?{' '}
             <a href="/signup" style={{ color: '#F15A22', textDecoration: 'none', fontWeight: 600 }}>
               Sign up free →
             </a>
@@ -237,7 +237,7 @@ export function LoginPage() {
         </div>
 
         <p style={{ textAlign: 'center', fontSize: 11, color: '#2A2A2A', marginTop: 20 }}>
-          EZGarage OS © 2025. All rights reserved.
+          EZWerkFlo © 2025. All rights reserved.
         </p>
       </div>
     </div>

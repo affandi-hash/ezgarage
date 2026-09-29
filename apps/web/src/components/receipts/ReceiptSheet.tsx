@@ -105,9 +105,9 @@ export function ReceiptSheet({ inv, branchInfo }: { inv: ReceiptData; branchInfo
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
         <span style={{ fontSize: 11, color: '#ccc' }}>Powered by:</span>
-        <span style={{ fontSize: 11, color: '#bbb', fontWeight: 600 }}>EZ Garage</span>
+        <span style={{ fontSize: 11, color: '#bbb', fontWeight: 600 }}>EZWerkFlo</span>
         <span style={{ fontSize: 11, color: '#ccc' }}>·</span>
-        <span style={{ fontSize: 11, color: '#bbb' }}>http://ezgarage.app</span>
+        <span style={{ fontSize: 11, color: '#bbb' }}>http://ezwerkflo.com</span>
       </div>
     </div>
   )
