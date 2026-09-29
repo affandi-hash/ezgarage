@@ -22,6 +22,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { formatName, formatPhone, formatEmail, formatIC, formatPlate, formatTitleCase } from '@/lib/formatters'
+import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from '@/types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -90,8 +91,16 @@ type DetailTab = 'overview' | 'current_job' | 'history' | 'photos'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const ACTIVE_STATUSES = ['checked_in', 'diagnosing', 'in_progress', 'waiting_parts', 'pending_approval']
-const READY_STATUSES = ['ready_for_pickup']
+// These used to be an invented status vocabulary ('pending_approval',
+// 'ready_for_pickup', 'completed') that never matched the real JobStatus
+// enum (types/index.ts) -- jobs actually sitting in 'waiting_approval' or
+// 'long_due' were never recognized as active at all (getActiveJob()
+// returned null for them), so a vehicle with a long-overdue job silently
+// fell into "Job History" as if finished, and the Overview tab's "Last
+// Visit" always read "--" since no real job ever has status 'completed'
+// (the real terminal status is 'delivered').
+const ACTIVE_STATUSES = ['checked_in', 'diagnosing', 'waiting_approval', 'waiting_parts', 'in_progress', 'long_due']
+const READY_STATUSES = ['ready']
 const LONG_DUE_DAYS = 7
 
 function getActiveJob(jobs: VehicleWithRelations['jobs']) {
@@ -121,26 +130,15 @@ function formatCurrency(amount: number): string {
   return `RM ${amount.toFixed(2)}`
 }
 
+// Use the app's real JobStatus label/color maps (types/index.ts) instead
+// of a second, hand-maintained copy -- that's exactly how this page's
+// vocabulary silently drifted from the real one in the first place.
 function statusLabel(status: string): string {
-  const map: Record<string, string> = {
-    checked_in: 'Checked In',
-    diagnosing: 'Diagnosing',
-    in_progress: 'In Progress',
-    waiting_parts: 'Waiting Parts',
-    pending_approval: 'Pending Approval',
-    ready_for_pickup: 'Ready',
-    completed: 'Completed',
-    cancelled: 'Cancelled',
-  }
-  return map[status] ?? status
+  return JOB_STATUS_LABELS[status as keyof typeof JOB_STATUS_LABELS] ?? status
 }
 
 function statusColor(status: string): string {
-  if (READY_STATUSES.includes(status)) return '#22C55E'
-  if (ACTIVE_STATUSES.includes(status)) return '#F15A22'
-  if (status === 'completed') return '#A0A0A0'
-  if (status === 'cancelled') return '#EF4444'
-  return '#A0A0A0'
+  return JOB_STATUS_COLORS[status as keyof typeof JOB_STATUS_COLORS] ?? '#A0A0A0'
 }
 
 // ─── Shared form field styles ─────────────────────────────────────────────────
@@ -928,7 +926,7 @@ function OverviewTab({
 }) {
   const activeJob = getActiveJob(vehicle.jobs)
   const lastJob = vehicle.jobs
-    .filter((j) => j.status === 'completed')
+    .filter((j) => j.status === 'delivered')
     .sort((a, b) => new Date(b.checked_in_at).getTime() - new Date(a.checked_in_at).getTime())[0]
 
   const rows: Array<{ icon: React.ReactNode; label: string; value: React.ReactNode }> = [

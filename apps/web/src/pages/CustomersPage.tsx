@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { logAudit } from '@/lib/audit'
 import { formatName, formatPhone, formatEmail, formatIC, formatPlate, formatTitleCase } from '@/lib/formatters'
+import { JOB_STATUS_COLORS } from '@/types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -117,14 +118,16 @@ function statusDotColor(customer_status: string): string {
   return customer_status === 'active' ? '#22c55e' : '#ef4444'
 }
 
+// This used to hand-map a handful of statuses ('completed', 'pending')
+// that don't exist in the real JobStatus enum (types/index.ts) -- most
+// real jobs (waiting_approval, waiting_parts, ready, long_due, delivered,
+// etc.) fell through to a generic gray badge instead of a real status
+// color. Derive from the same canonical map every other status badge in
+// the app uses instead of a second, hand-maintained copy.
 function jobStatusColor(status: string): { bg: string; text: string } {
-  switch (status) {
-    case 'completed': return { bg: '#14532d', text: '#86efac' }
-    case 'in_progress': return { bg: '#1e3a5f', text: '#93c5fd' }
-    case 'pending': return { bg: '#3b2a00', text: '#fcd34d' }
-    case 'cancelled': return { bg: '#3b0a0a', text: '#fca5a5' }
-    default: return { bg: '#1E1E1E', text: '#A0A0A0' }
-  }
+  const color = JOB_STATUS_COLORS[status as keyof typeof JOB_STATUS_COLORS]
+  if (!color) return { bg: '#1E1E1E', text: '#A0A0A0' }
+  return { bg: `${color}22`, text: color }
 }
 
 function typeLabel(type: string): string {
