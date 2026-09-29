@@ -646,7 +646,12 @@ export function SalesMarketingOverviewPage() {
       branchFilter ? supabase.from('branches').select('work_start_time, work_end_time, work_days').eq('id', branchFilter).single() : Promise.resolve({ data: null }),
     ])
 
-    const espQ = supabase.from('esp_members').select('status, registered_at').eq('tenant_id', tenantId)
+    // Missing the branchFilter every other query on this page applies --
+    // a branch-scoped user was seeing a tenant-wide ESP member count next
+    // to their own branch-scoped ESP target, while EspMembersPage/
+    // EspReportsPage correctly scope by branch for the same tenant.
+    let espQ = supabase.from('esp_members').select('status, registered_at').eq('tenant_id', tenantId)
+    if (branchFilter) espQ = espQ.eq('branch_id', branchFilter)
     const { data: espRows } = await espQ
     const espActive = (espRows ?? []).filter(r => r.status === 'active').length
     const espNewCurr = (espRows ?? []).filter(r => r.registered_at >= bounds.start && r.registered_at <= bounds.end + 'T23:59:59').length
