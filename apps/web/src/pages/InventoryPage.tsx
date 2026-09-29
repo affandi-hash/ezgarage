@@ -35,7 +35,7 @@ interface PartRequest {
   quantity: number
   ordered_qty?: number | null
   catalogue_part_id?: string | null
-  unit_price?: number | null
+  cost_price?: number | null
   selling_price?: number | null
   supplier?: string | null
   urgency: 'low' | 'normal' | 'urgent' | 'critical'
@@ -973,18 +973,6 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
     }
   }
 
-  async function buildCatalogueUpdate(catalogueId: string, qty: number, part: PartRequest) {
-    const { data: catRow } = await supabase.from('parts_catalogue').select('stock_qty, supplier_id').eq('id', catalogueId).single()
-    const update: Record<string, unknown> = { stock_qty: (catRow?.stock_qty ?? 0) + qty }
-    if (part.unit_price) update.cost_price = part.unit_price
-    if (part.selling_price) update.selling_price = part.selling_price
-    if (!catRow?.supplier_id && part.supplier) {
-      const { data: sup } = await supabase.from('suppliers').select('id').eq('name', part.supplier).eq('tenant_id', tenantId).single()
-      if (sup) update.supplier_id = sup.id
-    }
-    return update
-  }
-
   async function handleMarkReceived(part: PartRequest) {
     if (!part.catalogue_part_id) {
       supabase.from('parts_catalogue').select('id,name,part_number,stock_qty').eq('tenant_id', tenantId).eq('is_active', true).order('name').then(({ data }) => setCatalogueParts(data ?? []))
@@ -995,10 +983,19 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
     setActionLoading(part.id)
     try {
       const orderedQty = part.ordered_qty ?? part.quantity
-      const { error: dbErr } = await supabase.from('parts_requests').update({ status: 'received' }).eq('id', part.id)
-      if (dbErr) throw dbErr
-      const catUpdate = await buildCatalogueUpdate(part.catalogue_part_id, orderedQty, part)
-      await supabase.from('parts_catalogue').update(catUpdate).eq('id', part.catalogue_part_id)
+      // receive_stock_request() does the status flip and the stock_qty
+      // increment atomically in one Postgres function -- this used to be
+      // two separate client calls (mark received, then a SEPARATE
+      // read-then-write on stock_qty using the WRONG source field for
+      // cost_price), so a failure between them left stock silently wrong
+      // forever, and cost_price never updated at all.
+      const { data, error } = await supabase.rpc('receive_stock_request', {
+        p_request_id: part.id,
+        p_qty: orderedQty,
+        p_catalogue_part_id: part.catalogue_part_id,
+      })
+      if (error) throw error
+      if (data?.error) throw new Error(data.error === 'already_received' ? 'Already received' : data.error)
       toast(`Received · ${orderedQty} unit${orderedQty !== 1 ? 's' : ''} added to stock`)
       await loadParts()
     } catch (err) {
@@ -1038,19 +1035,24 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
     try {
       const part = linkReceiveModal.part
       const orderedQty = part.ordered_qty ?? part.quantity
-      let catalogueId = linkReceiveForm.catalogue_part_id
-      if (linkReceiveForm.create_new) {
-        if (!linkReceiveForm.new_name.trim()) { toast('Part name is required', 'error'); setLinkReceiveSaving(false); return }
-        const { data: newPart, error: createErr } = await supabase.from('parts_catalogue')
-          .insert({ name: linkReceiveForm.new_name.trim(), part_number: linkReceiveForm.new_part_number.trim() || null, stock_qty: 0, tenant_id: tenantId, branch_id: branchId || null, is_active: true })
-          .select('id').single()
-        if (createErr || !newPart) { toast('Failed to create catalogue entry', 'error'); setLinkReceiveSaving(false); return }
-        catalogueId = newPart.id
+      if (linkReceiveForm.create_new && !linkReceiveForm.new_name.trim()) {
+        toast('Part name is required', 'error'); setLinkReceiveSaving(false); return
       }
-      if (!catalogueId) { toast('Select or create a catalogue entry', 'error'); setLinkReceiveSaving(false); return }
-      await supabase.from('parts_requests').update({ catalogue_part_id: catalogueId, status: 'received' }).eq('id', part.id)
-      const catUpdate = await buildCatalogueUpdate(catalogueId, orderedQty, part)
-      await supabase.from('parts_catalogue').update(catUpdate).eq('id', catalogueId)
+      if (!linkReceiveForm.create_new && !linkReceiveForm.catalogue_part_id) {
+        toast('Select or create a catalogue entry', 'error'); setLinkReceiveSaving(false); return
+      }
+      // Creating the catalogue entry, linking it to this request, and
+      // adding the received stock all happen inside one atomic RPC now --
+      // see handleMarkReceived above for why that matters.
+      const { data, error } = await supabase.rpc('receive_stock_request', {
+        p_request_id: part.id,
+        p_qty: orderedQty,
+        p_catalogue_part_id: linkReceiveForm.create_new ? null : linkReceiveForm.catalogue_part_id,
+        p_new_catalogue_name: linkReceiveForm.create_new ? linkReceiveForm.new_name.trim() : null,
+        p_new_catalogue_part_number: linkReceiveForm.create_new ? (linkReceiveForm.new_part_number.trim() || null) : null,
+      })
+      if (error) throw error
+      if (data?.error) throw new Error(data.error === 'already_received' ? 'Already received' : data.error)
       toast(`Received · ${orderedQty} unit${orderedQty !== 1 ? 's' : ''} added to stock`)
       setLinkReceiveModal({ open: false, part: null })
       await loadParts()
@@ -1074,6 +1076,13 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
       }
       if (form.part_number.trim()) payload.part_number = form.part_number.trim()
       if (form.supplier.trim()) payload.supplier = form.supplier.trim()
+      // Cost Price was never actually submitted here despite the modal
+      // having a whole field for it -- every stock purchase's cost_price
+      // silently saved as NULL, which then fed straight into COGS/margin
+      // calculations elsewhere in the app as if the part cost nothing.
+      if (form.unit_price && Number(form.unit_price) > 0) {
+        payload.cost_price = parseFloat(Number(form.unit_price).toFixed(2))
+      }
       // Selling Price is directly editable (and round-able) now -- it's no
       // longer purely cost*markup, so submit whatever the field actually
       // shows rather than recomputing it from scratch.

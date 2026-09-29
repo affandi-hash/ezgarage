@@ -654,30 +654,28 @@ export function PartsPage() {
     }
   }
 
-  async function buildCatalogueUpdate(catalogueId: string, qtyToAdd: number, part: PartRequest) {
-    const { data: catRow } = await supabase.from('parts_catalogue').select('stock_qty, supplier_id').eq('id', catalogueId).single()
-    const update: Record<string, unknown> = { stock_qty: (catRow?.stock_qty ?? 0) + qtyToAdd }
-    if (part.cost_price) update.cost_price = part.cost_price
-    if (part.selling_price) update.selling_price = part.selling_price
-    if (!catRow?.supplier_id && part.supplier) {
-      const { data: sup } = await supabase.from('suppliers').select('id').eq('name', part.supplier).eq('tenant_id', tenantId).single()
-      if (sup) update.supplier_id = sup.id
-    }
-    return update
-  }
-
   async function handleMarkReceived(part: PartRequest) {
     setActionLoading(part.id)
     try {
-      const { error } = await supabase.from('parts_requests').update({ status: 'received', received_at: new Date().toISOString() }).eq('id', part.id)
-      if (error) throw error
       const orderedQty = part.ordered_qty ?? part.quantity
       const surplus = orderedQty - part.quantity
       if (surplus > 0 && part.catalogue_part_id) {
-        const catUpdate = await buildCatalogueUpdate(part.catalogue_part_id, surplus, part)
-        await supabase.from('parts_catalogue').update(catUpdate).eq('id', part.catalogue_part_id)
+        // receive_stock_request() does the status flip and the surplus
+        // stock_qty increment atomically in one Postgres function -- this
+        // used to be a status update followed by a SEPARATE read-then-write
+        // on stock_qty, the same non-atomic shape that already produced a
+        // real orphaned receipt elsewhere in this app.
+        const { data, error } = await supabase.rpc('receive_stock_request', {
+          p_request_id: part.id,
+          p_qty: surplus,
+          p_catalogue_part_id: part.catalogue_part_id,
+        })
+        if (error) throw error
+        if (data?.error) throw new Error(data.error === 'already_received' ? 'Already received' : data.error)
         toast(`Received · ${part.quantity} unit${part.quantity !== 1 ? 's' : ''} for job · ${surplus} surplus added to stock`)
       } else {
+        const { error } = await supabase.from('parts_requests').update({ status: 'received', received_at: new Date().toISOString() }).eq('id', part.id)
+        if (error) throw error
         toast(`Received · ${part.quantity} unit${part.quantity !== 1 ? 's' : ''} for job`)
       }
       await loadParts()
@@ -728,67 +726,38 @@ export function PartsPage() {
     try {
       const { data: catPart, error: fetchErr } = await supabase
         .from('parts_catalogue')
-        .select('id, name, part_number, stock_qty, selling_price, cost_price')
+        .select('id, name, stock_qty')
         .eq('id', grabGoForm.catalogue_part_id)
         .single()
       if (fetchErr || !catPart) throw new Error('Could not find catalogue part')
 
-      const qtyBefore = catPart.stock_qty ?? 0
-      const qtyAfter = qtyBefore - qty
-
-      if (qtyAfter < 0 && !confirm(`Stock will go negative (${qtyAfter} units). Continue?`)) {
+      // This is just a heads-up for the confirm dialog -- the actual
+      // decrement below happens atomically in the database, so a stale
+      // read here can't cause a wrong final stock value.
+      const qtyAfterEstimate = (catPart.stock_qty ?? 0) - qty
+      if (qtyAfterEstimate < 0 && !confirm(`Stock will go negative (${qtyAfterEstimate} units). Continue?`)) {
         setGrabGoSaving(false); return
       }
 
-      const { error: deductErr } = await supabase
-        .from('parts_catalogue')
-        .update({ stock_qty: qtyAfter })
-        .eq('id', grabGoForm.catalogue_part_id)
-      if (deductErr) throw deductErr
-
-      const reqPayload: Record<string, unknown> = {
-        branch_id: branchId,
-        tenant_id: tenantId || null,
-        catalogue_part_id: grabGoForm.catalogue_part_id,
-        part_name: catPart.name,
-        part_number: catPart.part_number || null,
-        quantity: qty,
-        ordered_qty: qty,
-        status: 'installed',
-        ordered_at: new Date().toISOString(),
-        received_at: new Date().toISOString(),
-        installed_at: new Date().toISOString(),
-        urgency: 'normal',
-        notes: grabGoForm.notes.trim() || 'Grab & Go',
-        requested_by: user?.id ?? null,
-        selling_price: grabGoForm.selling_price ? parseFloat(grabGoForm.selling_price) : (catPart.selling_price ?? null),
-        cost_price: catPart.cost_price ?? null,
-        supplier: grabGoForm.supplier_name.trim() || null,
-      }
-      if (grabGoForm.job_id) reqPayload.job_id = grabGoForm.job_id
-
-      const { data: newReq, error: reqErr } = await supabase
-        .from('parts_requests')
-        .insert(reqPayload)
-        .select('id')
-        .single()
-      if (reqErr) throw reqErr
-
-      await supabase.from('stock_movements').insert({
-        tenant_id: tenantId || null,
-        branch_id: branchId || null,
-        catalogue_part_id: grabGoForm.catalogue_part_id,
-        movement_type: 'grab_go_out',
-        qty_change: -qty,
-        qty_before: qtyBefore,
-        qty_after: qtyAfter,
-        parts_request_id: newReq?.id ?? null,
-        job_id: grabGoForm.job_id || null,
-        done_by: user?.full_name ?? null,
-        notes: grabGoForm.notes.trim() || null,
+      // record_grab_go() does the stock decrement (a real SQL decrement
+      // under a row lock, not a client read-then-write), the parts_requests
+      // insert, and the stock_movements audit row all in one atomic
+      // Postgres function -- this used to be three separate, un-transacted
+      // client calls: a failure partway through could leave stock
+      // decremented with no request/audit row, or two concurrent Grab &
+      // Go's on the same part could race and lose an update.
+      const { data, error } = await supabase.rpc('record_grab_go', {
+        p_catalogue_part_id: grabGoForm.catalogue_part_id,
+        p_qty: qty,
+        p_job_id: grabGoForm.job_id || null,
+        p_selling_price: grabGoForm.selling_price ? parseFloat(grabGoForm.selling_price) : null,
+        p_supplier_name: grabGoForm.supplier_name.trim() || null,
+        p_notes: grabGoForm.notes.trim() || null,
       })
+      if (error) throw error
+      if (data?.error) throw new Error(data.error)
 
-      toast(`Grab & Go recorded · ${qty} × ${catPart.name} · stock now ${qtyAfter}`)
+      toast(`Grab & Go recorded · ${qty} × ${catPart.name} · stock now ${data.new_stock_qty}`)
       setShowGrabGoModal(false)
       setGrabGoForm({ catalogue_part_id: '', part_search: '', qty: '1', job_id: '', job_search: '', job_vehicle_type: '', selling_price: '', supplier_name: '', notes: '' })
       setGrabGoJobResults([])
