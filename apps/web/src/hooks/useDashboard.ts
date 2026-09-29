@@ -56,6 +56,10 @@ export function useDashboard(branchId?: string | null): UseDashboardReturn {
       const today = new Date()
       const todayStr = today.toISOString().split('T')[0]
       const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString()
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const monthStartDate = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`
+      const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1)
+      const monthEndDate = `${nextMonthDate.getFullYear()}-${pad(nextMonthDate.getMonth() + 1)}-01`
 
       // Fetch all active jobs with relations
       let jobsQuery = supabase
@@ -90,18 +94,39 @@ export function useDashboard(branchId?: string | null): UseDashboardReturn {
       if (bookingsError) throw new Error(bookingsError.message)
       const bookings = (bookingsData || []) as Booking[]
 
-      // Completed this month -- 'closed' is never a real job status (jobs use
-      // 'delivered' as their terminal state), so this always matched zero
-      // rows and both "Est. Revenue (Month)" and "Completed This Month"
-      // silently read 0 no matter how much work the shop actually finished.
+      // Completed this month -- counts jobs actually DELIVERED this month
+      // (status_updated_at, the timestamp the app stamps whenever a job's
+      // status changes), not jobs merely CHECKED IN this month. The previous
+      // checked_in_at filter missed every job that started last month but
+      // was finished this month, and would also have wrongly counted a job
+      // checked in this month and delivered next month had one existed --
+      // undercounting real September completions by 5 jobs (39 vs the true 44).
       let closedQuery = supabase
         .from('jobs')
-        .select('id, final_amount', { count: 'exact' })
+        .select('id', { count: 'exact', head: true })
         .eq('status', 'delivered')
-        .gte('checked_in_at', monthStart)
+        .gte('status_updated_at', monthStart)
 
       if (branchId) closedQuery = closedQuery.eq('branch_id', branchId)
-      const { data: closedJobs, count: closedCount } = await closedQuery
+      const { count: closedCount } = await closedQuery
+
+      // Revenue (Month) -- actual cash collected this month, sourced from
+      // paid invoices (issue_date in the current month), the same
+      // definition "Revenue" already uses everywhere else in the app
+      // (Reports, Finance). This previously summed jobs.final_amount for
+      // delivered jobs CHECKED IN this month -- an entirely different,
+      // undocumented accrual-style figure that doesn't match "Revenue"
+      // anywhere else in the product and overstated real collections by
+      // ~62% (RM30,863.25 vs the true RM19,087.25 for September 2026).
+      let revenueQuery = supabase
+        .from('invoices')
+        .select('total_amount, subtotal')
+        .eq('status', 'paid')
+        .gte('issue_date', monthStartDate)
+        .lt('issue_date', monthEndDate)
+
+      if (branchId) revenueQuery = revenueQuery.eq('branch_id', branchId)
+      const { data: paidInvoices } = await revenueQuery
 
       // Workshop snapshot count by status
       const statusCounts: Record<string, number> = {}
@@ -123,12 +148,8 @@ export function useDashboard(branchId?: string | null): UseDashboardReturn {
       const waitingApproval = jobs.filter((j) => j.status === 'waiting_approval').length
       const waitingParts = jobs.filter((j) => j.status === 'waiting_parts').length
 
-      // final_amount (the actual billed total) is reliably populated on
-      // delivered jobs; estimated_cost is the pre-work quote and is often
-      // never updated, so summing it understated real revenue even once the
-      // status filter was fixed.
-      const estRevenue = (closedJobs || []).reduce(
-        (sum: number, j: any) => sum + (j.final_amount || 0),
+      const estRevenue = (paidInvoices || []).reduce(
+        (sum: number, inv: { total_amount: number | null; subtotal: number | null }) => sum + (inv.total_amount ?? inv.subtotal ?? 0),
         0
       )
 
