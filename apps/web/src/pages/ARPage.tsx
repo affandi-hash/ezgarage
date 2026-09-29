@@ -25,6 +25,7 @@ interface ARInvoice {
   balance_due: number
   status: string
   created_at: string
+  is_internal_fleet?: boolean
   // joined
   customers?: {
     customer_type: string
@@ -129,7 +130,7 @@ function buildARReportHtml(
       <tr>
         <td>${escapeHtml(inv.customer_name || '—')}</td>
         <td>${escapeHtml(inv.invoice_number)}</td>
-        <td>${escapeHtml(inv.vehicle_plate || '—')}</td>
+        <td>${escapeHtml(inv.vehicle_plate || '—')}${inv.is_internal_fleet ? ' <span style="font-size:9px;font-weight:700;color:#F15A22;border:1px solid #F15A22;border-radius:3px;padding:1px 4px;letter-spacing:0.3px">INTERNAL</span>' : ''}</td>
         <td>${fmtDate(inv.issue_date)}</td>
         <td>${fmtDate(inv.due_date)}</td>
         <td class="num">${fmtAmt(inv.total_amount)}</td>
@@ -371,7 +372,7 @@ function DetailPanel({
             { label: 'Issue Date', value: fmtDate(invoice.issue_date) },
             { label: 'Due Date', value: fmtDate(invoice.due_date) },
             { label: 'Phone', value: invoice.customer_phone || '—' },
-            { label: 'Vehicle', value: invoice.vehicle_plate || '—' },
+            { label: 'Vehicle', value: (invoice.vehicle_plate || '—') + (invoice.is_internal_fleet ? ' · Internal Fleet' : '') },
           ].map(row => (
             <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={{ fontSize: 13, color: '#A0A0A0' }}>{row.label}</span>
@@ -505,7 +506,7 @@ export function ARPage() {
     setLoading(true)
     let query = supabase
       .from('invoices')
-      .select('id, branch_id, invoice_number, customer_id, customer_name, customer_phone, vehicle_plate, issue_date, due_date, total_amount, amount_paid, balance_due, status, created_at, customers(customer_type, credit_days, credit_limit)')
+      .select('id, branch_id, invoice_number, customer_id, customer_name, customer_phone, vehicle_plate, issue_date, due_date, total_amount, amount_paid, balance_due, status, created_at, is_internal_fleet, customers(customer_type, credit_days, credit_limit)')
       .eq('tenant_id', tenantId)
       .neq('status', 'void')
       .neq('status', 'draft')
@@ -656,7 +657,16 @@ export function ARPage() {
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                   <td style={{ padding: '14px', color: '#F0F0F0', fontWeight: 600, fontSize: 14 }}>{inv.customer_name || '—'}</td>
                   <td style={{ padding: '14px', color: '#A0A0A0', fontSize: 13, fontFamily: 'monospace' }}>{inv.invoice_number}</td>
-                  <td style={{ padding: '14px', color: '#A0A0A0', fontSize: 13 }}>{inv.vehicle_plate || '—'}</td>
+                  <td style={{ padding: '14px', color: '#A0A0A0', fontSize: 13 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {inv.vehicle_plate || '—'}
+                      {inv.is_internal_fleet && (
+                        <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: '#F15A22', backgroundColor: 'rgba(241,90,34,0.15)', border: '1px solid rgba(241,90,34,0.3)', whiteSpace: 'nowrap' }}>
+                          Internal
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td style={{ padding: '14px', color: '#A0A0A0', fontSize: 13, whiteSpace: 'nowrap' }}>{fmtDate(inv.issue_date)}</td>
                   <td style={{ padding: '14px', fontSize: 13, whiteSpace: 'nowrap', color: inv._status === 'overdue' ? '#EF4444' : '#A0A0A0' }}>{fmtDate(inv.due_date)}</td>
                   <td style={{ padding: '14px', color: '#F0F0F0', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtAmt(inv.total_amount)}</td>
