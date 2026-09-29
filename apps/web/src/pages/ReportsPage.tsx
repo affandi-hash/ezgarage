@@ -553,11 +553,19 @@ export function ReportsPage() {
       // Parts/Labour were also never real figures at all, just a fixed
       // 40/60 split of the total. Source everything from real invoices and
       // their actual line items instead.
+      //
+      // This trend chart (and its Parts/Labour split) counts every real
+      // invoice -- sent, overdue and paid -- not paid-only, matching the
+      // "Total Revenue (All Statuses)" figure already shown on the Overview
+      // tab: it's meant to answer "how much business did we invoice this
+      // month", not "how much cash has actually come in" (that paid-only
+      // view lives in the Daily Sales table below, which states as much).
       type LineItem = { item_type: string; amount?: number; qty?: number; unit_price?: number }
       let revQ = supabase
         .from('invoices')
         .select('total_amount, subtotal, status, issue_date, line_items, branch_id')
         .gte('issue_date', sixMonthsAgo)
+        .in('status', ['sent', 'overdue', 'paid'])
       if (branchFilter) revQ = revQ.eq('branch_id', branchFilter)
       const { data: revInvoices } = await revQ
 
@@ -568,19 +576,16 @@ export function ReportsPage() {
       let outstanding = 0
 
       revInvoices?.forEach((inv: { total_amount: number | null; subtotal: number | null; status: string; issue_date: string; line_items: LineItem[] | null }) => {
-        if (inv.status === 'paid') {
-          const m = inv.issue_date.substring(0, 7)
-          const amt = inv.total_amount ?? inv.subtotal ?? 0
-          if (monthMap[m] !== undefined) monthMap[m] += amt
-          ;(inv.line_items ?? []).forEach((li) => {
-            const qty = li.qty ?? 1
-            const lineAmt = li.amount ?? qty * (li.unit_price ?? 0)
-            if (li.item_type === 'part') partsTotal += lineAmt
-            else if (li.item_type === 'labour') labourTotal += lineAmt
-          })
-        } else if (inv.status === 'sent' || inv.status === 'overdue') {
-          outstanding++
-        }
+        const m = inv.issue_date.substring(0, 7)
+        const amt = inv.total_amount ?? inv.subtotal ?? 0
+        if (monthMap[m] !== undefined) monthMap[m] += amt
+        ;(inv.line_items ?? []).forEach((li) => {
+          const qty = li.qty ?? 1
+          const lineAmt = li.amount ?? qty * (li.unit_price ?? 0)
+          if (li.item_type === 'part') partsTotal += lineAmt
+          else if (li.item_type === 'labour') labourTotal += lineAmt
+        })
+        if (inv.status !== 'paid') outstanding++
       })
 
       setRevenueData({
@@ -997,7 +1002,10 @@ export function ReportsPage() {
         {!loading && activeTab === 'revenue' && revenueData && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: '0 0 16px' }}>Monthly Revenue (last 6 months)</h3>
+              <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: '0 0 4px' }}>Monthly Revenue (last 6 months)</h3>
+              <p style={{ fontSize: 12, color: TEXT_SECONDARY, margin: '0 0 16px' }}>
+                All invoiced amounts (sent, overdue &amp; paid) — see Daily Sales below for cash actually collected.
+              </p>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 160, overflowX: 'auto', paddingBottom: 8 }}>
                 {(() => {
                   const maxVal = Math.max(...revenueData.monthly.map((m) => m.total), 1)
@@ -1024,8 +1032,8 @@ export function ReportsPage() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
-              <StatCard label="Parts Cost" value={formatRM(revenueData.partsTotal)} icon={Wrench} sub="Paid invoices" />
-              <StatCard label="Labour Revenue" value={formatRM(revenueData.labourTotal)} icon={DollarSign} sub="Paid invoices" />
+              <StatCard label="Parts Cost" value={formatRM(revenueData.partsTotal)} icon={Wrench} sub="All invoiced (last 6mo)" />
+              <StatCard label="Labour Revenue" value={formatRM(revenueData.labourTotal)} icon={DollarSign} sub="All invoiced (last 6mo)" />
               <StatCard label="Outstanding Invoices" value={revenueData.outstanding} icon={AlertCircle} sub="Unpaid / pending" />
             </div>
 
