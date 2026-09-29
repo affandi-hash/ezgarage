@@ -1132,16 +1132,33 @@ export function ReportsPage() {
                 <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: 0 }}>
                   Job List ({formatDateShort(bounds.start)} – {formatDateShort(bounds.end)})
                 </h3>
-                <button
-                  onClick={() => openPrintTab(buildJobListReportHtml(jobList, {
-                    start: bounds.start,
-                    end: bounds.end,
-                    total: jobList.reduce((s, j) => s + j.total_amount, 0),
-                  }))}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: BORDER, color: TEXT_PRIMARY, border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', padding: '8px 14px' }}
-                >
-                  <Download size={14} /> Export PDF
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="date"
+                      value={bounds.start}
+                      onChange={(e) => { setDateRange('custom'); setCustomStart(e.target.value) }}
+                      style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: BG, color: TEXT_PRIMARY, fontSize: 12 }}
+                    />
+                    <span style={{ color: TEXT_SECONDARY, fontSize: 12 }}>to</span>
+                    <input
+                      type="date"
+                      value={bounds.end}
+                      onChange={(e) => { setDateRange('custom'); setCustomEnd(e.target.value) }}
+                      style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: BG, color: TEXT_PRIMARY, fontSize: 12 }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => openPrintTab(buildJobListReportHtml(jobList, {
+                      start: bounds.start,
+                      end: bounds.end,
+                      total: jobList.reduce((s, j) => s + j.total_amount, 0),
+                    }))}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, background: BORDER, color: TEXT_PRIMARY, border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', padding: '8px 14px' }}
+                  >
+                    <Download size={14} /> Export PDF
+                  </button>
+                </div>
               </div>
               {jobList.length === 0 ? (
                 <p style={{ color: TEXT_SECONDARY, fontSize: 13, margin: 0 }}>No jobs invoiced in this period.</p>
@@ -1176,6 +1193,17 @@ export function ReportsPage() {
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: `2px solid ${TEXT_SECONDARY}` }}>
+                        <td colSpan={5} style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700 }}>
+                          Total ({jobList.length} {jobList.length === 1 ? 'job' : 'jobs'})
+                        </td>
+                        <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          {formatRM(jobList.reduce((s, j) => s + j.total_amount, 0))}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
