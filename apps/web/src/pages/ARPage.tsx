@@ -624,6 +624,13 @@ export function ARPage() {
         </button>
       </div>
 
+      {/* Filtered Total */}
+      {!loading && (
+        <div style={{ color: '#F0F0F0', fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
+          {search || filterStatus ? 'Selected' : 'Total'} Balance ({filtered.length} {filtered.length === 1 ? 'invoice' : 'invoices'}): {fmtAmt(filteredTotalOutstanding)}
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}><Loader2 size={32} style={{ color: '#F15A22' }} className="animate-spin" /></div>
