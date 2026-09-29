@@ -124,6 +124,69 @@ function openPrintTab(html: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60000)
 }
 
+function buildDailySalesReportHtml(
+  rows: { date: string; customers: number; avgPerTxn: number; count: number; revenue: number; cogs: number; grossProfit: number }[],
+  opts: { start: string; end: string; totalCustomers: number; totalTransactions: number; totalRevenue: number; totalCogs: number; totalGrossProfit: number }
+): string {
+  const bodyRows = rows.map((r) => `
+      <tr>
+        <td>${formatDateShort(r.date)}</td>
+        <td class="num">${r.customers}</td>
+        <td class="num">${formatRM(r.avgPerTxn)}</td>
+        <td class="num">${r.count}</td>
+        <td class="num">${formatRM(r.revenue)}</td>
+        <td class="num">${formatRM(r.cogs)}</td>
+        <td class="num">${formatRM(r.grossProfit)}</td>
+      </tr>`).join('')
+
+  const overallAvg = opts.totalTransactions > 0 ? opts.totalRevenue / opts.totalTransactions : 0
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Daily Sales Report</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; padding: 32px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .filters { font-size: 12px; color: #555; margin-bottom: 4px; }
+  .generated { font-size: 11px; color: #888; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border-bottom: 1px solid #ddd; padding: 8px 10px; text-align: left; white-space: nowrap; }
+  th { background: #f2f2f2; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+  td.num, th.num { text-align: right; }
+  tfoot td { font-weight: 700; border-top: 2px solid #999; border-bottom: none; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+  <h1>Daily Sales Report</h1>
+  <div class="filters">Period: ${formatDateShort(opts.start)} – ${formatDateShort(opts.end)}</div>
+  <div class="generated">Generated ${new Date().toLocaleString('en-MY', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th><th class="num">Customers</th><th class="num">Avg $ / Txn</th><th class="num">Transactions</th>
+        <th class="num">Sales Revenue</th><th class="num">COGS</th><th class="num">Gross Profit</th>
+      </tr>
+    </thead>
+    <tbody>${bodyRows || '<tr><td colspan="7" style="text-align:center;color:#888;padding:24px">No paid invoices in this period</td></tr>'}</tbody>
+    <tfoot>
+      <tr>
+        <td>Total</td>
+        <td class="num">${opts.totalCustomers}</td>
+        <td class="num">${formatRM(overallAvg)}</td>
+        <td class="num">${opts.totalTransactions}</td>
+        <td class="num">${formatRM(opts.totalRevenue)}</td>
+        <td class="num">${formatRM(opts.totalCogs)}</td>
+        <td class="num">${formatRM(opts.totalGrossProfit)}</td>
+      </tr>
+    </tfoot>
+  </table>
+</body>
+</html>`
+}
+
 function buildJobListReportHtml(
   rows: { invoice_number: string; job_number: string | null; customer_name: string; vehicle_plate: string; issue_date: string; total_amount: number; status: string }[],
   opts: { start: string; end: string; total: number }
@@ -292,6 +355,7 @@ export function ReportsPage() {
     cogs: number
     grossProfit: number
   }[]>([])
+  const [dailySalesTotalCustomers, setDailySalesTotalCustomers] = useState(0)
   const [jobList, setJobList] = useState<{
     id: string
     invoice_number: string
@@ -546,6 +610,7 @@ export function ReportsPage() {
       }
 
       const dailyMap: Record<string, { revenue: number; count: number; cogs: number; customers: Set<string> }> = {}
+      const periodCustomers = new Set<string>()
       const jobRowsOut: typeof jobList = []
       rangeInvoices?.forEach((inv: { id: string; invoice_number: string; customer_id: string | null; customer_name: string; vehicle_plate: string; issue_date: string; total_amount: number | null; subtotal: number | null; status: string; job_id: string | null; line_items: RangeLineItem[] | null }) => {
         const amt = inv.total_amount ?? inv.subtotal ?? 0
@@ -554,7 +619,9 @@ export function ReportsPage() {
           const day = dailyMap[inv.issue_date]
           day.revenue += amt
           day.count += 1
-          day.customers.add(inv.customer_id ?? inv.customer_name)
+          const custKey = inv.customer_id ?? inv.customer_name
+          day.customers.add(custKey)
+          periodCustomers.add(custKey)
           ;(inv.line_items ?? []).forEach((li) => {
             const qty = li.qty ?? 1
             if (li.item_type === 'part') day.cogs += li.cost_price != null ? li.cost_price * qty : (li.amount ?? qty * (li.unit_price ?? 0))
@@ -586,6 +653,7 @@ export function ReportsPage() {
           }))
           .sort((a, b) => b.date.localeCompare(a.date))
       )
+      setDailySalesTotalCustomers(periodCustomers.size)
       setJobList(jobRowsOut)
     } finally {
       setLoading(false)
@@ -987,37 +1055,76 @@ export function ReportsPage() {
             </div>
 
             <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: '0 0 16px' }}>
-                Daily Sales ({formatDateShort(bounds.start)} – {formatDateShort(bounds.end)})
-              </h3>
-              {dailySales.length === 0 ? (
-                <p style={{ color: TEXT_SECONDARY, fontSize: 13, margin: 0 }}>No paid invoices in this period.</p>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
-                        {['Date', 'Customers', 'Avg $ / Txn', 'Transactions', 'Sales Revenue', 'COGS', 'Gross Profit'].map((h) => (
-                          <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: TEXT_SECONDARY, fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dailySales.map((d) => (
-                        <tr key={d.date} style={{ borderBottom: `1px solid ${BORDER}` }}>
-                          <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, whiteSpace: 'nowrap' }}>{formatDateShort(d.date)}</td>
-                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY }}>{d.customers}</td>
-                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY, whiteSpace: 'nowrap' }}>{formatRM(d.avgPerTxn)}</td>
-                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY }}>{d.count}</td>
-                          <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 600, whiteSpace: 'nowrap' }}>{formatRM(d.revenue)}</td>
-                          <td style={{ padding: '10px 14px', color: TEXT_SECONDARY, whiteSpace: 'nowrap' }}>{formatRM(d.cogs)}</td>
-                          <td style={{ padding: '10px 14px', color: d.grossProfit >= 0 ? '#4ade80' : '#f87171', fontWeight: 600, whiteSpace: 'nowrap' }}>{formatRM(d.grossProfit)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {(() => {
+                const totalTransactions = dailySales.reduce((s, d) => s + d.count, 0)
+                const totalRevenue = dailySales.reduce((s, d) => s + d.revenue, 0)
+                const totalCogs = dailySales.reduce((s, d) => s + d.cogs, 0)
+                const totalGrossProfit = totalRevenue - totalCogs
+                const overallAvg = totalTransactions > 0 ? totalRevenue / totalTransactions : 0
+
+                return (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+                      <h3 style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY, margin: 0 }}>
+                        Daily Sales ({formatDateShort(bounds.start)} – {formatDateShort(bounds.end)})
+                      </h3>
+                      <button
+                        onClick={() => openPrintTab(buildDailySalesReportHtml(dailySales, {
+                          start: bounds.start,
+                          end: bounds.end,
+                          totalCustomers: dailySalesTotalCustomers,
+                          totalTransactions,
+                          totalRevenue,
+                          totalCogs,
+                          totalGrossProfit,
+                        }))}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: BORDER, color: TEXT_PRIMARY, border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', padding: '8px 14px' }}
+                      >
+                        <Download size={14} /> Export PDF
+                      </button>
+                    </div>
+                    {dailySales.length === 0 ? (
+                      <p style={{ color: TEXT_SECONDARY, fontSize: 13, margin: 0 }}>No paid invoices in this period.</p>
+                    ) : (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
+                              {['Date', 'Customers', 'Avg $ / Txn', 'Transactions', 'Sales Revenue', 'COGS', 'Gross Profit'].map((h) => (
+                                <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: TEXT_SECONDARY, fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dailySales.map((d) => (
+                              <tr key={d.date} style={{ borderBottom: `1px solid ${BORDER}` }}>
+                                <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, whiteSpace: 'nowrap' }}>{formatDateShort(d.date)}</td>
+                                <td style={{ padding: '10px 14px', color: TEXT_SECONDARY }}>{d.customers}</td>
+                                <td style={{ padding: '10px 14px', color: TEXT_SECONDARY, whiteSpace: 'nowrap' }}>{formatRM(d.avgPerTxn)}</td>
+                                <td style={{ padding: '10px 14px', color: TEXT_SECONDARY }}>{d.count}</td>
+                                <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 600, whiteSpace: 'nowrap' }}>{formatRM(d.revenue)}</td>
+                                <td style={{ padding: '10px 14px', color: TEXT_SECONDARY, whiteSpace: 'nowrap' }}>{formatRM(d.cogs)}</td>
+                                <td style={{ padding: '10px 14px', color: d.grossProfit >= 0 ? '#4ade80' : '#f87171', fontWeight: 600, whiteSpace: 'nowrap' }}>{formatRM(d.grossProfit)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ borderTop: `2px solid ${TEXT_SECONDARY}` }}>
+                              <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700 }}>Total</td>
+                              <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700 }}>{dailySalesTotalCustomers}</td>
+                              <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700, whiteSpace: 'nowrap' }}>{formatRM(overallAvg)}</td>
+                              <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700 }}>{totalTransactions}</td>
+                              <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700, whiteSpace: 'nowrap' }}>{formatRM(totalRevenue)}</td>
+                              <td style={{ padding: '10px 14px', color: TEXT_PRIMARY, fontWeight: 700, whiteSpace: 'nowrap' }}>{formatRM(totalCogs)}</td>
+                              <td style={{ padding: '10px 14px', color: totalGrossProfit >= 0 ? '#4ade80' : '#f87171', fontWeight: 700, whiteSpace: 'nowrap' }}>{formatRM(totalGrossProfit)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </div>
 
             <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 20 }}>
