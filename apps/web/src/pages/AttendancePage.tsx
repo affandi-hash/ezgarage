@@ -929,6 +929,11 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
       const myLeave = leaves.filter(l => l.staff_id === staff.id)
       const workingDays = (staff.branch_id && workingDaysByBranch.get(staff.branch_id)) ?? estimatedWorkingDays
       const present = mine.filter(r => r.status === 'present' || r.status === 'late').length
+      const leave = myLeave.reduce((s, l) => s + leaveDaysInMonth(l.date_from, l.date_to), 0)
+      // Days marked on_leave/mc/off directly on the attendance record (via
+      // the edit-record modal) are a separate path from the Leave Requests
+      // approval flow above -- still not an unexplained absence either way.
+      const manualLeaveDays = mine.filter(r => ['on_leave', 'mc', 'off'].includes(r.status)).length
       return {
         staff_id: staff.id,
         full_name: staff.full_name,
@@ -939,8 +944,8 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
         present,
         late: mine.filter(r => r.status === 'late').length,
         late_minutes: mine.reduce((s, r) => s + (r.late_minutes ?? 0), 0),
-        absent: Math.max(0, workingDays - present),
-        leave: myLeave.reduce((s, l) => s + leaveDaysInMonth(l.date_from, l.date_to), 0),
+        absent: Math.max(0, workingDays - present - leave - manualLeaveDays),
+        leave,
         ot_hours: mine.reduce((s, r) => s + (r.ot_hours ?? 0), 0),
       }
     })
@@ -1143,11 +1148,15 @@ function MyAttendanceTab({ staffId, branchId = null }: { staffId: string; branch
   const totalPresent = records.filter(r => r.status === 'present' || r.status === 'late').length
   const totalLate    = records.filter(r => r.status === 'late').length
   const totalLateMin = records.reduce((s, r) => s + (r.late_minutes ?? 0), 0)
+  // Days marked on_leave/mc/off directly on the attendance record (via the
+  // edit-record modal) are a separate path from the Leave Requests approval
+  // flow that feeds totalLeave -- still not an unexplained absence either way.
+  const manualLeaveDays = records.filter(r => ['on_leave', 'mc', 'off'].includes(r.status)).length
   const [y, m] = month.split('-').map(Number)
   const lastDay = new Date(y, m, 0).getDate()
   const estimatedWorkingDays = Math.round(lastDay * 5 / 7)
   const resolvedWorkingDays = workingDays ?? estimatedWorkingDays
-  const totalAbsent  = Math.max(0, resolvedWorkingDays - totalPresent)
+  const totalAbsent  = Math.max(0, resolvedWorkingDays - totalPresent - totalLeave - manualLeaveDays)
   const totalOT      = records.reduce((s, r) => s + (r.ot_hours ?? 0), 0)
 
   return (
