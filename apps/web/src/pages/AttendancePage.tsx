@@ -101,9 +101,12 @@ interface MonthlySummary {
   staff_id: string
   full_name: string
   position: string | null
+  branch_id: string | null
   working_days: number
+  working_days_is_estimate: boolean
   present: number
   late: number
+  late_minutes: number
   absent: number
   leave: number
   ot_hours: number
@@ -789,6 +792,70 @@ function OTRequestsTab({ branchId }: { branchId: string | null }) {
 
 // â"€â"€â"€ Monthly Report Tab â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
+// Public holidays and rest days differ branch to branch and there's no
+// holiday-calendar concept in the schema, so "working days this month" is a
+// manual, per-branch input rather than something derived automatically.
+// Shared by MonthlyReportTab (set it) and MyAttendanceTab (read + quick-edit
+// it from inside the per-staff modal).
+function WorkingDaysEditor({ branchId, branchName, year, month, value, onSaved }: {
+  branchId: string
+  branchName?: string
+  year: number
+  month: number
+  value: number | null
+  onSaved: (days: number) => void
+}) {
+  const user = useAuthStore(s => s.user)
+  const canEdit = user?.role === 'super_admin' || user?.role === 'ops_manager' || user?.role === 'foreman'
+  const [input, setInput] = useState(value != null ? String(value) : '')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setInput(value != null ? String(value) : '') }, [value])
+
+  async function save() {
+    const n = parseInt(input, 10)
+    if (!Number.isFinite(n) || n < 0 || n > 31) { toast.error('Enter a working-day count between 0 and 31.'); return }
+    if (!user?.tenant_id) return
+    setSaving(true)
+    const { error } = await supabase.from('monthly_working_days').upsert(
+      { tenant_id: user.tenant_id, branch_id: branchId, year, month, working_days: n, updated_by: user.id },
+      { onConflict: 'branch_id,year,month' }
+    )
+    setSaving(false)
+    if (error) { toast.error(error.message); return }
+    toast.success('Working days saved.')
+    onSaved(n)
+  }
+
+  if (!canEdit) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#A0A0A0' }}>
+        {branchName && <span>{branchName}:</span>}
+        <span style={{ color: '#F0F0F0', fontWeight: 600 }}>{value ?? 'not set'}</span>
+        <span>working days</span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {branchName && <span style={{ fontSize: 12, color: '#A0A0A0' }}>{branchName}:</span>}
+      <input
+        type="number" min={0} max={31} value={input} onChange={e => setInput(e.target.value)}
+        placeholder="e.g. 25"
+        style={{ width: 60, padding: '5px 8px', backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 6, color: '#F0F0F0', fontSize: 12 }}
+      />
+      <span style={{ fontSize: 11, color: '#666' }}>working days</span>
+      <button
+        onClick={save} disabled={saving}
+        style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', backgroundColor: '#F15A22', border: 'none', borderRadius: 6, color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+    </div>
+  )
+}
+
 function MonthlyReportTab({ branchId }: { branchId: string | null }) {
   const [month, setMonth] = useState(() => {
     const now = new Date()
@@ -796,7 +863,8 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
   })
   const [summary, setSummary] = useState<MonthlySummary[]>([])
   const [loading, setLoading] = useState(true)
-  const [detailStaff, setDetailStaff] = useState<{ id: string; name: string } | null>(null)
+  const [detailStaff, setDetailStaff] = useState<{ id: string; name: string; branch_id: string | null } | null>(null)
+  const [branches, setBranches] = useState<{ id: string; name: string; working_days: number | null }[]>([])
 
   const fetchReport = useCallback(async () => {
     setLoading(true)
@@ -806,16 +874,18 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
     const to = `${month}-${String(lastDay).padStart(2, '0')}`
 
     // Get all staff for the branch
-    let staffQ = supabase.from('staff_profiles').select('id, full_name, position').eq('is_active', true)
+    let staffQ = supabase.from('staff_profiles').select('id, full_name, position, branch_id').eq('is_active', true)
     if (branchId) staffQ = staffQ.eq('branch_id', branchId)
     const { data: staffList } = await staffQ
 
-    if (!staffList || staffList.length === 0) { setSummary([]); setLoading(false); return }
+    if (!staffList || staffList.length === 0) { setSummary([]); setBranches([]); setLoading(false); return }
+
+    const branchIds = Array.from(new Set(staffList.map(s => s.branch_id).filter((b): b is string => !!b)))
 
     // Get attendance records for the month
     const { data: records } = await supabase
       .from('attendance_records')
-      .select('staff_id, status, ot_hours')
+      .select('staff_id, status, ot_hours, late_minutes')
       .gte('date', from)
       .lte('date', to)
       .in('staff_id', staffList.map(s => s.id))
@@ -831,6 +901,14 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
       .gte('date_to', from)
       .in('staff_id', staffList.map(s => s.id))
 
+    // Working days is a manual, branch-scoped input (public holidays differ
+    // branch to branch, and there's no holiday-calendar concept in the
+    // schema) -- falls back to a crude 5/7 estimate until a manager sets it.
+    const [{ data: branchRows }, { data: wdRows }] = await Promise.all([
+      branchIds.length ? supabase.from('branches').select('id, name').in('id', branchIds) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+      branchIds.length ? supabase.from('monthly_working_days').select('branch_id, working_days').eq('year', year).eq('month', mon).in('branch_id', branchIds) : Promise.resolve({ data: [] as { branch_id: string; working_days: number }[] }),
+    ])
+
     const monthStartMs = new Date(from).getTime()
     const monthEndMs = new Date(to).getTime()
     function leaveDaysInMonth(dateFrom: string, dateTo: string) {
@@ -841,19 +919,27 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
 
     const recs = records ?? []
     const leaves = leaveRows ?? []
-    const workingDays = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86400000 * 5 / 7)
+    const estimatedWorkingDays = Math.round((monthEndMs - monthStartMs) / 86400000 * 5 / 7)
+    const workingDaysByBranch = new Map((wdRows ?? []).map(r => [r.branch_id, r.working_days]))
+
+    setBranches((branchRows ?? []).map(b => ({ id: b.id, name: b.name, working_days: workingDaysByBranch.get(b.id) ?? null })))
 
     const built: MonthlySummary[] = staffList.map(staff => {
       const mine = recs.filter(r => r.staff_id === staff.id)
       const myLeave = leaves.filter(l => l.staff_id === staff.id)
+      const workingDays = (staff.branch_id && workingDaysByBranch.get(staff.branch_id)) ?? estimatedWorkingDays
+      const present = mine.filter(r => r.status === 'present' || r.status === 'late').length
       return {
         staff_id: staff.id,
         full_name: staff.full_name,
         position: staff.position,
+        branch_id: staff.branch_id,
         working_days: workingDays,
-        present: mine.filter(r => r.status === 'present' || r.status === 'late').length,
+        working_days_is_estimate: !(staff.branch_id && workingDaysByBranch.has(staff.branch_id)),
+        present,
         late: mine.filter(r => r.status === 'late').length,
-        absent: mine.filter(r => r.status === 'absent').length,
+        late_minutes: mine.reduce((s, r) => s + (r.late_minutes ?? 0), 0),
+        absent: Math.max(0, workingDays - present),
         leave: myLeave.reduce((s, l) => s + leaveDaysInMonth(l.date_from, l.date_to), 0),
         ot_hours: mine.reduce((s, r) => s + (r.ot_hours ?? 0), 0),
       }
@@ -865,9 +951,9 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
   useEffect(() => { fetchReport() }, [fetchReport])
 
   const exportCSV = () => {
-    const headers = ['Name', 'Position', 'Working Days', 'Present', 'Late', 'Absent', 'Leave', 'OT Hours', 'Compliance %']
+    const headers = ['Name', 'Position', 'Working Days', 'Present', 'Late', 'Late Minutes', 'Absent', 'Leave', 'OT Hours', 'Compliance %']
     const rows = summary.map(s => [
-      s.full_name, s.position ?? '', s.working_days, s.present, s.late, s.absent, s.leave,
+      s.full_name, s.position ?? '', s.working_days, s.present, s.late, s.late_minutes, s.absent, s.leave,
       s.ot_hours.toFixed(1), s.working_days > 0 ? ((s.present / s.working_days) * 100).toFixed(1) + '%' : '0%',
     ])
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
@@ -902,6 +988,22 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
         </button>
       </div>
 
+      {branches.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 10, padding: '12px 16px' }}>
+          {branches.map(b => (
+            <WorkingDaysEditor
+              key={b.id}
+              branchId={b.id}
+              branchName={branches.length > 1 ? b.name : undefined}
+              year={Number(month.split('-')[0])}
+              month={Number(month.split('-')[1])}
+              value={b.working_days}
+              onSaved={() => fetchReport()}
+            />
+          ))}
+        </div>
+      )}
+
       <div style={{ backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 12, overflow: 'hidden' }}>
         {loading ? <Spinner /> : summary.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#666', fontSize: 13 }}>No data for this month.</div>
@@ -910,7 +1012,7 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #2A2A2A' }}>
-                  {['Name', 'Working Days', 'Present', 'Late', 'Absent', 'Leave', 'OT Hours', 'Compliance'].map(h => (
+                  {['Name', 'Working Days', 'Present', 'Late', 'Late Minutes', 'Absent', 'Leave', 'OT Hours', 'Compliance'].map(h => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: '#666', fontWeight: 500, fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -922,7 +1024,7 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
                     <tr key={s.staff_id} style={{ borderBottom: '1px solid #1E1E1E' }}>
                       <td style={{ padding: '10px 14px' }}>
                         <button
-                          onClick={() => setDetailStaff({ id: s.staff_id, name: s.full_name })}
+                          onClick={() => setDetailStaff({ id: s.staff_id, name: s.full_name, branch_id: s.branch_id })}
                           style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
                         >
                           <Avatar name={s.full_name} />
@@ -935,9 +1037,12 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
                           </div>
                         </button>
                       </td>
-                      <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12 }}>{s.working_days}</td>
+                      <td style={{ padding: '10px 14px', color: '#A0A0A0', fontSize: 12 }}>
+                        {s.working_days}{s.working_days_is_estimate && <span title="Estimated — set the real working-day count above" style={{ color: '#F59E0B' }}>*</span>}
+                      </td>
                       <td style={{ padding: '10px 14px', color: '#22C55E', fontWeight: 600 }}>{s.present}</td>
                       <td style={{ padding: '10px 14px', color: '#F59E0B', fontWeight: 600 }}>{s.late}</td>
+                      <td style={{ padding: '10px 14px', color: s.late_minutes ? '#F59E0B' : '#666', fontWeight: 600 }}>{s.late_minutes ? `${s.late_minutes} min` : '—'}</td>
                       <td style={{ padding: '10px 14px', color: '#EF4444', fontWeight: 600 }}>{s.absent}</td>
                       <td style={{ padding: '10px 14px', color: '#3B82F6', fontWeight: 600 }}>{s.leave}</td>
                       <td style={{ padding: '10px 14px', color: '#F15A22', fontWeight: 600 }}>{s.ot_hours.toFixed(1)}h</td>
@@ -977,7 +1082,7 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
               </div>
               <button onClick={() => setDetailStaff(null)} style={{ background: 'none', border: 'none', color: '#A0A0A0', cursor: 'pointer' }}><X size={16} /></button>
             </div>
-            <MyAttendanceTab staffId={detailStaff.id} />
+            <MyAttendanceTab staffId={detailStaff.id} branchId={detailStaff.branch_id} />
           </div>
         </div>
       )}
@@ -987,11 +1092,12 @@ function MonthlyReportTab({ branchId }: { branchId: string | null }) {
 
 // â"€â"€â"€ Staff Self-Service: My Attendance â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-function MyAttendanceTab({ staffId }: { staffId: string }) {
+function MyAttendanceTab({ staffId, branchId = null }: { staffId: string; branchId?: string | null }) {
   const [records, setRecords]   = useState<AttendanceRecord[]>([])
   const [totalLeave, setTotalLeave] = useState(0)
   const [loading, setLoading]   = useState(true)
   const [month, setMonth]       = useState(() => new Date().toLocaleDateString('en-CA').slice(0, 7)) // YYYY-MM
+  const [workingDays, setWorkingDays] = useState<number | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -1024,26 +1130,51 @@ function MyAttendanceTab({ staffId }: { staffId: string }) {
         }, 0)
         setTotalLeave(days)
       })
-  }, [staffId, month])
+
+    if (branchId) {
+      supabase.from('monthly_working_days').select('working_days')
+        .eq('branch_id', branchId).eq('year', y).eq('month', m).maybeSingle()
+        .then(({ data }) => setWorkingDays(data?.working_days ?? null))
+    } else {
+      setWorkingDays(null)
+    }
+  }, [staffId, branchId, month])
 
   const totalPresent = records.filter(r => r.status === 'present' || r.status === 'late').length
   const totalLate    = records.filter(r => r.status === 'late').length
-  const totalAbsent  = records.filter(r => r.status === 'absent').length
+  const totalLateMin = records.reduce((s, r) => s + (r.late_minutes ?? 0), 0)
+  const [y, m] = month.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  const estimatedWorkingDays = Math.round(lastDay * 5 / 7)
+  const resolvedWorkingDays = workingDays ?? estimatedWorkingDays
+  const totalAbsent  = Math.max(0, resolvedWorkingDays - totalPresent)
   const totalOT      = records.reduce((s, r) => s + (r.ot_hours ?? 0), 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Month selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)}
           style={{ padding: '7px 12px', backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 8, color: '#F0F0F0', fontSize: 13 }} />
+        {branchId && (
+          <WorkingDaysEditor
+            branchId={branchId} year={y} month={m} value={workingDays}
+            onSaved={days => setWorkingDays(days)}
+          />
+        )}
       </div>
+      {!workingDays && (
+        <p style={{ fontSize: 11, color: '#666', margin: 0 }}>
+          Working days not set for this month — Absent is estimated ({estimatedWorkingDays} working days assumed).
+        </p>
+      )}
 
       {/* Summary row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10 }}>
         {[
           { label: 'Present', value: totalPresent, color: '#22C55E' },
           { label: 'Late',    value: totalLate,    color: '#F59E0B' },
+          { label: 'Late (min)', value: totalLateMin, color: '#F59E0B' },
           { label: 'Absent',  value: totalAbsent,  color: '#EF4444' },
           { label: 'Leave',   value: totalLeave,   color: '#3B82F6' },
           { label: 'OT hrs',  value: totalOT.toFixed(1), color: '#F15A22' },
@@ -1769,7 +1900,7 @@ export function AttendancePage() {
             ))}
           </div>
 
-          {staffTab === 'attendance' && <MyAttendanceTab staffId={myStaffId} />}
+          {staffTab === 'attendance' && <MyAttendanceTab staffId={myStaffId} branchId={myBranchId} />}
           {staffTab === 'leave'      && <MyLeaveTab staffId={myStaffId} branchId={myBranchId} />}
           {staffTab === 'ot'         && <MyOTTab    staffId={myStaffId} branchId={myBranchId} />}
         </>
