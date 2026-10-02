@@ -7,7 +7,7 @@ import {
   Plus, X, Loader2, Search, Upload, FileText, Receipt,
   Zap, Wrench, TrendingDown, TrendingUp, Building,
   Megaphone, Users, Package, MoreHorizontal, Pencil, Trash2,
-  DollarSign
+  DollarSign, Copy
 } from 'lucide-react'
 
 // expense-docs is a private bucket; older rows still hold the full
@@ -26,7 +26,7 @@ interface Expense {
   type: 'opex' | 'capex'
   category: string
   description: string
-  amount: number
+  amount: number | null
   expense_date: string
   payment_method: string
   reference: string | null
@@ -130,6 +130,16 @@ function lastMonth() {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
 }
 
+// The month immediately before a given YYYY-MM — used by "Carry Forward" so
+// it always pulls from the month before whichever one is currently being
+// viewed, not hardcoded to "last calendar month vs today".
+function monthBefore(m: string) {
+  const [y, mo] = m.split('-').map(Number)
+  const d = new Date(y, mo - 1, 1)
+  d.setMonth(d.getMonth() - 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 const inp: React.CSSProperties = {
   background: '#161616', border: '1px solid #2A2A2A', borderRadius: 8,
   color: '#F0F0F0', fontSize: 14, padding: '10px 12px', width: '100%',
@@ -158,9 +168,9 @@ function Tile({ label, value, sub, color, icon: Icon }: { label: string; value: 
 
 function CategoryBar({ expenses, type }: { expenses: Expense[]; type: 'opex' | 'capex' }) {
   const rows = expenses.filter(e => e.type === type)
-  const total = rows.reduce((s, e) => s + e.amount, 0)
+  const total = rows.reduce((s, e) => s + (e.amount ?? 0), 0)
   const bycat: Record<string, number> = {}
-  rows.forEach(e => { bycat[e.category] = (bycat[e.category] ?? 0) + e.amount })
+  rows.forEach(e => { bycat[e.category] = (bycat[e.category] ?? 0) + (e.amount ?? 0) })
   const sorted = Object.entries(bycat).sort((a, b) => b[1] - a[1]).slice(0, 6)
   if (sorted.length === 0) return <p style={{ color: '#4A4A4A', fontSize: 13, margin: 0 }}>No data this month</p>
 
@@ -232,7 +242,7 @@ function ExpenseModal({
   const [form, setForm] = useState<ExpenseForm>(
     editing ? {
       type: editing.type, category: editing.category,
-      description: editing.description, amount: String(editing.amount),
+      description: editing.description, amount: editing.amount != null ? String(editing.amount) : '',
       expense_date: editing.expense_date, payment_method: editing.payment_method,
       reference: editing.reference ?? '', vendor: editing.vendor ?? '',
       is_recurring: editing.is_recurring, recurring_period: editing.recurring_period ?? 'monthly',
@@ -268,8 +278,12 @@ function ExpenseModal({
 
   async function save() {
     if (!form.description.trim()) { toast('Description is required', 'error'); return }
-    const amt = parseFloat(form.amount)
-    if (!amt || amt <= 0) { toast('Enter a valid amount', 'error'); return }
+    let amt: number | null = null
+    if (form.amount.trim() !== '') {
+      const parsed = parseFloat(form.amount)
+      if (!Number.isFinite(parsed) || parsed < 0) { toast('Enter a valid amount, or leave it blank to fill in later', 'error'); return }
+      amt = parsed
+    }
 
     setSaving(true)
     let fileUrl = editing?.file_url ?? null
@@ -366,8 +380,8 @@ function ExpenseModal({
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label style={lbl}>Amount (RM) *</label>
-              <input type="number" min="0" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" style={inp} />
+              <label style={lbl}>Amount (RM)</label>
+              <input type="number" min="0" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="Leave blank to fill in later" style={inp} />
             </div>
             <div>
               <label style={lbl}>Payment Method</label>
@@ -508,6 +522,7 @@ export function ExpensesPage() {
   const [_monthRevenue, setMonthRevenue] = useState(0)
   const [monthLabour, setMonthLabour] = useState(0)
   const [monthCOGS, setMonthCOGS] = useState(0)
+  const [carrying, setCarrying] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -562,10 +577,10 @@ export function ExpensesPage() {
   const thisMonthExp = expenses.filter(e => e.expense_date.startsWith(month))
   const lastMonthExp = expenses.filter(e => e.expense_date.startsWith(lastMonth()))
 
-  const opexThis = thisMonthExp.filter(e => e.type === 'opex').reduce((s, e) => s + e.amount, 0)
-  const capexThis = thisMonthExp.filter(e => e.type === 'capex').reduce((s, e) => s + e.amount, 0)
-  const opexLast = lastMonthExp.filter(e => e.type === 'opex').reduce((s, e) => s + e.amount, 0)
-  const capexLast = lastMonthExp.filter(e => e.type === 'capex').reduce((s, e) => s + e.amount, 0)
+  const opexThis = thisMonthExp.filter(e => e.type === 'opex').reduce((s, e) => s + (e.amount ?? 0), 0)
+  const capexThis = thisMonthExp.filter(e => e.type === 'capex').reduce((s, e) => s + (e.amount ?? 0), 0)
+  const opexLast = lastMonthExp.filter(e => e.type === 'opex').reduce((s, e) => s + (e.amount ?? 0), 0)
+  const capexLast = lastMonthExp.filter(e => e.type === 'capex').reduce((s, e) => s + (e.amount ?? 0), 0)
   const totalThis = opexThis + capexThis
   const totalLast = opexLast + capexLast
 
@@ -577,8 +592,8 @@ export function ExpensesPage() {
 
   // YTD
   const year = month.slice(0, 4)
-  const ytdOpex = expenses.filter(e => e.type === 'opex' && e.expense_date.startsWith(year)).reduce((s, e) => s + e.amount, 0)
-  const ytdCapex = expenses.filter(e => e.type === 'capex' && e.expense_date.startsWith(year)).reduce((s, e) => s + e.amount, 0)
+  const ytdOpex = expenses.filter(e => e.type === 'opex' && e.expense_date.startsWith(year)).reduce((s, e) => s + (e.amount ?? 0), 0)
+  const ytdCapex = expenses.filter(e => e.type === 'capex' && e.expense_date.startsWith(year)).reduce((s, e) => s + (e.amount ?? 0), 0)
 
   // Table data
   const categories = tab === 'opex' ? OPEX_CATEGORIES : CAPEX_CATEGORIES
@@ -594,6 +609,43 @@ export function ExpensesPage() {
     if (!confirm(`Delete "${exp.description}"?`)) return
     await supabase.from('expenses').delete().eq('id', exp.id)
     toast('Expense deleted')
+    load()
+  }
+
+  // Duplicates every item of the active tab (OPEX or CAPEX) from the month
+  // before the one currently being viewed, with the figure left blank —
+  // category/description/vendor/payment method carry over since those don't
+  // change month to month, but amount, reference, bill/proof-of-payment
+  // uploads, the AP link, and payment status are all specific to one
+  // month's actual bill and must not be copied.
+  async function carryForward() {
+    const prevMonth = monthBefore(month)
+    const source = expenses.filter(e => e.type === tab && e.expense_date.startsWith(prevMonth))
+    if (source.length === 0) { toast(`No ${tab.toUpperCase()} items in ${monthLabel(prevMonth)} to carry forward`, 'error'); return }
+
+    const already = tableData.length
+    const confirmMsg = already > 0
+      ? `${monthLabel(month)} already has ${already} ${tab.toUpperCase()} record(s). Carry forward ${source.length} item(s) from ${monthLabel(prevMonth)} anyway, with blank figures?`
+      : `Carry forward ${source.length} ${tab.toUpperCase()} item(s) from ${monthLabel(prevMonth)} to ${monthLabel(month)}? Figures are left blank for you to fill in.`
+    if (!confirm(confirmMsg)) return
+
+    setCarrying(true)
+    const newDate = `${month}-01`
+    const payload = source.map(e => ({
+      tenant_id: tenantId, branch_id: branchId || null,
+      type: e.type, category: e.category, description: e.description,
+      amount: null, expense_date: newDate, payment_method: e.payment_method,
+      reference: null, vendor: e.vendor,
+      is_recurring: e.is_recurring, recurring_period: e.recurring_period,
+      lifespan_years: e.lifespan_years, notes: e.notes,
+      file_url: null, pop_file_url: null,
+      payment_status: 'unpaid', paid_date: null,
+      created_by: userId || null, supplier_invoice_id: null,
+    }))
+    const { error } = await supabase.from('expenses').insert(payload)
+    setCarrying(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast(`${payload.length} item(s) carried forward — fill in the figures`)
     load()
   }
 
@@ -684,6 +736,13 @@ export function ExpensesPage() {
             <option value="">All Categories</option>
             {categories.map(c => <option key={c}>{c}</option>)}
           </select>
+          <button
+            onClick={carryForward} disabled={carrying}
+            title={`Copy ${tab.toUpperCase()} items from ${monthLabel(monthBefore(month))}, with amounts left blank`}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#161616', border: '1px solid #2A2A2A', borderRadius: 8, color: '#A0A0A0', fontSize: 13, padding: '7px 12px', cursor: carrying ? 'not-allowed' : 'pointer', opacity: carrying ? 0.6 : 1 }}>
+            {carrying ? <Loader2 size={13} className="animate-spin" /> : <Copy size={13} />}
+            Carry Forward from {monthLabel(monthBefore(month))}
+          </button>
         </div>
 
         {/* Table */}
@@ -723,13 +782,16 @@ export function ExpensesPage() {
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <p style={{ color: '#F0F0F0', fontSize: 13, fontWeight: 500, margin: 0 }}>{exp.description}</p>
-                        {exp.is_recurring && <span style={{ fontSize: 10, background: 'rgba(241,90,34,0.1)', color: '#F15A22', borderRadius: 4, padding: '1px 6px', marginTop: 2, display: 'inline-block' }}>↻ {exp.recurring_period}</span>}
+                        {exp.is_recurring && <span style={{ fontSize: 10, background: 'rgba(241,90,34,0.1)', color: '#F15A22', borderRadius: 4, padding: '1px 6px', marginTop: 2, marginRight: 4, display: 'inline-block' }}>↻ {exp.recurring_period}</span>}
+                        {exp.amount == null && <span style={{ fontSize: 10, background: 'rgba(245,158,11,0.12)', color: '#F59E0B', borderRadius: 4, padding: '1px 6px', marginTop: 2, display: 'inline-block' }}>Needs figure</span>}
                         {exp.notes && <p style={{ color: '#4A4A4A', fontSize: 11, margin: '2px 0 0' }}>{exp.notes}</p>}
                       </td>
                       <td style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 13 }}>{exp.vendor ?? '—'}</td>
                       <td style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 12 }}>{exp.payment_method}</td>
                       <td style={{ padding: '12px 16px' }}><PaymentStatusBadge expense={exp} /></td>
-                      <td style={{ padding: '12px 16px', color: '#F0F0F0', fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{fmtAmt(exp.amount)}</td>
+                      <td style={{ padding: '12px 16px', fontWeight: 700, fontSize: 14, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: exp.amount == null ? '#F59E0B' : '#F0F0F0' }}>
+                        {exp.amount == null ? 'Enter figure' : fmtAmt(exp.amount)}
+                      </td>
                       <td style={{ padding: '12px 16px' }}>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                           {exp.file_url && (
@@ -764,9 +826,11 @@ export function ExpensesPage() {
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: '2px solid #2A2A2A' }}>
-                  <td colSpan={6} style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 13, fontWeight: 600 }}>Total ({tableData.length} records)</td>
+                  <td colSpan={6} style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 13, fontWeight: 600 }}>
+                    Total ({tableData.length} records{tableData.some(e => e.amount == null) ? `, ${tableData.filter(e => e.amount == null).length} pending` : ''})
+                  </td>
                   <td style={{ padding: '12px 16px', color: '#F15A22', fontWeight: 800, fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>
-                    {fmtAmt(tableData.reduce((s, e) => s + e.amount, 0))}
+                    {fmtAmt(tableData.reduce((s, e) => s + (e.amount ?? 0), 0))}
                   </td>
                   <td />
                 </tr>
