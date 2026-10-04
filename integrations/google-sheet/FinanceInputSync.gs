@@ -317,7 +317,7 @@ function block_(sh, label, afterLabel, rows, dry) {
 // ── Operations tab ───────────────────────────────────────────────────────
 // One row per trading day, newest first: Customers, Transactions and Sales are
 // written; every other column (averages, scores ...) is left to the sheet.
-const OPS_INPUTS = ['Customers', 'Transactions', 'Sales', 'Avg Ticket'];
+const OPS_INPUTS = ['Customers', 'Transactions', 'Sales', 'Avg Ticket', 'Service Time Avg (min)', 'Stockout Count', 'Complaints'];
 
 function ops_(body, dry) {
   const sh = SpreadsheetApp.getActive().getSheetByName('Operations');

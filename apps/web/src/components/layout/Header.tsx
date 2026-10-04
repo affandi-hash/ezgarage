@@ -12,6 +12,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/pnl': 'P&L by Branch',
   '/weekly-report': 'Weekly Report',
   '/profit-loss': 'Profit & Loss',
+  '/complaints': 'Complaints',
   '/onsite-bookings': 'ON-SITE Bookings',
   '/onsite-jobs': 'ON-SITE Jobs',
   '/onsite-settings': 'ON-SITE Settings',

@@ -12,7 +12,7 @@ const daysInMonth = (key: string) => { const [y, m] = key.split('-').map(Number)
 const kualaLumpurToday = () => ymd(new Date(Date.now() + 8 * 3600 * 1000))
 const round2 = (n: number) => Math.round(n * 100) / 100
 
-type Cfg = { tenant_id: string; branch_id: string; outlet_name: string; webapp_url: string; secret: string; gid: number | null; window_days: number }
+type Cfg = { tenant_id: string; branch_id: string; outlet_name: string; webapp_url: string; secret: string; gid: number | null; window_days: number; complaints_from: string | null; stockout_from: string | null }
 
 async function syncTenant(supabase: ReturnType<typeof createClient>, cfg: Cfg, opts: { dryRun?: boolean; from?: string; to?: string; action?: string }) {
   const today = kualaLumpurToday()
@@ -61,7 +61,34 @@ async function syncTenant(supabase: ReturnType<typeof createClient>, cfg: Cfg, o
     d.customers.add(i.customer_id ?? (i.customer_name ?? '').toLowerCase()); d.tx += 1; d.sales += Number(i.total_amount)
     perDay.set(i.issue_date, d)
   }
-  const ops = [...perDay.entries()].map(([date, d]) => ({ date, unit: cfg.outlet_name, customers: d.customers.size, transactions: d.tx, sales: round2(d.sales), 'avg ticket': round2(d.sales / d.tx) }))
+  const ops: Record<string, unknown>[] = [...perDay.entries()].map(([date, d]) => ({ date, unit: cfg.outlet_name, customers: d.customers.size, transactions: d.tx, sales: round2(d.sales), 'avg ticket': round2(d.sales / d.tx) }))
+
+  // service time, stockouts and complaints: written only for days EZWerkFlo actually has the data
+  const klDay = (ts: string) => ymd(new Date(new Date(ts).getTime() + 8 * 3600 * 1000))
+  const { data: doneJobs } = await supabase.from('jobs').select('ready_at, checked_in_at')
+    .eq('tenant_id', cfg.tenant_id).eq('branch_id', cfg.branch_id).not('ready_at', 'is', null).not('checked_in_at', 'is', null)
+    .gte('ready_at', `${from}T00:00:00+08:00`).limit(5000)
+  const mins = new Map<string, number[]>()
+  for (const j of doneJobs ?? []) {
+    const m = (new Date(j.ready_at as string).getTime() - new Date(j.checked_in_at as string).getTime()) / 60000
+    if (m < 0) continue
+    const k = klDay(j.ready_at as string)
+    mins.set(k, [...(mins.get(k) ?? []), m])
+  }
+  const { data: snaps } = await supabase.from('stock_daily_snapshots').select('snapshot_date, zero_stock')
+    .eq('branch_id', cfg.branch_id).gte('snapshot_date', from).lte('snapshot_date', to)
+  const stockout = new Map((snaps ?? []).map(x => [x.snapshot_date as string, Number(x.zero_stock)]))
+  const { data: comps } = await supabase.from('job_complaints').select('complaint_date')
+    .eq('tenant_id', cfg.tenant_id).eq('branch_id', cfg.branch_id).gte('complaint_date', from).lte('complaint_date', to).limit(5000)
+  const complaintCount = new Map<string, number>()
+  for (const c of comps ?? []) complaintCount.set(c.complaint_date as string, (complaintCount.get(c.complaint_date as string) ?? 0) + 1)
+  for (const row of ops) {
+    const d = row.date as string
+    const m = mins.get(d)
+    if (m?.length) row['service time avg (min)'] = Math.round(m.reduce((a, b) => a + b, 0) / m.length)
+    if (cfg.stockout_from && d >= cfg.stockout_from && stockout.has(d)) row['stockout count'] = stockout.get(d)
+    if (cfg.complaints_from && d >= cfg.complaints_from) row['complaints'] = complaintCount.get(d) ?? 0
+  }
 
   // CAPEX AR AP Debt tab: everything still open today
   const payload: Record<string, unknown> = { ops }

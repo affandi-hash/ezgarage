@@ -29,6 +29,7 @@ import { OnlineBookingPage } from '@/pages/OnlineBookingPage'
 import { PnLByBranchPage } from '@/pages/PnLByBranchPage'
 import { WeeklyReportPage } from '@/pages/WeeklyReportPage'
 import { ProfitLossPage } from '@/pages/ProfitLossPage'
+import { ComplaintsPage } from '@/pages/ComplaintsPage'
 import { OnSiteSettingsPage } from '@/pages/OnSiteSettingsPage'
 import { OnSiteBookingsPage } from '@/pages/OnSiteBookingsPage'
 import { OnSiteJobsPage } from '@/pages/OnSiteJobsPage'
@@ -485,6 +486,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
                 <OnSiteSettingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/complaints"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','foreman','front_desk','finance']}>
+                <ComplaintsPage />
               </ProtectedRoute>
             }
           />

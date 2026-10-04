@@ -66,6 +66,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Customers & Vehicles',
     items: [
       { to: '/customers', label: 'Customers', icon: Users, roles: ['super_admin', 'ops_manager', 'front_desk', 'foreman'] },
+      { to: '/complaints', label: 'Complaints', icon: ClipboardList, roles: ['super_admin', 'ops_manager', 'front_desk', 'foreman', 'finance'] },
       { to: '/vehicles', label: 'Vehicles', icon: Car, roles: ['super_admin', 'ops_manager', 'front_desk', 'foreman'] },
     ],
   },
