@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { addDays, fetchAll, parseYmd, toYmd } from '@/lib/weeklyReport'
+import { addDays, fetchAll, fmtRange, mondayOf, parseYmd, toYmd } from '@/lib/weeklyReport'
 
 // Management Profit & Loss for any date range, one column per month.
 //  - Revenue: invoices by issue date (void/draft excluded), so a van job counts
@@ -10,8 +10,11 @@ import { addDays, fetchAll, parseYmd, toYmd } from '@/lib/weeklyReport'
 //    evenly over that month's days, so part-month columns carry their share.
 //  - CAPEX is charged in full, as agreed, and net = gross profit - OPEX - CAPEX.
 
+export type PnlColumns = 'months' | 'weeks'
+
 export interface PnlCol {
   label: string
+  partOf: string | null   // the full Monday-Sunday week a part-week column was cut from
   start: string
   end: string
   tx: number
@@ -40,6 +43,7 @@ export interface PnlData {
   branchLabel: string
   start: string
   end: string
+  columnMode: PnlColumns
   columns: PnlCol[]
   total: PnlCol
   previous: PnlCol
@@ -54,6 +58,7 @@ interface RawInvoice { issue_date: string; total_amount: number | null; vehicle_
 interface RawExpense { expense_date: string; type: 'opex' | 'capex'; category: string | null; amount: number | null }
 
 export interface PnlInput {
+  columnMode?: PnlColumns
   tenantName: string
   logoUrl: string | null
   branchLabel: string
@@ -85,9 +90,9 @@ function lineAmount(li: LineItem) {
   return Number(li.amount ?? (li.qty ?? 1) * (li.unit_price ?? 0))
 }
 
-function buildCol(label: string, start: string, end: string, inp: PnlInput): PnlCol {
+function buildCol(label: string, start: string, end: string, inp: PnlInput, partOf: string | null = null): PnlCol {
   const c: PnlCol = {
-    label, start, end, tx: 0, revenueParts: 0, revenueLabour: 0, revenueOther: 0, adjustments: 0, revenue: 0,
+    label, partOf, start, end, tx: 0, revenueParts: 0, revenueLabour: 0, revenueOther: 0, adjustments: 0, revenue: 0,
     carRevenue: 0, bikeRevenue: 0, cogs: 0, gp: 0, gpPct: 0, opex: {}, opexTotal: 0, capex: {}, capexTotal: 0,
     operatingProfit: 0, net: 0, netPct: 0,
   }
@@ -134,13 +139,30 @@ function buildCol(label: string, start: string, end: string, inp: PnlInput): Pnl
 }
 
 export function computePnl(inp: PnlInput): PnlData {
+  const mode: PnlColumns = inp.columnMode ?? 'months'
   const columns: PnlCol[] = []
-  for (let cur = inp.start; cur <= inp.end; ) {
-    const monthEnd = lastOfMonth(cur)
-    const segEnd = monthEnd < inp.end ? monthEnd : inp.end
-    const full = cur === `${monthKey(cur)}-01` && segEnd === monthEnd
-    columns.push(buildCol(monthLabel(monthKey(cur), cur, segEnd, full), cur, segEnd, inp))
-    cur = addDays(segEnd, 1)
+  if (mode === 'weeks') {
+    // Monday-Sunday weeks, cut at the range edges and at every month end
+    for (let wk = mondayOf(inp.start); wk <= inp.end; wk = addDays(wk, 7)) {
+      const wkEnd = addDays(wk, 6)
+      const lo = wk < inp.start ? inp.start : wk
+      const hi = wkEnd > inp.end ? inp.end : wkEnd
+      for (let cur = lo; cur <= hi; ) {
+        const monthEnd = lastOfMonth(cur)
+        const segEnd = monthEnd < hi ? monthEnd : hi
+        const cut = cur !== wk || segEnd !== wkEnd
+        columns.push(buildCol(fmtRange(cur, segEnd), cur, segEnd, inp, cut ? fmtRange(wk, wkEnd) : null))
+        cur = addDays(segEnd, 1)
+      }
+    }
+  } else {
+    for (let cur = inp.start; cur <= inp.end; ) {
+      const monthEnd = lastOfMonth(cur)
+      const segEnd = monthEnd < inp.end ? monthEnd : inp.end
+      const full = cur === `${monthKey(cur)}-01` && segEnd === monthEnd
+      columns.push(buildCol(monthLabel(monthKey(cur), cur, segEnd, full), cur, segEnd, inp))
+      cur = addDays(segEnd, 1)
+    }
   }
   const total = buildCol('Total', inp.start, inp.end, inp)
   const len = diffDays(inp.start, inp.end) + 1
@@ -163,13 +185,13 @@ export function computePnl(inp: PnlInput): PnlData {
   if (inp.end > toYmd(new Date())) warnings.push('The range includes days that have not happened yet; expenses for those days are still counted.')
 
   return {
-    tenantName: inp.tenantName, logoUrl: inp.logoUrl, branchLabel: inp.branchLabel, start: inp.start, end: inp.end,
+    tenantName: inp.tenantName, logoUrl: inp.logoUrl, branchLabel: inp.branchLabel, start: inp.start, end: inp.end, columnMode: mode,
     columns, total, previous, opexCategories: cats(c => c.opex), capexCategories: cats(c => c.capex), warnings, generatedAt: new Date().toISOString(),
   }
 }
 
 export async function loadPnl(p: {
-  tenantId: string; tenantName: string; logoUrl: string | null; branchId: string | null; branchLabel: string; start: string; end: string
+  tenantId: string; tenantName: string; logoUrl: string | null; branchId: string | null; branchLabel: string; start: string; end: string; columnMode: PnlColumns
 }): Promise<PnlData> {
   const len = diffDays(p.start, p.end) + 1
   const prevStart = addDays(p.start, -len)
@@ -191,7 +213,7 @@ export async function loadPnl(p: {
       supabase.from('vehicles').select('plate_number').eq('tenant_id', p.tenantId).eq('vehicle_type', 'bike').range(a, b)),
   ])
   return computePnl({
-    tenantName: p.tenantName, logoUrl: p.logoUrl, branchLabel: p.branchLabel, start: p.start, end: p.end,
+    tenantName: p.tenantName, logoUrl: p.logoUrl, branchLabel: p.branchLabel, start: p.start, end: p.end, columnMode: p.columnMode,
     invoices, expenses, bikePlates: new Set(bikes.map(v => plateKey(v.plate_number))),
   })
 }

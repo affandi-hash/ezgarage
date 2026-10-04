@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
 import { addDays, parseYmd, toYmd } from '@/lib/weeklyReport'
-import { fmtDay, loadPnl, type PnlCol, type PnlData } from '@/lib/profitLoss'
+import { fmtDay, loadPnl, type PnlCol, type PnlColumns, type PnlData } from '@/lib/profitLoss'
 
 const C = { surface: '#1E1E1E', border: '#2A2A2A', orange: '#F15A22', text: '#F0F0F0', muted: '#A0A0A0', green: '#22C55E', red: '#EF4444' }
 
@@ -107,7 +107,7 @@ function printPnl(d: PnlData, rows: Row[], title: string): boolean {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const withPrev = hasPrevious(d)
   const cols = withPrev ? [...d.columns, d.total, d.previous] : [...d.columns, d.total]
-  const head = `<tr><th></th>${cols.map(c => `<th>${esc(c.label)}</th>`).join('')}${withPrev ? '<th>Change</th>' : ''}</tr>`
+  const head = `<tr><th></th>${cols.map(c => `<th>${esc(c.label)}${c.partOf ? `<br/><span style="font-weight:400;color:#777;font-size:8px">part of ${esc(c.partOf)}</span>` : ''}</th>`).join('')}${withPrev ? '<th>Change</th>' : ''}</tr>`
   const body = rows.map(r => {
     if (r.kind === 'header') return `<tr class="h"><td colspan="${cols.length + 2}">${esc(r.label)}</td></tr>`
     const cls = r.kind === 'total' ? 't' : r.kind === 'grand' ? 'g' : r.kind === 'memo' ? 'm' : r.kind === 'pct' ? 'p' : ''
@@ -121,13 +121,13 @@ function printPnl(d: PnlData, rows: Row[], title: string): boolean {
   w.document.open()
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
   @page { size: A4 landscape; margin: 12mm } * { -webkit-print-color-adjust: exact; print-color-adjust: exact }
-  body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11px; margin: 0 }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: ${cols.length > 14 ? 7 : cols.length > 12 ? 8 : cols.length > 9 ? 9 : 11}px; margin: 0 }
   .top { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:10px }
   .top .r { text-align:right; color:#555; font-size:11px; line-height:1.5 }
   h1 { background:#000; color:#fff; font-size:16px; margin:0 0 8px; padding:6px 10px }
-  table { width:100%; border-collapse:collapse } th { text-align:right; padding:4px 6px; border-bottom:1px solid #999; font-size:10px }
-  td { padding:3px 6px } td.n { text-align:right; white-space:nowrap } tr.h td { background:#eee; font-weight:700; padding:4px 6px }
-  tr.t td { font-weight:700; border-top:1px solid #999 } tr.g td { font-weight:800; border-top:2px solid #000; border-bottom:2px solid #000; font-size:12px }
+  table { width:100%; border-collapse:collapse } th { text-align:right; padding:4px ${cols.length > 9 ? 3 : 6}px; border-bottom:1px solid #999; font-size:${cols.length > 14 ? 7 : 10}px }
+  td { padding:${cols.length > 9 ? 2 : 3}px ${cols.length > 9 ? 3 : 6}px } td:first-child { white-space:nowrap } td.n { text-align:right; white-space:nowrap } tr.h td { background:#eee; font-weight:700; padding:3px 6px }
+  tr.t td { font-weight:700; border-top:1px solid #999 } tr.g td { font-weight:800; border-top:2px solid #000; border-bottom:2px solid #000; font-size:1.1em }
   tr.m td { color:#666; font-style:italic } tr.p td { color:#666 } td.neg { color:#D32F2F }
   .note { margin-top:10px; color:#555; font-size:10px; line-height:1.5 } .warn { margin-top:8px; background:#FFF4CE; border:1px solid #E0B000; color:#6B4E00; padding:5px 8px; font-size:10px }
   </style></head><body>
@@ -156,6 +156,7 @@ export function ProfitLossPage() {
   const [from, setFrom] = useState(presetRange('last_month').start)
   const [to, setTo] = useState(presetRange('last_month').end)
   const [branchId, setBranchId] = useState('')
+  const [colMode, setColMode] = useState<PnlColumns>('months')
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [data, setData] = useState<PnlData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -171,7 +172,8 @@ export function ProfitLossPage() {
     if (p !== 'custom') { const r = presetRange(p); setFrom(r.start); setTo(r.end) }
   }
 
-  const valid = from && to && from <= to && (parseYmd(to).getTime() - parseYmd(from).getTime()) / 86400000 <= 740
+  const spanDays = from && to ? (parseYmd(to).getTime() - parseYmd(from).getTime()) / 86400000 : 0
+  const valid = !!from && !!to && from <= to && spanDays <= (colMode === 'weeks' ? 190 : 740)
 
   useEffect(() => {
     if (!tenantId || !valid) return
@@ -179,11 +181,11 @@ export function ProfitLossPage() {
     setLoading(true)
     loadPnl({
       tenantId, tenantName: tenant?.name ?? 'Motoverse Garage', logoUrl: tenant?.logo_url ?? null,
-      branchId: branchId || null, branchLabel: branchId ? (branches.find(b => b.id === branchId)?.name ?? '') : 'All branches', start: from, end: to,
+      branchId: branchId || null, branchLabel: branchId ? (branches.find(b => b.id === branchId)?.name ?? '') : 'All branches', start: from, end: to, columnMode: colMode,
     }).then(d => { if (mine === seq.current) setData(d) })
       .catch(e => toast(e instanceof Error ? e.message : 'Could not load the P&L', 'error'))
       .finally(() => { if (mine === seq.current) setLoading(false) })
-  }, [tenantId, from, to, branchId, valid, tenant?.name, tenant?.logo_url, branches])
+  }, [tenantId, from, to, branchId, colMode, valid, tenant?.name, tenant?.logo_url, branches])
 
   const rows = useMemo(() => (data ? buildRows(data) : []), [data])
   const withPrev = data ? hasPrevious(data) : false
@@ -222,9 +224,16 @@ export function ProfitLossPage() {
             {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
+        <div>
+          <span style={lab}>Columns</span>
+          <select style={field} value={colMode} onChange={e => setColMode(e.target.value as PnlColumns)}>
+            <option value="months">One per month</option>
+            <option value="weeks">One per week (Mon-Sun)</option>
+          </select>
+        </div>
         {loading && <Loader2 size={20} className="animate-spin" style={{ color: C.orange, marginBottom: 8 }} />}
       </div>
-      {!valid && <div style={{ color: '#F59E0B', fontSize: 13, marginBottom: 12 }}>Choose a valid range (the end after the start, up to about 2 years).</div>}
+      {!valid && <div style={{ color: '#F59E0B', fontSize: 13, marginBottom: 12 }}>{`Choose a valid range: the end after the start, up to about ${colMode === 'weeks' ? '26 weeks' : '2 years'}.`}</div>}
       {from > addDays(toYmd(new Date()), 0) && <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>This range starts in the future.</div>}
 
       {data && data.warnings.map(w => (
@@ -237,7 +246,7 @@ export function ProfitLossPage() {
             <thead>
               <tr>
                 <th style={{ ...th, textAlign: 'left', position: 'sticky', left: 0, background: C.surface }}>{fmtDay(data.start)} - {fmtDay(data.end)}</th>
-                {cols.map((c, i) => <th key={i} style={{ ...th, color: c.label === 'Total' ? C.orange : C.muted, borderLeft: c.label === 'Total' ? `1px solid ${C.border}` : undefined }}>{c.label}</th>)}
+                {cols.map((c, i) => <th key={i} style={{ ...th, color: c.label === 'Total' ? C.orange : C.muted, borderLeft: c.label === 'Total' ? `1px solid ${C.border}` : undefined }}>{c.label}{c.partOf && <div style={{ fontSize: 9, fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#777' }}>{`part of ${c.partOf}`}</div>}</th>)}
                 {withPrev && <th style={th}>Change</th>}
               </tr>
             </thead>
