@@ -14,7 +14,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 
 type Cfg = { tenant_id: string; branch_id: string; outlet_name: string; webapp_url: string; secret: string; gid: number | null; window_days: number }
 
-async function syncTenant(supabase: ReturnType<typeof createClient>, cfg: Cfg, opts: { dryRun?: boolean; from?: string; to?: string }) {
+async function syncTenant(supabase: ReturnType<typeof createClient>, cfg: Cfg, opts: { dryRun?: boolean; from?: string; to?: string; action?: string }) {
   const today = kualaLumpurToday()
   const to = opts.to ?? today
   // re-send the last window_days and the whole current month: invoices can be back-dated
@@ -55,7 +55,7 @@ async function syncTenant(supabase: ReturnType<typeof createClient>, cfg: Cfg, o
 
   const res = await fetch(cfg.webapp_url, {
     method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ secret: cfg.secret, gid: cfg.gid, dryRun: !!opts.dryRun, rows }),
+    body: JSON.stringify({ secret: cfg.secret, gid: cfg.gid, dryRun: !!opts.dryRun, action: opts.action, rows }),
   })
   const text = await res.text()
   let out: unknown
@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
     const results = []
     for (const cfg of cfgs as Cfg[]) {
       try {
-        const r = await syncTenant(supabase, cfg, { dryRun: body.dryRun, from: body.from, to: body.to })
+        const r = await syncTenant(supabase, cfg, { dryRun: body.dryRun, from: body.from, to: body.to, action: body.action })
         const ok = (r.sheet as { ok?: boolean }).ok === true
         if (!body.dryRun) await supabase.from('sheet_sync_config').update({ last_run_at: new Date().toISOString(), last_status: ok ? `ok: ${JSON.stringify(r.sheet).slice(0, 300)}` : `error: ${JSON.stringify(r.sheet).slice(0, 300)}` }).eq('tenant_id', cfg.tenant_id)
         results.push({ tenant_id: cfg.tenant_id, ...r })
