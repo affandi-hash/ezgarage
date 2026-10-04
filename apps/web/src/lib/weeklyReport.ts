@@ -106,6 +106,7 @@ export interface ReportSection {
 export interface ReportData {
   version: 1
   tenantName: string
+  logoUrl?: string | null
   branchLabel: string
   mode: ReportMode
   periodStart: string
@@ -262,6 +263,7 @@ export const pctChange = (a: number, b: number) => (b ? ((a - b) / Math.abs(b)) 
 
 export interface ComputeInput {
   tenantName: string
+  logoUrl?: string | null
   branchLabel: string
   mode: ReportMode
   start: string          // period start (week: its Monday)
@@ -446,7 +448,7 @@ export function computeReport(inp: ComputeInput): ReportData {
   if (inp.end > today) warnings.push('The period includes days that have not happened yet.')
 
   return {
-    version: 1, tenantName: inp.tenantName, branchLabel: inp.branchLabel, mode: inp.mode,
+    version: 1, tenantName: inp.tenantName, logoUrl: inp.logoUrl ?? null, branchLabel: inp.branchLabel, mode: inp.mode,
     periodStart: period.start, periodEnd: period.end, periodLabel: fmtRange(period.start, period.end), prevLabel,
     generatedAt: new Date().toISOString(), columns, total, period, previous, gpRange,
     historyWeeks, historyMonths, tiles, targets: { monthlyGoal: st.monthly_sales_goal, workingDaysMonth: st.working_days_month, targetGpPct: st.target_gp_pct },

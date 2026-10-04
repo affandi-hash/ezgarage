@@ -68,10 +68,14 @@ function Page({ data, last, children }: { data: ReportData; last?: boolean; chil
   }
   return (
     <div style={page}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', height: 44, flex: '0 0 44px' }}>
-        <div style={{ display: 'inline-block', color: ORANGE, fontWeight: 900, fontSize: 26, letterSpacing: 2, lineHeight: 1.1, borderBottom: `2px solid ${ORANGE}`, paddingBottom: 2 }}>
-          {data.tenantName.toUpperCase()}
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', height: 62, flex: '0 0 62px' }}>
+        {data.logoUrl ? (
+          <img src={data.logoUrl} alt={data.tenantName} style={{ height: 58, width: 'auto', maxWidth: 260, objectFit: 'contain', display: 'block' }} />
+        ) : (
+          <div style={{ display: 'inline-block', color: ORANGE, fontWeight: 900, fontSize: 26, letterSpacing: 2, lineHeight: 1.1, borderBottom: `2px solid ${ORANGE}`, paddingBottom: 2 }}>
+            {data.tenantName.toUpperCase()}
+          </div>
+        )}
         <div style={{ textAlign: 'right', fontSize: 11, color: '#555', lineHeight: 1.4 }}>
           <div style={{ fontWeight: 700, color: '#222' }}>{data.branchLabel}</div>
           {gen && <div>Generated {gen}</div>}

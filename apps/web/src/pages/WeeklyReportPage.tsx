@@ -104,7 +104,7 @@ export function WeeklyReportPage() {
         branchLabel: branchId ? (branches.find(b => b.id === branchId)?.name ?? '') : 'All branches',
         mode, start: p.start, end: p.end,
       })
-      const data = computeReport({ ...inp, basis })
+      const data = computeReport({ ...inp, basis, logoUrl: tenant?.logo_url })
       setRawInput(inp); setReport(data); setWords(wordSets(data)); setSavedId(null)
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not generate the report', 'error')
@@ -115,7 +115,7 @@ export function WeeklyReportPage() {
   // changing a comparison re-works the numbers from the loaded figures; edited words are kept
   function changeBasis(next: ReportBasis) {
     setBasis(next)
-    if (rawInput) { setReport(computeReport({ ...rawInput, basis: next })); setSavedId(null) }
+    if (rawInput) { setReport(computeReport({ ...rawInput, basis: next, logoUrl: tenant?.logo_url })); setSavedId(null) }
   }
 
   async function save() {
