@@ -276,7 +276,10 @@ function block_(sh, label, afterLabel, rows, dry) {
   if (dry) return info;
 
   const srcRow = cur > 0 ? h + 1 : fmtRow;
-  const formulas = srcRow ? sh.getRange(srcRow, 1, 1, ARAP_COLS).getFormulasR1C1()[0] : new Array(ARAP_COLS).fill('');
+  // only formulas that point at other cells (Outstanding, Age Days ...) are kept; =DATE(2026,7,13) is just a typed date
+  const a1 = srcRow ? sh.getRange(srcRow, 1, 1, ARAP_COLS).getFormulas()[0] : new Array(ARAP_COLS).fill('');
+  const r1c1 = srcRow ? sh.getRange(srcRow, 1, 1, ARAP_COLS).getFormulasR1C1()[0] : new Array(ARAP_COLS).fill('');
+  const formulas = r1c1.map(function (f, i) { return /\$?[A-Z]{1,3}\$?[0-9]+/.test(a1[i]) ? f : ''; });
   const totalWasFormula = !!sh.getRange(t, 7).getFormula();
   const need = Math.max(rows.length, 1);
   if (cur === 0) {
@@ -314,7 +317,7 @@ function block_(sh, label, afterLabel, rows, dry) {
 // ── Operations tab ───────────────────────────────────────────────────────
 // One row per trading day, newest first: Customers, Transactions and Sales are
 // written; every other column (averages, scores ...) is left to the sheet.
-const OPS_INPUTS = ['Customers', 'Transactions', 'Sales'];
+const OPS_INPUTS = ['Customers', 'Transactions', 'Sales', 'Avg Ticket'];
 
 function ops_(body, dry) {
   const sh = SpreadsheetApp.getActive().getSheetByName('Operations');

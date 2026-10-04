@@ -61,7 +61,7 @@ async function syncTenant(supabase: ReturnType<typeof createClient>, cfg: Cfg, o
     d.customers.add(i.customer_id ?? (i.customer_name ?? '').toLowerCase()); d.tx += 1; d.sales += Number(i.total_amount)
     perDay.set(i.issue_date, d)
   }
-  const ops = [...perDay.entries()].map(([date, d]) => ({ date, unit: cfg.outlet_name, customers: d.customers.size, transactions: d.tx, sales: round2(d.sales) }))
+  const ops = [...perDay.entries()].map(([date, d]) => ({ date, unit: cfg.outlet_name, customers: d.customers.size, transactions: d.tx, sales: round2(d.sales), 'avg ticket': round2(d.sales / d.tx) }))
 
   // CAPEX AR AP Debt tab: everything still open today
   const payload: Record<string, unknown> = { ops }
