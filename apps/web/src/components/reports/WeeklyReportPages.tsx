@@ -48,6 +48,16 @@ function compare(cur: number, prev: number, dp = 1): { dir: Dir; text: string } 
   return { dir: dirOf(d), text: d > 0.005 ? `Increased by ${abs}` : d < -0.005 ? `Decreased by ${abs}` : 'No change' }
 }
 
+// One view per summary section (a period that crosses a month end has one per month).
+function sectionViews(data: ReportData): ReportData[] {
+  const secs = data.sections ?? [{ periodLabel: data.periodLabel, prevLabel: data.prevLabel, partOf: null, period: data.period, previous: data.previous, gpRange: data.gpRange, tiles: data.tiles, words: data.words }]
+  return secs.map(sec => ({ ...data, ...sec }))
+}
+
+export function reportPageCount(data: ReportData): number {
+  return 2 + sectionViews(data).length
+}
+
 // ── page chrome ─────────────────────────────────────────────────────────
 function Page({ data, last, children }: { data: ReportData; last?: boolean; children: ReactNode }) {
   const gen = generatedOn(data.generatedAt)
@@ -235,9 +245,57 @@ function ChartCard({ w, h, title, children }: { w: number; h: number; title: str
   )
 }
 
+const profitCell: CSSProperties = { padding: '3px 12px 3px 0', fontSize: 13 }
+
+function ProfitBlock({ v, heading }: { v: ReportData; heading: string | null }) {
+  const { period, previous, gpRange } = v
+  const d = period.gpPct - previous.gpPct
+  const verdict = d > 0.005 ? 'Increase' : d < -0.005 ? 'Decrease' : 'No change'
+  const divisions = [
+    { name: 'Car Division', sales: period.carSales, cogs: period.carCogs },
+    { name: 'Bike Division', sales: period.bikeSales, cogs: period.bikeCogs },
+  ]
+  const cell = profitCell
+  return (
+    <div style={{ marginTop: heading ? 14 : 28 }}>
+      {heading && <div style={{ fontWeight: 700, fontSize: 13, borderBottom: '1px solid #999', paddingBottom: 3, marginBottom: 8 }}>{heading}</div>}
+      <div style={{ display: 'flex', gap: 48, fontSize: 13, alignItems: 'flex-start' }}>
+        <div style={{ minWidth: 420 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Profitability</div>
+          <div style={{ display: 'flex', gap: 24 }}><b style={{ width: 90 }}>GP range:</b><span>{`~${num(gpRange.low).toFixed(0)}%–${num(gpRange.high).toFixed(0)}%`}</span></div>
+          <div style={{ display: 'flex', gap: 24, marginTop: 4 }}><b style={{ width: 90 }}>Average:</b><span>{`~${num(gpRange.avg).toFixed(0)}%`}</span></div>
+          <div style={{ marginTop: 10 }}>
+            <b>{verdict}</b> in margin percentage vs {v.prevLabel} ({pct(previous.gpPct)} to {pct(period.gpPct)})
+          </div>
+        </div>
+        <table style={{ borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={{ ...cell, textAlign: 'left' }} />
+              {['Revenue', 'COGS', 'GP %'].map(h => <th key={h} style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {divisions.map(dv => (
+              <tr key={dv.name}>
+                <td style={{ ...cell, fontWeight: 700 }}>{dv.name}</td>
+                <td style={{ ...cell, textAlign: 'right' }}>{money(dv.sales)}</td>
+                <td style={{ ...cell, textAlign: 'right' }}>{money(dv.cogs)}</td>
+                <td style={{ ...cell, textAlign: 'right' }}>{pct(gpOf(dv.sales, dv.cogs))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  )
+}
+
 // ── page 1 ──────────────────────────────────────────────────────────────
 function PageOne({ data }: { data: ReportData }) {
-  const { columns, total, period, previous, gpRange } = data
+  const { columns, total } = data
+  const views = sectionViews(data)
   const cols = [...columns, total]
   const fs = cols.length > 8 ? 11 : 13
   const rows: { label: string; get: (c: ReportCol) => string; bold?: boolean; net?: boolean }[] = [
@@ -255,13 +313,6 @@ function PageOne({ data }: { data: ReportData }) {
   const th: CSSProperties = { textAlign: 'right', fontWeight: 700, padding: '4px 8px', whiteSpace: 'nowrap' }
   const td: CSSProperties = { textAlign: 'right', padding: '3px 8px', whiteSpace: 'nowrap' }
 
-  const d = period.gpPct - previous.gpPct
-  const verdict = d > 0.005 ? 'Increase' : d < -0.005 ? 'Decrease' : 'No change'
-  const divisions = [
-    { name: 'Car Division', sales: period.carSales, cogs: period.carCogs },
-    { name: 'Bike Division', sales: period.bikeSales, cogs: period.bikeCogs },
-  ]
-  const cell: CSSProperties = { padding: '3px 12px 3px 0', fontSize: 13 }
 
   return (
     <>
@@ -293,34 +344,7 @@ function PageOne({ data }: { data: ReportData }) {
         </tbody>
       </table>
 
-      <div style={{ display: 'flex', gap: 48, marginTop: 28, fontSize: 13, alignItems: 'flex-start' }}>
-        <div style={{ minWidth: 420 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Profitability</div>
-          <div style={{ display: 'flex', gap: 24 }}><b style={{ width: 90 }}>GP range:</b><span>{`~${num(gpRange.low).toFixed(0)}%–${num(gpRange.high).toFixed(0)}%`}</span></div>
-          <div style={{ display: 'flex', gap: 24, marginTop: 4 }}><b style={{ width: 90 }}>Average:</b><span>{`~${num(gpRange.avg).toFixed(0)}%`}</span></div>
-          <div style={{ marginTop: 10 }}>
-            <b>{verdict}</b> in margin percentage vs {data.prevLabel} ({pct(previous.gpPct)} to {pct(period.gpPct)})
-          </div>
-        </div>
-        <table style={{ borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={{ ...cell, textAlign: 'left' }} />
-              {['Revenue', 'COGS', 'GP %'].map(h => <th key={h} style={{ ...cell, textAlign: 'right', fontWeight: 700 }}>{h}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {divisions.map(dv => (
-              <tr key={dv.name}>
-                <td style={{ ...cell, fontWeight: 700 }}>{dv.name}</td>
-                <td style={{ ...cell, textAlign: 'right' }}>{money(dv.sales)}</td>
-                <td style={{ ...cell, textAlign: 'right' }}>{money(dv.cogs)}</td>
-                <td style={{ ...cell, textAlign: 'right' }}>{pct(gpOf(dv.sales, dv.cogs))}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {views.map((v, i) => <ProfitBlock key={i} v={v} heading={views.length > 1 ? v.periodLabel : null} />)}
 
       {data.warnings.length > 0 && (
         <div style={{ position: 'absolute', left: 28, right: 280, bottom: 28, background: '#FFF4CE', border: '1px solid #E0B000', color: '#6B4E00', fontSize: 11, padding: '6px 10px', lineHeight: 1.45 }}>
@@ -334,13 +358,14 @@ function PageOne({ data }: { data: ReportData }) {
 
 // ── page 2 ──────────────────────────────────────────────────────────────
 function PageTwo({ data }: { data: ReportData }) {
-  const { period, historyMonths: months, historyWeeks: weeks } = data
-  const netColor = period.net >= 0 ? '#7CE38B' : '#FF6B5E'
-  const kpis: { icon: string; label: string; value: string; sub?: string; color?: string }[] = [
-    { icon: 'trend', label: 'SALES', value: money(period.sales) },
-    { icon: 'dollar', label: 'GROSS PROFIT', value: money(period.gp) },
-    { icon: 'receipt', label: 'OPEX', value: money(period.opex), sub: `CAPEX ${money(period.capex)}` },
-    { icon: 'seed', label: 'NET PROFIT', value: money(period.net), color: netColor },
+  const { historyMonths: months, historyWeeks: weeks } = data
+  const views = sectionViews(data)
+  const multi = views.length > 1
+  const kpisOf = (period: ReportCol) => [
+    { icon: 'trend', label: 'SALES', value: money(period.sales), sub: undefined as string | undefined, color: undefined as string | undefined },
+    { icon: 'dollar', label: 'GROSS PROFIT', value: money(period.gp), sub: undefined, color: undefined },
+    { icon: 'receipt', label: 'OPEX', value: money(period.opex), sub: `CAPEX ${money(period.capex)}`, color: undefined },
+    { icon: 'seed', label: 'NET PROFIT', value: money(period.net), sub: undefined, color: period.net >= 0 ? '#7CE38B' : '#FF6B5E' },
   ]
   const wl = weeks.map(w => w.label)
   return (
@@ -370,19 +395,23 @@ function PageTwo({ data }: { data: ReportData }) {
         </div>
       </div>
       <div style={{ flex: 1, background: '#000', color: '#fff', display: 'flex', flexDirection: 'column', padding: '18px 16px', boxSizing: 'border-box' }}>
-        <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 19, paddingBottom: 14, borderBottom: '1px solid #555' }}>{data.periodLabel.toUpperCase()}</div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-around' }}>
-          {kpis.map(k => (
-            <div key={k.label} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid #333' }}>
-              <IconBadge name={k.icon} size={46} />
-              <div style={{ borderLeft: '1px solid #666', paddingLeft: 12, minWidth: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#ddd' }}>{k.label}</div>
-                <div style={{ fontSize: 17, fontWeight: 700, color: k.color ?? '#fff', whiteSpace: 'nowrap' }}>{k.value}</div>
-                {k.sub && <div style={{ fontSize: 11, color: '#bbb', marginTop: 2 }}>{k.sub}</div>}
-              </div>
+        {views.map((v, vi) => (
+          <div key={vi} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, marginTop: vi ? 10 : 0 }}>
+            <div style={{ textAlign: 'center', fontWeight: 700, fontSize: multi ? 15 : 19, paddingBottom: multi ? 6 : 14, borderBottom: '1px solid #555' }}>{v.periodLabel.toUpperCase()}</div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-around' }}>
+              {kpisOf(v.period).map(k => (
+                <div key={k.label} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: multi ? '4px 0' : '12px 0', borderBottom: '1px solid #333' }}>
+                  <IconBadge name={k.icon} size={multi ? 30 : 46} />
+                  <div style={{ borderLeft: '1px solid #666', paddingLeft: 12, minWidth: 0 }}>
+                    <div style={{ fontSize: multi ? 9 : 11, fontWeight: 700, letterSpacing: 0.5, color: '#ddd' }}>{k.label}</div>
+                    <div style={{ fontSize: multi ? 14 : 17, fontWeight: 700, color: k.color ?? '#fff', whiteSpace: 'nowrap' }}>{k.value}</div>
+                    {k.sub && <div style={{ fontSize: multi ? 9 : 11, color: '#bbb', marginTop: 2 }}>{k.sub}</div>}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -449,7 +478,7 @@ function Pie({ fleet, walkin, size = 120 }: { fleet: number; walkin: number; siz
 
 function PageThree({ data, words }: { data: ReportData; words: ReportWord[] }) {
   const t = data.tiles
-  const unit = unitOf(data.mode)
+  const unit = data.partOf ? 'Part-week' : unitOf(data.mode)
   const prevCap = cap(data.prevLabel), thisCap = `This ${unit.toLowerCase()}`
   const profitable = data.period.net >= 0
   const dash = (n: number) => (n > 0 ? pct(n, 1) : '-')
@@ -465,7 +494,7 @@ function PageThree({ data, words }: { data: ReportData; words: ReportWord[] }) {
   return (
     <>
       <TitleBar style={{ alignSelf: 'flex-start', minWidth: 640, fontSize: 18, textTransform: 'uppercase' }}>
-        {`${data.periodLabel} ${unit} Summary - ${profitable ? 'PROFITABLE' : 'LOSS'}`}
+        {`${data.periodLabel}${data.partOf ? ` (part of ${data.partOf}) Summary` : ` ${unit} Summary`} - ${profitable ? 'PROFITABLE' : 'LOSS'}`}
       </TitleBar>
       <div style={{ display: 'flex', gap: 14, flex: 1, minHeight: 0, marginTop: 10 }}>
         <div style={{ width: 190, flex: '0 0 190px', background: '#000', color: '#fff', padding: '14px 12px', boxSizing: 'border-box' }}>
@@ -528,12 +557,15 @@ function PageThree({ data, words }: { data: ReportData; words: ReportWord[] }) {
 }
 
 // ── exports ─────────────────────────────────────────────────────────────
-export function WeeklyReportPages({ data, words }: { data: ReportData; words: ReportWord[] }) {
+export function WeeklyReportPages({ data, words }: { data: ReportData; words: ReportWord[][] }) {
+  const views = sectionViews(data)
   return (
     <>
       <Page data={data}><PageOne data={data} /></Page>
       <Page data={data}><PageTwo data={data} /></Page>
-      <Page data={data} last><PageThree data={data} words={words} /></Page>
+      {views.map((v, i) => (
+        <Page key={i} data={v} last={i === views.length - 1}><PageThree data={v} words={words[i] ?? v.words} /></Page>
+      ))}
     </>
   )
 }

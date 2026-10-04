@@ -7,12 +7,12 @@ import {
   addDays, DEFAULT_SETTINGS, generateReport, loadSettings, mondayOf, parseYmd, toYmd,
   type ReportData, type ReportMode, type ReportSettings, type ReportWord,
 } from '@/lib/weeklyReport'
-import { openReportPrintWindow, WeeklyReportPages } from '@/components/reports/WeeklyReportPages'
+import { openReportPrintWindow, reportPageCount, WeeklyReportPages } from '@/components/reports/WeeklyReportPages'
 
 const C = { bg: '#0E0E0E', surface: '#1E1E1E', border: '#2A2A2A', orange: '#F15A22', text: '#F0F0F0', muted: '#A0A0A0' }
 const PAGE_W = 1123, PAGE_H = 794
 
-interface Snapshot { id: string; title: string; period_mode: ReportMode; period_start: string; period_end: string; created_at: string; data: ReportData & { savedWords?: ReportWord[] } }
+interface Snapshot { id: string; title: string; period_mode: ReportMode; period_start: string; period_end: string; created_at: string; data: ReportData & { savedWords?: ReportWord[][] | ReportWord[] } }
 interface BranchRow { id: string; name: string }
 
 const input: React.CSSProperties = { background: '#111', border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 14, padding: '9px 12px', outline: 'none' }
@@ -22,6 +22,7 @@ const btn = (primary = false): React.CSSProperties => ({
   border: `1px solid ${primary ? C.orange : C.border}`, background: primary ? C.orange : C.surface, color: primary ? '#fff' : C.text,
 })
 
+const wordSets = (d: ReportData): ReportWord[][] => (d.sections ?? [d]).map(sec => sec.words)
 const lastCompletedWeek = () => mondayOf(addDays(toYmd(new Date()), -7))
 const thisMonth = () => toYmd(new Date()).slice(0, 7)
 
@@ -41,7 +42,7 @@ export function WeeklyReportPage() {
 
   const [busy, setBusy] = useState(false)
   const [report, setReport] = useState<ReportData | null>(null)
-  const [words, setWords] = useState<ReportWord[]>([])
+  const [words, setWords] = useState<ReportWord[][]>([])
   const [savedId, setSavedId] = useState<string | null>(null)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [settings, setSettings] = useState<ReportSettings>(DEFAULT_SETTINGS)
@@ -101,7 +102,7 @@ export function WeeklyReportPage() {
         branchLabel: branchId ? (branches.find(b => b.id === branchId)?.name ?? '') : 'All branches',
         mode, start: p.start, end: p.end,
       })
-      setReport(data); setWords(data.words); setSavedId(null)
+      setReport(data); setWords(wordSets(data)); setSavedId(null)
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not generate the report', 'error')
     }
@@ -121,7 +122,9 @@ export function WeeklyReportPage() {
 
   function open(s: Snapshot) {
     const { savedWords, ...data } = s.data
-    setReport(data as ReportData); setWords(savedWords ?? data.words); setSavedId(s.id)
+    const rd = data as ReportData
+    // reports saved before sections existed stored one flat list of words
+    setReport(rd); setWords(Array.isArray(savedWords) && Array.isArray(savedWords[0]) ? (savedWords as ReportWord[][]) : Array.isArray(savedWords) && savedWords.length ? [savedWords as ReportWord[]] : wordSets(rd)); setSavedId(s.id)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -225,18 +228,23 @@ export function WeeklyReportPage() {
                 <button style={btn(true)} onClick={download}><FileDown size={16} /> Download PDF</button>
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-              {words.map((w, i) => (
-                <div key={i}>
-                  <input style={{ ...input, width: '100%', boxSizing: 'border-box', fontWeight: 700, marginBottom: 4 }} value={w.word} onChange={e => setWords(words.map((x, j) => (j === i ? { ...x, word: e.target.value } : x)))} />
-                  <input style={{ ...input, width: '100%', boxSizing: 'border-box', fontSize: 12 }} value={w.caption} onChange={e => setWords(words.map((x, j) => (j === i ? { ...x, caption: e.target.value } : x)))} />
+            {words.map((set, si) => (
+              <div key={si} style={{ marginTop: si ? 14 : 0 }}>
+                {words.length > 1 && <div style={{ fontSize: 12, fontWeight: 700, color: C.orange, marginBottom: 6 }}>{report.sections?.[si]?.periodLabel}</div>}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                  {set.map((w, i) => (
+                    <div key={i}>
+                      <input style={{ ...input, width: '100%', boxSizing: 'border-box', fontWeight: 700, marginBottom: 4 }} value={w.word} onChange={e => setWords(words.map((ws, j) => (j === si ? ws.map((x, k) => (k === i ? { ...x, word: e.target.value } : x)) : ws)))} />
+                      <input style={{ ...input, width: '100%', boxSizing: 'border-box', fontSize: 12 }} value={w.caption} onChange={e => setWords(words.map((ws, j) => (j === si ? ws.map((x, k) => (k === i ? { ...x, caption: e.target.value } : x)) : ws)))} />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
 
           <div ref={boxRef} style={{ width: '100%', overflow: 'hidden', background: '#444', borderRadius: 8, padding: 0 }}>
-            <div style={{ width: PAGE_W * scale, height: PAGE_H * 3 * scale + 24 * scale * 2 }}>
+            <div style={{ width: PAGE_W * scale, height: (PAGE_H * reportPageCount(report) + 24 * (reportPageCount(report) - 1)) * scale }}>
               <div ref={pagesRef} style={{ width: PAGE_W, transform: `scale(${scale})`, transformOrigin: 'top left', display: 'flex', flexDirection: 'column', gap: 24 }}>
                 <WeeklyReportPages data={report} words={words} />
               </div>

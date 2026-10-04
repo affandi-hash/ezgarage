@@ -64,6 +64,19 @@ export interface ReportTiles {
 
 export interface ReportWord { word: string; caption: string }
 
+// Summary numbers for one stretch of days. A chosen period that crosses a month
+// end gets one section per month, so each part has its own panel and tiles.
+export interface ReportSection {
+  periodLabel: string
+  prevLabel: string
+  partOf: string | null
+  period: ReportCol
+  previous: ReportCol
+  gpRange: { low: number; high: number; avg: number }
+  tiles: ReportTiles
+  words: ReportWord[]
+}
+
 export interface ReportData {
   version: 1
   tenantName: string
@@ -85,6 +98,8 @@ export interface ReportData {
   targets: { monthlyGoal: number; workingDaysMonth: number; targetGpPct: number }
   words: ReportWord[]
   warnings: string[]
+  partOf?: string | null       // set on a per-section view of the report
+  sections?: ReportSection[]   // absent in reports saved before this existed
 }
 
 export interface ReportSettings {
@@ -114,6 +129,7 @@ const diffDays = (a: string, b: string) => Math.round((parseYmd(b).getTime() - p
 const SHORT_MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const fmtShort = (s: string) => { const d = parseYmd(s); return `${d.getDate()} ${SHORT_MONTH[d.getMonth()]}` }
 export const fmtRange = (a: string, b: string) => {
+  if (a === b) return fmtShort(a)
   const da = parseYmd(a), db = parseYmd(b)
   return da.getMonth() === db.getMonth() && da.getFullYear() === db.getFullYear()
     ? `${da.getDate()} - ${db.getDate()} ${SHORT_MONTH[db.getMonth()]}`
@@ -257,19 +273,6 @@ export function computeReport(inp: ComputeInput): ReportData {
   }
   const total = totalCol(columns, inp.mode === 'week' ? 'TOTAL (4 weeks)' : 'TOTAL')
 
-  // the summary panel and tiles cover the whole chosen period, even when its table columns are split
-  const period = buildCol(fmtRange(inp.start, inp.end), inp.start, inp.end, invs, costs, today)
-  let prevStart: string, prevEnd: string, prevLabel: string
-  if (inp.mode === 'week') { prevStart = addDays(inp.start, -7); prevEnd = addDays(inp.start, -1); prevLabel = 'previous week' }
-  else if (inp.mode === 'month') { prevStart = addMonths(inp.start, -1); prevEnd = lastOfMonth(prevStart); prevLabel = 'previous month' }
-  else { const len = diffDays(inp.start, inp.end) + 1; prevEnd = addDays(inp.start, -1); prevStart = addDays(prevEnd, -(len - 1)); prevLabel = 'previous period' }
-  const previous = buildCol(fmtRange(prevStart, prevEnd), prevStart, prevEnd, invs, costs, today)
-
-  // per-invoice margin spread (10th to 90th percentile) for the "GP range" line
-  const margins = invs.filter(i => i.date >= period.start && i.date <= period.end && i.cogs > 0).map(i => ((i.total - i.cogs) / i.total) * 100).sort((a, b) => a - b)
-  const q = (p: number) => (margins.length ? margins[Math.min(margins.length - 1, Math.floor(p * margins.length))] : 0)
-  const gpRange = { low: q(0.1), high: q(0.9), avg: period.gpPct }
-
   // history charts: up to 9 weeks ending with the week of the period end, and months with data
   const lastWeekStart = mondayOf(inp.end)
   const historyWeeks: ReportCol[] = []
@@ -290,44 +293,79 @@ export function computeReport(inp: ComputeInput): ReportData {
     historyMonths.push({ label: partial ? `${monthName(k)} (to ${parseYmd(inp.end).getDate()})` : monthName(k), sales, net: sales - cogs - c.opex - c.capex })
   }
 
-  // tiles
   const st = inp.settings
-  const thisMonthStart = firstOfMonth(inp.end), prevMonthStart = addMonths(inp.end, -1)
-  // when the month is still in progress, compare the same days of both months
-  const partialMonth = inp.end < lastOfMonth(inp.end)
-  const dayNo = parseYmd(inp.end).getDate()
-  const prevMonthEnd = partialMonth ? `${monthKey(prevMonthStart)}-${pad(Math.min(dayNo, daysInMonth(monthKey(prevMonthStart))))}` : lastOfMonth(prevMonthStart)
-  const monthSalesThis = invs.filter(i => i.date >= thisMonthStart && i.date <= inp.end).reduce((a, i) => a + i.total, 0)
-  const monthSalesPrev = invs.filter(i => i.date >= prevMonthStart && i.date <= prevMonthEnd).reduce((a, i) => a + i.total, 0)
-  const monthTag = partialMonth ? ` (1-${dayNo})` : ''
-  const periodDays = diffDays(period.start, period.end) + 1
-  const costsTotal = period.opex + period.capex
-  const salesTarget = st.weekly_target_override != null
-    ? (st.weekly_target_override * periodDays) / 7
-    : costsTotal / (st.target_gp_pct / 100)
-  const dailyTarget = st.monthly_sales_goal / st.working_days_month
-  const perDayActual = period.days ? period.sales / period.days : 0
-  const share = (c: ReportCol, f: boolean) => (c.sales ? ((f ? c.fleetSales : c.walkinSales) / c.sales) * 100 : 0)
-  const tiles: ReportTiles = {
-    monthLabelPrev: monthName(monthKey(prevMonthStart)) + monthTag, monthLabelThis: monthName(monthKey(thisMonthStart)) + monthTag,
-    monthHeader: `${SHORT_MONTH[Number(monthKey(prevMonthStart).slice(5, 7)) - 1]} VS ${SHORT_MONTH[Number(monthKey(thisMonthStart).slice(5, 7)) - 1]} REVENUE${partialMonth ? ` (DAY 1-${dayNo})` : ''}`.toUpperCase(),
-    monthSalesPrev, monthSalesThis,
-    gpPctPrev: previous.gpPct, gpPctThis: period.gpPct,
-    costs: costsTotal, gp: period.gp, surplus: period.gp - costsTotal,
-    salesTarget, salesActual: period.sales, targetAchievement: salesTarget ? (period.sales / salesTarget) * 100 : 0,
-    walkinShare: share(period, false), fleetShare: share(period, true), walkinShareChangePts: share(period, false) - share(previous, false),
-    txPrev: previous.tx, txThis: period.tx, avgPrev: previous.avgPerTx, avgThis: period.avgPerTx,
-    perDayActual, perDayTarget: dailyTarget, perDayAchievement: dailyTarget ? (perDayActual / dailyTarget) * 100 : 0,
+  const unit = inp.mode === 'week' ? 'week' : inp.mode === 'month' ? 'month' : 'period'
+
+  // Summary numbers (panel, tiles, words) for one stretch of days, compared with
+  // another stretch of the same shape.
+  function makeSection(secStart: string, secEnd: string, prevStart: string, prevEnd: string, prevLabel: string, partOf: string | null): ReportSection {
+    const period = buildCol(fmtRange(secStart, secEnd), secStart, secEnd, invs, costs, today)
+    const previous = buildCol(fmtRange(prevStart, prevEnd), prevStart, prevEnd, invs, costs, today)
+
+    // per-invoice margin spread (10th to 90th percentile) for the "GP range" line
+    const margins = invs.filter(i => i.date >= secStart && i.date <= secEnd && i.cogs > 0).map(i => ((i.total - i.cogs) / i.total) * 100).sort((x, y) => x - y)
+    const q = (pp: number) => (margins.length ? margins[Math.min(margins.length - 1, Math.floor(pp * margins.length))] : 0)
+    const gpRange = { low: q(0.1), high: q(0.9), avg: period.gpPct }
+
+    const thisMonthStart = firstOfMonth(secEnd), prevMonthStart = addMonths(secEnd, -1)
+    // when the month is still in progress, compare the same days of both months
+    const partialMonth = secEnd < lastOfMonth(secEnd)
+    const dayNo = parseYmd(secEnd).getDate()
+    const prevMonthEnd = partialMonth ? `${monthKey(prevMonthStart)}-${pad(Math.min(dayNo, daysInMonth(monthKey(prevMonthStart))))}` : lastOfMonth(prevMonthStart)
+    const monthSalesThis = invs.filter(i => i.date >= thisMonthStart && i.date <= secEnd).reduce((a, i) => a + i.total, 0)
+    const monthSalesPrev = invs.filter(i => i.date >= prevMonthStart && i.date <= prevMonthEnd).reduce((a, i) => a + i.total, 0)
+    const monthTag = partialMonth ? ` (1-${dayNo})` : ''
+    const periodDays = diffDays(secStart, secEnd) + 1
+    const costsTotal = period.opex + period.capex
+    const salesTarget = st.weekly_target_override != null
+      ? (st.weekly_target_override * periodDays) / 7
+      : costsTotal / (st.target_gp_pct / 100)
+    const dailyTarget = st.monthly_sales_goal / st.working_days_month
+    const perDayActual = period.days ? period.sales / period.days : 0
+    const share = (c: ReportCol, f: boolean) => (c.sales ? ((f ? c.fleetSales : c.walkinSales) / c.sales) * 100 : 0)
+    const tiles: ReportTiles = {
+      monthLabelPrev: monthName(monthKey(prevMonthStart)) + monthTag, monthLabelThis: monthName(monthKey(thisMonthStart)) + monthTag,
+      monthHeader: `${SHORT_MONTH[Number(monthKey(prevMonthStart).slice(5, 7)) - 1]} VS ${SHORT_MONTH[Number(monthKey(thisMonthStart).slice(5, 7)) - 1]} REVENUE${partialMonth ? ` (DAY 1-${dayNo})` : ''}`.toUpperCase(),
+      monthSalesPrev, monthSalesThis,
+      gpPctPrev: previous.gpPct, gpPctThis: period.gpPct,
+      costs: costsTotal, gp: period.gp, surplus: period.gp - costsTotal,
+      salesTarget, salesActual: period.sales, targetAchievement: salesTarget ? (period.sales / salesTarget) * 100 : 0,
+      walkinShare: share(period, false), fleetShare: share(period, true), walkinShareChangePts: share(period, false) - share(previous, false),
+      txPrev: previous.tx, txThis: period.tx, avgPrev: previous.avgPerTx, avgThis: period.avgPerTx,
+      perDayActual, perDayTarget: dailyTarget, perDayAchievement: dailyTarget ? (perDayActual / dailyTarget) * 100 : 0,
+    }
+    const words: ReportWord[] = [
+      period.net >= 0 ? { word: 'Profitable', caption: 'NET PROFIT AFTER OPEX & CAPEX' } : { word: 'Under pressure', caption: `NET LOSS THIS ${partOf ? 'PART OF THE WEEK' : unit.toUpperCase()}` },
+      tiles.targetAchievement >= 100 ? { word: 'On target', caption: 'SALES TARGET MET' } : { word: 'Below target', caption: 'SALES TARGET NOT YET MET' },
+      period.sales >= previous.sales ? { word: 'Growing', caption: `SALES UP ON ${prevLabel.toUpperCase()}` } : { word: 'Softer', caption: `SALES DOWN ON ${prevLabel.toUpperCase()}` },
+      period.gpPct >= st.target_gp_pct ? { word: 'Healthy margins', caption: `GP ABOVE ${st.target_gp_pct}% TARGET` } : { word: 'Margin watch', caption: `GP BELOW ${st.target_gp_pct}% TARGET` },
+      period.tx >= previous.tx ? { word: 'Busy', caption: 'TRAFFIC UP OR LEVEL' } : { word: 'Quieter', caption: 'FEWER JOBS THAN BEFORE' },
+    ]
+    return { periodLabel: fmtRange(secStart, secEnd), prevLabel, partOf, period, previous, gpRange, tiles, words }
   }
 
-  const unit = inp.mode === 'week' ? 'week' : inp.mode === 'month' ? 'month' : 'period'
-  const words: ReportWord[] = [
-    period.net >= 0 ? { word: 'Profitable', caption: 'NET PROFIT AFTER OPEX & CAPEX' } : { word: 'Under pressure', caption: `NET LOSS THIS ${unit.toUpperCase()}` },
-    tiles.targetAchievement >= 100 ? { word: 'On target', caption: 'SALES TARGET MET' } : { word: 'Below target', caption: 'SALES TARGET NOT YET MET' },
-    period.sales >= previous.sales ? { word: 'Growing', caption: `SALES UP ON ${prevLabel.toUpperCase()}` } : { word: 'Softer', caption: `SALES DOWN ON ${prevLabel.toUpperCase()}` },
-    period.gpPct >= st.target_gp_pct ? { word: 'Healthy margins', caption: `GP ABOVE ${st.target_gp_pct}% TARGET` } : { word: 'Margin watch', caption: `GP BELOW ${st.target_gp_pct}% TARGET` },
-    period.tx >= previous.tx ? { word: 'Busy', caption: 'TRAFFIC UP OR LEVEL' } : { word: 'Quieter', caption: 'FEWER JOBS THAN BEFORE' },
-  ]
+  // how each stretch is compared: week -> the same days a week earlier, month -> previous month,
+  // custom -> the equally long stretch just before it
+  function compareWith(secStart: string, secEnd: string): { ps: string; pe: string; label: string } {
+    if (inp.mode === 'week') return { ps: addDays(secStart, -7), pe: addDays(secEnd, -7), label: 'previous week' }
+    if (inp.mode === 'month') { const ps = addMonths(secStart, -1); return { ps, pe: lastOfMonth(ps), label: 'previous month' } }
+    const len = diffDays(secStart, secEnd) + 1
+    const pe = addDays(secStart, -1)
+    return { ps: addDays(pe, -(len - 1)), pe, label: 'previous period' }
+  }
+
+  // the chosen period as a whole, and one section per calendar month it touches
+  const whole = compareWith(inp.start, inp.end)
+  const overall = makeSection(inp.start, inp.end, whole.ps, whole.pe, whole.label, null)
+  const sections: ReportSection[] = []
+  for (let cur = inp.start; cur <= inp.end; ) {
+    const segEnd = lastOfMonth(cur) < inp.end ? lastOfMonth(cur) : inp.end
+    const cmp = compareWith(cur, segEnd)
+    sections.push(makeSection(cur, segEnd, cmp.ps, cmp.pe, cmp.label, cur !== inp.start || segEnd !== inp.end ? fmtRange(inp.start, inp.end) : null))
+    cur = addDays(segEnd, 1)
+  }
+  const { period, previous, gpRange, tiles, words, prevLabel } = overall
+  const prevStart = whole.ps
 
   // data-quality warnings
   const pending = [...monthly.entries()].filter(([k]) => k >= monthKey(prevStart) && k <= monthKey(inp.end)).reduce((a, [, v]) => a + v.pending, 0)
@@ -341,7 +379,7 @@ export function computeReport(inp: ComputeInput): ReportData {
     periodStart: period.start, periodEnd: period.end, periodLabel: fmtRange(period.start, period.end), prevLabel,
     generatedAt: new Date().toISOString(), columns, total, period, previous, gpRange,
     historyWeeks, historyMonths, tiles, targets: { monthlyGoal: st.monthly_sales_goal, workingDaysMonth: st.working_days_month, targetGpPct: st.target_gp_pct },
-    words, warnings,
+    words, warnings, sections,
   }
 }
 
