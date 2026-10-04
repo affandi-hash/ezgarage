@@ -441,6 +441,17 @@ function Pair({ items }: { items: { label: string; value: string; color?: string
   )
 }
 
+// Red under 50%, amber up to 99%, green at 100% or more.
+function Progress({ value }: { value: number }) {
+  const v = num(value)
+  const color = v >= 100 ? GREEN : v >= 50 ? '#F5A623' : RED
+  return (
+    <div style={{ width: '82%', height: 18, background: '#e6e6e6', borderRadius: 9, overflow: 'hidden' }}>
+      <div style={{ width: `${Math.max(2, Math.min(100, v))}%`, height: '100%', background: color }} />
+    </div>
+  )
+}
+
 const Sentence = ({ children }: { children: ReactNode }) => <div style={{ fontWeight: 700, fontSize: 13, textAlign: 'center' }}>{children}</div>
 
 function Pie({ fleet, walkin, size = 120 }: { fleet: number; walkin: number; size?: number }) {
@@ -479,14 +490,17 @@ function Pie({ fleet, walkin, size = 120 }: { fleet: number; walkin: number; siz
 function PageThree({ data, words }: { data: ReportData; words: ReportWord[] }) {
   const t = data.tiles
   const unit = data.partOf ? 'Part-week' : unitOf(data.mode)
-  const prevCap = cap(data.prevLabel), thisCap = `This ${unit.toLowerCase()}`
+  const thisCap = `This ${unit.toLowerCase()}`
+  const prevCap = cap(data.prevLabel)   // reports saved before comparison choices existed lack the base labels
   const profitable = data.period.net >= 0
   const dash = (n: number) => (n > 0 ? pct(n, 1) : '-')
+  const oneDp = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
 
   const rev = compare(t.monthSalesThis, t.monthSalesPrev)
   const gp = compare(t.gpPctThis, t.gpPctPrev)
   const quality = compare(t.avgThis, t.avgPrev)
-  const txDiff = t.txThis - t.txPrev
+  const txDiff = Math.round((t.txThis - t.txPrev) * 10) / 10
+  const coverage = t.costs > 0 ? (t.gp / t.costs) * 100 : t.gp > 0 ? 100 : 0
   const ptsAbs = Math.abs(t.walkinShareChangePts).toFixed(2)
   const hasTarget = t.salesTarget > 0, hasDaily = t.perDayTarget > 0
 
@@ -516,39 +530,42 @@ function PageThree({ data, words }: { data: ReportData; words: ReportWord[] }) {
           </TileShell>
           <TileShell title="GP PERFORMANCE">
             <Arrow dir={gp.dir} /><Sentence>{gp.text}</Sentence>
-            <Pair items={[{ label: prevCap, value: pct(t.gpPctPrev) }, { label: thisCap, value: pct(t.gpPctThis) }]} />
+            <Pair items={[{ label: t.gpBaseLabel ?? prevCap, value: pct(t.gpPctPrev) }, { label: thisCap, value: pct(t.gpPctThis) }]} />
           </TileShell>
           <TileShell title="BREAK-EVEN ANALYSIS">
-            <Arrow dir={t.surplus >= 0 ? 'up' : 'down'} /><Sentence>{`${t.surplus >= 0 ? 'Surplus' : 'Shortfall'}: ${money(Math.abs(t.surplus), 0)}`}</Sentence>
+            <Progress value={coverage} />
+            <Sentence>{`${t.surplus >= 0 ? 'Surplus' : 'Shortfall'}: ${money(Math.abs(t.surplus), 0)} (${pct(coverage, 0)} of costs covered)`}</Sentence>
             <Pair items={[{ label: 'Costs (OPEX+CAPEX)', value: money(t.costs, 0) }, { label: 'GP', value: money(t.gp, 0) }]} />
           </TileShell>
           <TileShell title={`${unit.toUpperCase()} SALES TARGET`}>
-            <Arrow dir={hasTarget ? (t.targetAchievement >= 100 ? 'up' : 'down') : 'flat'} />
+            {hasTarget ? <Progress value={t.targetAchievement} /> : <Arrow dir="flat" />}
             <Sentence>{`Achievement: ${hasTarget ? pct(t.targetAchievement, 1) : '-'}`}</Sentence>
             <Pair items={[{ label: 'Target', value: money(t.salesTarget, 0) }, { label: 'Actual', value: money(t.salesActual, 0) }]} />
           </TileShell>
-          <TileShell title="CUSTOMER SOURCE">
-            <Arrow dir={dirOf(t.walkinShareChangePts)} />
-            <Sentence>{dirOf(t.walkinShareChangePts) === 'flat' ? 'No change in mix' : `Walk Ins share ${t.walkinShareChangePts > 0 ? 'up' : 'down'} ${ptsAbs} pts`}</Sentence>
-            <Pair items={[{ label: 'Walk Ins', value: dash(t.walkinShare) }, { label: 'Internal Fleet', value: dash(t.fleetShare) }]} />
-          </TileShell>
           <TileShell title="CUSTOMER COUNT">
             <Arrow dir={dirOf(txDiff)} />
-            <Sentence>{txDiff === 0 ? 'No change' : `${txDiff > 0 ? 'Increased' : 'Decreased'} by ${Math.abs(txDiff)}`}</Sentence>
-            <Pair items={[{ label: prevCap, value: String(t.txPrev) }, { label: thisCap, value: String(t.txThis) }]} />
+            <Sentence>{txDiff === 0 ? 'No change' : `${txDiff > 0 ? 'Increased' : 'Decreased'} by ${oneDp(Math.abs(txDiff))}`}</Sentence>
+            <Pair items={[{ label: t.txBaseLabel ?? prevCap, value: oneDp(Math.round(t.txPrev * 10) / 10) }, { label: thisCap, value: String(t.txThis) }]} />
           </TileShell>
           <TileShell title="CUSTOMER QUALITY">
             <Arrow dir={quality.dir} /><Sentence>{quality.text}</Sentence>
-            <Pair items={[{ label: prevCap, value: money(t.avgPrev, 0) }, { label: thisCap, value: money(t.avgThis, 0) }]} />
+            <Pair items={[{ label: t.avgBaseLabel ?? prevCap, value: money(t.avgPrev, 0) }, { label: thisCap, value: money(t.avgThis, 0) }]} />
           </TileShell>
           <TileShell title={`${unit.toUpperCase()} REVENUE PER DAY`}>
-            <Arrow dir={hasDaily ? (t.perDayAchievement >= 100 ? 'up' : 'down') : 'flat'} />
+            {hasDaily ? <Progress value={t.perDayAchievement} /> : <Arrow dir="flat" />}
             <Sentence>{`Achievement: ${hasDaily ? pct(t.perDayAchievement, 1) : '-'}`}</Sentence>
             <Pair items={[{ label: 'Daily', value: money(t.perDayActual, 0) }, { label: 'Target', value: money(t.perDayTarget, 0) }]} />
           </TileShell>
+          <TileShell title="COLLECTIONS">
+            {(t.collInvoiced ?? 0) > 0 ? <Progress value={t.collRate ?? 0} /> : <Arrow dir="flat" />}
+            <Sentence>{(t.collInvoiced ?? 0) > 0 ? `Collected: ${pct(t.collRate ?? 0, 1)}` : 'Nothing invoiced'}</Sentence>
+            <Pair items={[{ label: 'Paid', value: money(t.collPaid ?? 0, 0) }, { label: `Unpaid (${t.collOutstandingCount ?? 0})`, value: money(t.collOutstanding ?? 0, 0) }]} />
+            <div style={{ fontSize: 10, color: '#666' }}>{`Before: ${(t.collInvoiced ?? 0) > 0 || (t.collRatePrev ?? 0) > 0 ? pct(t.collRatePrev ?? 0, 1) : '-'} · as at ${generatedOn(data.generatedAt)}`}</div>
+          </TileShell>
           <TileShell title="Internal Fleet vs Walk Ins">
-            <Pie fleet={t.fleetShare} walkin={t.walkinShare} size={104} />
+            <Pie fleet={t.fleetShare} walkin={t.walkinShare} size={96} />
             <Pair items={[{ label: 'Internal Fleet', value: dash(t.fleetShare), color: BLUE }, { label: 'Walk Ins', value: dash(t.walkinShare), color: RED }]} />
+            <div style={{ fontSize: 10, color: '#666' }}>{dirOf(t.walkinShareChangePts) === 'flat' ? 'Mix unchanged' : `Walk-ins share ${t.walkinShareChangePts > 0 ? 'up' : 'down'} ${ptsAbs} pts`}</div>
           </TileShell>
         </div>
       </div>

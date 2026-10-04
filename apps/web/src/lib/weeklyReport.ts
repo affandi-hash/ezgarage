@@ -36,6 +36,16 @@ export interface ReportCol {
   bikeCogs: number
 }
 
+// What the comparison tiles measure themselves against. The choice is printed
+// on each tile, so a reader always sees the basis.
+export interface ReportBasis {
+  month: 'prev' | 'goal'            // revenue tile: previous month (like for like) or the monthly goal's pace
+  gp: 'prev' | 'avg4' | 'target'    // GP %: previous period, average of the last 4, or the target GP %
+  tx: 'prev' | 'avg4'               // customer count
+  avg: 'prev' | 'avg4'              // average sales per customer
+}
+export const DEFAULT_BASIS: ReportBasis = { month: 'prev', gp: 'prev', tx: 'prev', avg: 'prev' }
+
 export interface ReportTiles {
   monthLabelPrev: string
   monthLabelThis: string
@@ -53,6 +63,15 @@ export interface ReportTiles {
   walkinShare: number
   fleetShare: number
   walkinShareChangePts: number
+  gpBaseLabel: string
+  txBaseLabel: string
+  avgBaseLabel: string
+  collInvoiced: number
+  collPaid: number
+  collRate: number
+  collRatePrev: number
+  collOutstanding: number
+  collOutstandingCount: number
   txPrev: number
   txThis: number
   avgPrev: number
@@ -98,6 +117,7 @@ export interface ReportData {
   targets: { monthlyGoal: number; workingDaysMonth: number; targetGpPct: number }
   words: ReportWord[]
   warnings: string[]
+  basis?: ReportBasis
   partOf?: string | null       // set on a per-section view of the report
   sections?: ReportSection[]   // absent in reports saved before this existed
 }
@@ -141,11 +161,11 @@ const monthName = (key: string) => `${SHORT_MONTH[Number(key.slice(5, 7)) - 1]} 
 interface LineItem { item_type?: string; qty?: number; cost_price?: number | null }
 export interface RawInvoice {
   issue_date: string; total_amount: number | null; is_internal_fleet: boolean
-  vehicle_plate: string | null; line_items: LineItem[] | null
+  vehicle_plate: string | null; line_items: LineItem[] | null; amount_paid?: number | null
 }
 export interface RawExpense { expense_date: string; type: 'opex' | 'capex'; amount: number | null }
 
-interface Inv { date: string; total: number; cogs: number; fleet: boolean; bike: boolean }
+interface Inv { date: string; total: number; paid: number; cogs: number; fleet: boolean; bike: boolean }
 
 const plateKey = (p: string | null) => (p ?? '').replace(/\s+/g, '').toUpperCase()
 
@@ -161,7 +181,7 @@ function prepareInvoices(raw: RawInvoice[], bikePlates: Set<string>): { invs: In
       }
       cogs += Number(li.cost_price) * (li.qty ?? 1)
     }
-    return { date: r.issue_date, total: Number(r.total_amount), cogs, fleet: !!r.is_internal_fleet, bike: bikePlates.has(plateKey(r.vehicle_plate)) }
+    return { date: r.issue_date, total: Number(r.total_amount), paid: Math.min(Number(r.amount_paid ?? 0), Number(r.total_amount)), cogs, fleet: !!r.is_internal_fleet, bike: bikePlates.has(plateKey(r.vehicle_plate)) }
   })
   return { invs, partsWithoutCost }
 }
@@ -241,6 +261,7 @@ export interface ComputeInput {
   expenses: RawExpense[]
   bikePlates: Set<string>
   settings: ReportSettings
+  basis?: ReportBasis
   today: string
 }
 
@@ -294,6 +315,7 @@ export function computeReport(inp: ComputeInput): ReportData {
   }
 
   const st = inp.settings
+  const basis = inp.basis ?? DEFAULT_BASIS
   const unit = inp.mode === 'week' ? 'week' : inp.mode === 'month' ? 'month' : 'period'
 
   // Summary numbers (panel, tiles, words) for one stretch of days, compared with
@@ -307,13 +329,43 @@ export function computeReport(inp: ComputeInput): ReportData {
     const q = (pp: number) => (margins.length ? margins[Math.min(margins.length - 1, Math.floor(pp * margins.length))] : 0)
     const gpRange = { low: q(0.1), high: q(0.9), avg: period.gpPct }
 
+    // the four periods just before this one, for the "4-period average" baseline
+    const prior: ReportCol[] = []
+    for (let k = 1; k <= 4; k++) {
+      let ps: string, pe: string
+      if (inp.mode === 'week') { ps = addDays(secStart, -7 * k); pe = addDays(secEnd, -7 * k) }
+      else if (inp.mode === 'month') { ps = addMonths(secStart, -k); pe = lastOfMonth(ps) }
+      else { const len = diffDays(secStart, secEnd) + 1; ps = addDays(secStart, -len * k); pe = addDays(ps, len - 1) }
+      prior.push(buildCol(fmtRange(ps, pe), ps, pe, invs, costs, today))
+    }
+    const priorTotal = totalCol(prior, 'avg4')
+    const unitName = inp.mode === 'week' ? 'week' : inp.mode === 'month' ? 'month' : 'period'
+    const avg4Label = `4-${unitName} avg`
+    const prevCapLabel = prevLabel.charAt(0).toUpperCase() + prevLabel.slice(1)
+
+    const gpBase = basis.gp === 'avg4' ? priorTotal.gpPct : basis.gp === 'target' ? st.target_gp_pct : previous.gpPct
+    const gpBaseLabel = basis.gp === 'avg4' ? avg4Label : basis.gp === 'target' ? 'Target GP' : prevCapLabel
+    const txBase = basis.tx === 'avg4' ? priorTotal.tx / 4 : previous.tx
+    const txBaseLabel = basis.tx === 'avg4' ? avg4Label : prevCapLabel
+    const avgBase = basis.avg === 'avg4' ? priorTotal.avgPerTx : previous.avgPerTx
+    const avgBaseLabel = basis.avg === 'avg4' ? avg4Label : prevCapLabel
+
+    // collections: how much of what was invoiced has been paid
+    const inRange = (a: string, b: string) => invs.filter(i => i.date >= a && i.date <= b)
+    const collOf = (rows: Inv[]) => { const t = rows.reduce((x, i) => x + i.total, 0), p = rows.reduce((x, i) => x + i.paid, 0); return { t, p, rate: t > 0 ? (p / t) * 100 : 0 } }
+    const collNow = collOf(inRange(secStart, secEnd)), collPrev = collOf(inRange(prevStart, prevEnd))
+    const unpaid = inRange(secStart, secEnd).filter(i => i.total - i.paid > 0.009)
+
     const thisMonthStart = firstOfMonth(secEnd), prevMonthStart = addMonths(secEnd, -1)
     // when the month is still in progress, compare the same days of both months
     const partialMonth = secEnd < lastOfMonth(secEnd)
     const dayNo = parseYmd(secEnd).getDate()
     const prevMonthEnd = partialMonth ? `${monthKey(prevMonthStart)}-${pad(Math.min(dayNo, daysInMonth(monthKey(prevMonthStart))))}` : lastOfMonth(prevMonthStart)
     const monthSalesThis = invs.filter(i => i.date >= thisMonthStart && i.date <= secEnd).reduce((a, i) => a + i.total, 0)
-    const monthSalesPrev = invs.filter(i => i.date >= prevMonthStart && i.date <= prevMonthEnd).reduce((a, i) => a + i.total, 0)
+    const prevMonthSales = invs.filter(i => i.date >= prevMonthStart && i.date <= prevMonthEnd).reduce((a, i) => a + i.total, 0)
+    // goal pace: the monthly goal prorated by working days elapsed so far in the month
+    const goalPace = (st.monthly_sales_goal * workingDays(thisMonthStart, secEnd, today)) / st.working_days_month
+    const monthSalesPrev = basis.month === 'goal' ? goalPace : prevMonthSales
     const monthTag = partialMonth ? ` (1-${dayNo})` : ''
     const periodDays = diffDays(secStart, secEnd) + 1
     const costsTotal = period.opex + period.capex
@@ -324,14 +376,17 @@ export function computeReport(inp: ComputeInput): ReportData {
     const perDayActual = period.days ? period.sales / period.days : 0
     const share = (c: ReportCol, f: boolean) => (c.sales ? ((f ? c.fleetSales : c.walkinSales) / c.sales) * 100 : 0)
     const tiles: ReportTiles = {
-      monthLabelPrev: monthName(monthKey(prevMonthStart)) + monthTag, monthLabelThis: monthName(monthKey(thisMonthStart)) + monthTag,
-      monthHeader: `${SHORT_MONTH[Number(monthKey(prevMonthStart).slice(5, 7)) - 1]} VS ${SHORT_MONTH[Number(monthKey(thisMonthStart).slice(5, 7)) - 1]} REVENUE${partialMonth ? ` (DAY 1-${dayNo})` : ''}`.toUpperCase(),
+      monthLabelPrev: basis.month === 'goal' ? 'Goal pace' : monthName(monthKey(prevMonthStart)) + monthTag, monthLabelThis: monthName(monthKey(thisMonthStart)) + monthTag,
+      monthHeader: (basis.month === 'goal'
+        ? `${SHORT_MONTH[Number(monthKey(thisMonthStart).slice(5, 7)) - 1]} SALES VS GOAL PACE`
+        : `${SHORT_MONTH[Number(monthKey(prevMonthStart).slice(5, 7)) - 1]} VS ${SHORT_MONTH[Number(monthKey(thisMonthStart).slice(5, 7)) - 1]} REVENUE${partialMonth ? ` (DAY 1-${dayNo})` : ''}`).toUpperCase(),
       monthSalesPrev, monthSalesThis,
-      gpPctPrev: previous.gpPct, gpPctThis: period.gpPct,
+      gpPctPrev: gpBase, gpPctThis: period.gpPct, gpBaseLabel, txBaseLabel, avgBaseLabel,
+      collInvoiced: collNow.t, collPaid: collNow.p, collRate: collNow.rate, collRatePrev: collPrev.rate, collOutstanding: collNow.t - collNow.p, collOutstandingCount: unpaid.length,
       costs: costsTotal, gp: period.gp, surplus: period.gp - costsTotal,
       salesTarget, salesActual: period.sales, targetAchievement: salesTarget ? (period.sales / salesTarget) * 100 : 0,
       walkinShare: share(period, false), fleetShare: share(period, true), walkinShareChangePts: share(period, false) - share(previous, false),
-      txPrev: previous.tx, txThis: period.tx, avgPrev: previous.avgPerTx, avgThis: period.avgPerTx,
+      txPrev: txBase, txThis: period.tx, avgPrev: avgBase, avgThis: period.avgPerTx,
       perDayActual, perDayTarget: dailyTarget, perDayAchievement: dailyTarget ? (perDayActual / dailyTarget) * 100 : 0,
     }
     const words: ReportWord[] = [
@@ -379,7 +434,7 @@ export function computeReport(inp: ComputeInput): ReportData {
     periodStart: period.start, periodEnd: period.end, periodLabel: fmtRange(period.start, period.end), prevLabel,
     generatedAt: new Date().toISOString(), columns, total, period, previous, gpRange,
     historyWeeks, historyMonths, tiles, targets: { monthlyGoal: st.monthly_sales_goal, workingDaysMonth: st.working_days_month, targetGpPct: st.target_gp_pct },
-    words, warnings, sections,
+    words, warnings, sections, basis,
   }
 }
 
@@ -403,16 +458,16 @@ export async function loadSettings(tenantId: string): Promise<ReportSettings> {
   } : DEFAULT_SETTINGS
 }
 
-export async function generateReport(p: {
+export async function loadReportInput(p: {
   tenantId: string; tenantName: string; branchId: string | null; branchLabel: string
   mode: ReportMode; start: string; end: string
-}): Promise<ReportData> {
+}): Promise<ComputeInput> {
   const today = toYmd(new Date())
   // enough history for the charts: 12 months before the period end, and always the previous comparison period
   const from = addMonths(p.end, -12)
   const [invoices, expenses, vehicles, settings] = await Promise.all([
     fetchAll<RawInvoice>((a, b) => {
-      let q = supabase.from('invoices').select('issue_date, total_amount, is_internal_fleet, vehicle_plate, line_items')
+      let q = supabase.from('invoices').select('issue_date, total_amount, amount_paid, is_internal_fleet, vehicle_plate, line_items')
         .eq('tenant_id', p.tenantId).gte('issue_date', from).lte('issue_date', p.end).neq('status', 'void').neq('status', 'draft').order('issue_date').range(a, b)
       if (p.branchId) q = q.eq('branch_id', p.branchId)
       return q as unknown as PromiseLike<{ data: RawInvoice[] | null; error: unknown }>
@@ -426,8 +481,8 @@ export async function generateReport(p: {
       supabase.from('vehicles').select('plate_number, vehicle_type').eq('tenant_id', p.tenantId).eq('vehicle_type', 'bike').range(a, b)),
     loadSettings(p.tenantId),
   ])
-  return computeReport({
+  return {
     tenantName: p.tenantName, branchLabel: p.branchLabel, mode: p.mode, start: p.start, end: p.end,
     invoices, expenses, bikePlates: new Set(vehicles.map(v => plateKey(v.plate_number))), settings, today,
-  })
+  }
 }

@@ -4,8 +4,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
 import {
-  addDays, DEFAULT_SETTINGS, generateReport, loadSettings, mondayOf, parseYmd, toYmd,
-  type ReportData, type ReportMode, type ReportSettings, type ReportWord,
+  addDays, computeReport, DEFAULT_BASIS, DEFAULT_SETTINGS, loadReportInput, loadSettings, mondayOf, parseYmd, toYmd,
+  type ComputeInput, type ReportBasis, type ReportData, type ReportMode, type ReportSettings, type ReportWord,
 } from '@/lib/weeklyReport'
 import { openReportPrintWindow, reportPageCount, WeeklyReportPages } from '@/components/reports/WeeklyReportPages'
 
@@ -42,6 +42,8 @@ export function WeeklyReportPage() {
 
   const [busy, setBusy] = useState(false)
   const [report, setReport] = useState<ReportData | null>(null)
+  const [rawInput, setRawInput] = useState<ComputeInput | null>(null)   // raw figures behind the report, so the comparison basis can change without reloading
+  const [basis, setBasis] = useState<ReportBasis>(DEFAULT_BASIS)
   const [words, setWords] = useState<ReportWord[][]>([])
   const [savedId, setSavedId] = useState<string | null>(null)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
@@ -97,16 +99,23 @@ export function WeeklyReportPage() {
     if (typeof p === 'string') { toast(p, 'error'); return }
     setBusy(true)
     try {
-      const data = await generateReport({
+      const inp = await loadReportInput({
         tenantId, tenantName: tenant?.name ?? 'Motoverse Garage', branchId: branchId || null,
         branchLabel: branchId ? (branches.find(b => b.id === branchId)?.name ?? '') : 'All branches',
         mode, start: p.start, end: p.end,
       })
-      setReport(data); setWords(wordSets(data)); setSavedId(null)
+      const data = computeReport({ ...inp, basis })
+      setRawInput(inp); setReport(data); setWords(wordSets(data)); setSavedId(null)
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not generate the report', 'error')
     }
     setBusy(false)
+  }
+
+  // changing a comparison re-works the numbers from the loaded figures; edited words are kept
+  function changeBasis(next: ReportBasis) {
+    setBasis(next)
+    if (rawInput) { setReport(computeReport({ ...rawInput, basis: next })); setSavedId(null) }
   }
 
   async function save() {
@@ -124,6 +133,7 @@ export function WeeklyReportPage() {
     const { savedWords, ...data } = s.data
     const rd = data as ReportData
     // reports saved before sections existed stored one flat list of words
+    setRawInput(null); if (rd.basis) setBasis(rd.basis)
     setReport(rd); setWords(Array.isArray(savedWords) && Array.isArray(savedWords[0]) ? (savedWords as ReportWord[][]) : Array.isArray(savedWords) && savedWords.length ? [savedWords as ReportWord[]] : wordSets(rd)); setSavedId(s.id)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -219,6 +229,26 @@ export function WeeklyReportPage() {
           {report.warnings.map(w => (
             <div key={w} style={{ border: '1px solid #F59E0B55', background: '#F59E0B14', borderRadius: 8, padding: '9px 12px', fontSize: 13, marginBottom: 8 }}>{w}</div>
           ))}
+
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, margin: '8px 0 0' }}>
+            <div style={{ fontWeight: 700, marginBottom: 2 }}>Compare against <span style={{ color: C.muted, fontWeight: 400, fontSize: 12 }}>(the choice is printed on each tile)</span></div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 10 }}>
+              {([
+                ['Revenue tile', 'month', [['prev', 'Previous month (same days)'], ['goal', 'Monthly goal pace']]],
+                ['GP %', 'gp', [['prev', 'Previous period'], ['avg4', 'Average of last 4'], ['target', 'Target GP %']]],
+                ['Customer count', 'tx', [['prev', 'Previous period'], ['avg4', 'Average of last 4']]],
+                ['Spend per customer', 'avg', [['prev', 'Previous period'], ['avg4', 'Average of last 4']]],
+              ] as [string, keyof ReportBasis, [string, string][]][]).map(([name, key, opts]) => (
+                <div key={key}>
+                  <span style={label}>{name}</span>
+                  <select style={input} value={basis[key]} disabled={!rawInput} onChange={e => changeBasis({ ...basis, [key]: e.target.value } as ReportBasis)}>
+                    {opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+            {!rawInput && <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>This is a saved report, so its comparisons are fixed. Generate again to change them.</div>}
+          </div>
 
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, margin: '8px 0 16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
