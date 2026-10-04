@@ -66,6 +66,13 @@ export interface ReportTiles {
   gpBaseLabel: string
   txBaseLabel: string
   avgBaseLabel: string
+  arTotal: number
+  arCount: number
+  arOverdue: number
+  arFleet: number
+  apTotal: number
+  apCount: number
+  apOverdue: number
   collInvoiced: number
   collPaid: number
   collRate: number
@@ -163,6 +170,8 @@ export interface RawInvoice {
   issue_date: string; total_amount: number | null; is_internal_fleet: boolean
   vehicle_plate: string | null; line_items: LineItem[] | null; amount_paid?: number | null
 }
+// An unpaid customer or supplier invoice, as at the day the report is generated.
+export interface OpenBalance { balance: number; due_date: string | null; fleet: boolean }
 export interface RawExpense { expense_date: string; type: 'opex' | 'capex'; amount: number | null }
 
 interface Inv { date: string; total: number; paid: number; cogs: number; fleet: boolean; bike: boolean }
@@ -261,6 +270,8 @@ export interface ComputeInput {
   expenses: RawExpense[]
   bikePlates: Set<string>
   settings: ReportSettings
+  receivables?: OpenBalance[]
+  payables?: OpenBalance[]
   basis?: ReportBasis
   today: string
 }
@@ -354,6 +365,9 @@ export function computeReport(inp: ComputeInput): ReportData {
     const inRange = (a: string, b: string) => invs.filter(i => i.date >= a && i.date <= b)
     const collOf = (rows: Inv[]) => { const t = rows.reduce((x, i) => x + i.total, 0), p = rows.reduce((x, i) => x + i.paid, 0); return { t, p, rate: t > 0 ? (p / t) * 100 : 0 } }
     const collNow = collOf(inRange(secStart, secEnd)), collPrev = collOf(inRange(prevStart, prevEnd))
+    const ar = inp.receivables ?? [], ap = inp.payables ?? []
+    const sumOf = (rows: OpenBalance[]) => rows.reduce((x, r) => x + r.balance, 0)
+    const late = (rows: OpenBalance[]) => rows.filter(r => r.due_date && r.due_date < today)
     const unpaid = inRange(secStart, secEnd).filter(i => i.total - i.paid > 0.009)
 
     const thisMonthStart = firstOfMonth(secEnd), prevMonthStart = addMonths(secEnd, -1)
@@ -382,6 +396,8 @@ export function computeReport(inp: ComputeInput): ReportData {
         : `${SHORT_MONTH[Number(monthKey(prevMonthStart).slice(5, 7)) - 1]} VS ${SHORT_MONTH[Number(monthKey(thisMonthStart).slice(5, 7)) - 1]} REVENUE${partialMonth ? ` (DAY 1-${dayNo})` : ''}`).toUpperCase(),
       monthSalesPrev, monthSalesThis,
       gpPctPrev: gpBase, gpPctThis: period.gpPct, gpBaseLabel, txBaseLabel, avgBaseLabel,
+      arTotal: sumOf(ar), arCount: ar.length, arOverdue: sumOf(late(ar)), arFleet: sumOf(ar.filter(r => r.fleet)),
+      apTotal: sumOf(ap), apCount: ap.length, apOverdue: sumOf(late(ap)),
       collInvoiced: collNow.t, collPaid: collNow.p, collRate: collNow.rate, collRatePrev: collPrev.rate, collOutstanding: collNow.t - collNow.p, collOutstandingCount: unpaid.length,
       costs: costsTotal, gp: period.gp, surplus: period.gp - costsTotal,
       salesTarget, salesActual: period.sales, targetAchievement: salesTarget ? (period.sales / salesTarget) * 100 : 0,
@@ -465,7 +481,7 @@ export async function loadReportInput(p: {
   const today = toYmd(new Date())
   // enough history for the charts: 12 months before the period end, and always the previous comparison period
   const from = addMonths(p.end, -12)
-  const [invoices, expenses, vehicles, settings] = await Promise.all([
+  const [invoices, expenses, vehicles, settings, openInv, openSup] = await Promise.all([
     fetchAll<RawInvoice>((a, b) => {
       let q = supabase.from('invoices').select('issue_date, total_amount, amount_paid, is_internal_fleet, vehicle_plate, line_items')
         .eq('tenant_id', p.tenantId).gte('issue_date', from).lte('issue_date', p.end).neq('status', 'void').neq('status', 'draft').order('issue_date').range(a, b)
@@ -480,9 +496,24 @@ export async function loadReportInput(p: {
     fetchAll<{ plate_number: string; vehicle_type: string | null }>((a, b) =>
       supabase.from('vehicles').select('plate_number, vehicle_type').eq('tenant_id', p.tenantId).eq('vehicle_type', 'bike').range(a, b)),
     loadSettings(p.tenantId),
+    // everything still unpaid today, whatever its date
+    fetchAll<{ balance_due: number | null; due_date: string | null; is_internal_fleet: boolean }>((a, b) => {
+      let q = supabase.from('invoices').select('balance_due, due_date, is_internal_fleet').eq('tenant_id', p.tenantId)
+        .neq('status', 'void').neq('status', 'draft').gt('balance_due', 0).order('issue_date').range(a, b)
+      if (p.branchId) q = q.eq('branch_id', p.branchId)
+      return q as unknown as PromiseLike<{ data: { balance_due: number | null; due_date: string | null; is_internal_fleet: boolean }[] | null; error: unknown }>
+    }),
+    fetchAll<{ total_amount: number; amount_paid: number | null; due_date: string | null }>((a, b) => {
+      let q = supabase.from('supplier_invoices').select('total_amount, amount_paid, due_date').eq('tenant_id', p.tenantId)
+        .is('voided_at', null).neq('status', 'paid').order('invoice_date').range(a, b)
+      if (p.branchId) q = q.eq('branch_id', p.branchId)
+      return q as unknown as PromiseLike<{ data: { total_amount: number; amount_paid: number | null; due_date: string | null }[] | null; error: unknown }>
+    }),
   ])
   return {
     tenantName: p.tenantName, branchLabel: p.branchLabel, mode: p.mode, start: p.start, end: p.end,
     invoices, expenses, bikePlates: new Set(vehicles.map(v => plateKey(v.plate_number))), settings, today,
+    receivables: openInv.map(i => ({ balance: Number(i.balance_due), due_date: i.due_date, fleet: !!i.is_internal_fleet })),
+    payables: openSup.map(i => ({ balance: Number(i.total_amount) - Number(i.amount_paid ?? 0), due_date: i.due_date, fleet: false })).filter(i => i.balance > 0.009),
   }
 }

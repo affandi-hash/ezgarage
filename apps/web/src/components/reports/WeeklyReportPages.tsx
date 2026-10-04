@@ -503,6 +503,8 @@ function PageThree({ data, words }: { data: ReportData; words: ReportWord[] }) {
   const coverage = t.costs > 0 ? (t.gp / t.costs) * 100 : t.gp > 0 ? 100 : 0
   const ptsAbs = Math.abs(t.walkinShareChangePts).toFixed(2)
   const hasTarget = t.salesTarget > 0, hasDaily = t.perDayTarget > 0
+  const arNet = (t.arTotal ?? 0) - (t.apTotal ?? 0)
+  const hasAr = (t.arTotal ?? 0) > 0 || (t.apTotal ?? 0) > 0
 
   const wordIcons = ['shield', 'check', 'dollar', 'trend', 'seed']
   return (
@@ -556,11 +558,14 @@ function PageThree({ data, words }: { data: ReportData; words: ReportWord[] }) {
             <Sentence>{`Achievement: ${hasDaily ? pct(t.perDayAchievement, 1) : '-'}`}</Sentence>
             <Pair items={[{ label: 'Daily', value: money(t.perDayActual, 0) }, { label: 'Target', value: money(t.perDayTarget, 0) }]} />
           </TileShell>
-          <TileShell title="COLLECTIONS">
-            {(t.collInvoiced ?? 0) > 0 ? <Progress value={t.collRate ?? 0} /> : <Arrow dir="flat" />}
-            <Sentence>{(t.collInvoiced ?? 0) > 0 ? `Collected: ${pct(t.collRate ?? 0, 1)}` : 'Nothing invoiced'}</Sentence>
-            <Pair items={[{ label: 'Paid', value: money(t.collPaid ?? 0, 0) }, { label: `Unpaid (${t.collOutstandingCount ?? 0})`, value: money(t.collOutstanding ?? 0, 0) }]} />
-            <div style={{ fontSize: 10, color: '#666' }}>{`Before: ${(t.collInvoiced ?? 0) > 0 || (t.collRatePrev ?? 0) > 0 ? pct(t.collRatePrev ?? 0, 1) : '-'} · as at ${generatedOn(data.generatedAt)}`}</div>
+          <TileShell title="RECEIVABLES VS PAYABLES">
+            <Arrow dir={arNet > 0.5 ? 'up' : arNet < -0.5 ? 'down' : 'flat'} />
+            <Sentence>{hasAr ? (arNet >= 0 ? `Owed to you: ${money(arNet, 0)} more` : `You owe: ${money(-arNet, 0)} more`) : 'No open invoices'}</Sentence>
+            <Pair items={[{ label: `Receivable (${t.arCount ?? 0})`, value: money(t.arTotal ?? 0, 0) }, { label: `Payable (${t.apCount ?? 0})`, value: money(t.apTotal ?? 0, 0) }]} />
+            <div style={{ fontSize: 10, color: '#666', textAlign: 'center', lineHeight: 1.4 }}>
+              {`Overdue: AR ${money(t.arOverdue ?? 0, 0)} · AP ${money(t.apOverdue ?? 0, 0)} · as at ${generatedOn(data.generatedAt)}`}<br />
+              {`Fleet owes ${money(t.arFleet ?? 0, 0)} · ${(t.collInvoiced ?? 0) > 0 ? `${pct(t.collRate ?? 0, 0)} of period invoices paid` : 'nothing invoiced'}`}
+            </div>
           </TileShell>
           <TileShell title="Internal Fleet vs Walk Ins">
             <Pie fleet={t.fleetShare} walkin={t.walkinShare} size={96} />
