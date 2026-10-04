@@ -72,7 +72,10 @@ Deno.serve(async (req) => {
 
     // who is calling: the cron (service role key) syncs every enabled tenant; a user syncs their own tenant
     let tenantFilter: string | null = null
-    if (token !== Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+    // the platform has already verified the JWT's signature; a service_role claim means cron / server-side
+    let claimRole = ''
+    try { claimRole = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role ?? '' } catch { /* not a JWT */ }
+    if (claimRole !== 'service_role' && token !== Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
       const { data: u } = await supabase.auth.getUser(token)
       if (!u?.user) return new Response(JSON.stringify({ error: 'unauthorised' }), { status: 401, headers: cors })
       const { data: prof } = await supabase.from('users').select('tenant_id, role, is_active').eq('id', u.user.id).single()
