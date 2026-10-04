@@ -13,6 +13,7 @@ export type ReportMode = 'week' | 'month' | 'custom'
 
 export interface ReportCol {
   label: string
+  partOf: string | null   // full Mon-Sun week this column was cut from, when it is shorter than a week
   start: string
   end: string
   days: number            // working days (Mon-Sat) that have happened in the range
@@ -185,7 +186,7 @@ function workingDays(start: string, end: string, today: string) {
   return n
 }
 
-function buildCol(label: string, start: string, end: string, invs: Inv[], costs: Map<string, { opex: number; capex: number }>, today: string): ReportCol {
+function buildCol(label: string, start: string, end: string, invs: Inv[], costs: Map<string, { opex: number; capex: number }>, today: string, partOf: string | null = null): ReportCol {
   const rows = invs.filter(i => i.date >= start && i.date <= end)
   const sum = (f: (i: Inv) => number) => rows.reduce((s, i) => s + f(i), 0)
   const sales = sum(i => i.total), cogs = sum(i => i.cogs)
@@ -193,7 +194,7 @@ function buildCol(label: string, start: string, end: string, invs: Inv[], costs:
   const gp = sales - cogs
   const fleet = rows.filter(i => i.fleet), walk = rows.filter(i => !i.fleet)
   return {
-    label, start, end, days: workingDays(start, end, today),
+    label, partOf, start, end, days: workingDays(start, end, today),
     sales, cogs, gp, gpPct: sales > 0 ? (gp / sales) * 100 : 0,
     opex, capex, net: gp - opex - capex,
     tx: rows.length, avgPerTx: rows.length ? sales / rows.length : 0,
@@ -205,7 +206,7 @@ function buildCol(label: string, start: string, end: string, invs: Inv[], costs:
 }
 
 function totalCol(cols: ReportCol[], label: string): ReportCol {
-  const t: ReportCol = { label, start: cols[0]?.start ?? '', end: cols[cols.length - 1]?.end ?? '', days: 0, sales: 0, cogs: 0, gp: 0, gpPct: 0, opex: 0, capex: 0, net: 0, tx: 0, avgPerTx: 0, fleetSales: 0, walkinSales: 0, fleetTx: 0, walkinTx: 0, carSales: 0, carCogs: 0, bikeSales: 0, bikeCogs: 0 }
+  const t: ReportCol = { label, partOf: null, start: cols[0]?.start ?? '', end: cols[cols.length - 1]?.end ?? '', days: 0, sales: 0, cogs: 0, gp: 0, gpPct: 0, opex: 0, capex: 0, net: 0, tx: 0, avgPerTx: 0, fleetSales: 0, walkinSales: 0, fleetTx: 0, walkinTx: 0, carSales: 0, carCogs: 0, bikeSales: 0, bikeCogs: 0 }
   for (const c of cols) for (const k of Object.keys(t) as (keyof ReportCol)[]) if (typeof t[k] === 'number') (t[k] as number) += c[k] as number
   t.gpPct = t.sales > 0 ? (t.gp / t.sales) * 100 : 0
   t.avgPerTx = t.tx ? t.sales / t.tx : 0
@@ -234,20 +235,30 @@ export function computeReport(inp: ComputeInput): ReportData {
   const today = inp.today
   const warnings: string[] = []
 
-  // table columns
-  let weekStarts: string[] = []
-  const periodWeeks: { start: string; end: string }[] = []
+  // table columns: Monday-Sunday weeks, cut at the 1st / end of each month so a
+  // week that straddles two months shows as two columns
+  const weeks: { start: string; end: string }[] = []
   if (inp.mode === 'week') {
-    for (let i = 3; i >= 0; i--) { const s = addDays(inp.start, -7 * i); periodWeeks.push({ start: s, end: addDays(s, 6) }) }
+    for (let i = 3; i >= 0; i--) { const s = addDays(inp.start, -7 * i); weeks.push({ start: s, end: addDays(s, 6) }) }
   } else {
-    for (let s = mondayOf(inp.start); s <= inp.end; s = addDays(s, 7)) weekStarts.push(s)
-    if (weekStarts.length > 10) weekStarts = weekStarts.slice(-10)
-    for (const s of weekStarts) periodWeeks.push({ start: s < inp.start ? inp.start : s, end: addDays(s, 6) > inp.end ? inp.end : addDays(s, 6) })
+    for (let s = mondayOf(inp.start); s <= inp.end; s = addDays(s, 7)) weeks.push({ start: s, end: addDays(s, 6) })
   }
-  const columns = periodWeeks.map(w => buildCol(fmtRange(w.start, w.end), w.start, w.end, invs, costs, today))
+  const cappedWeeks = weeks.length > 10 ? weeks.slice(-10) : weeks
+  const columns: ReportCol[] = []
+  for (const w of cappedWeeks) {
+    const lo = inp.mode === 'week' || w.start >= inp.start ? w.start : inp.start
+    const hi = inp.mode === 'week' || w.end <= inp.end ? w.end : inp.end
+    for (let cur = lo; cur <= hi; ) {
+      const segEnd = lastOfMonth(cur) < hi ? lastOfMonth(cur) : hi
+      const partial = cur !== w.start || segEnd !== w.end
+      columns.push(buildCol(fmtRange(cur, segEnd), cur, segEnd, invs, costs, today, partial ? fmtRange(w.start, w.end) : null))
+      cur = addDays(segEnd, 1)
+    }
+  }
   const total = totalCol(columns, inp.mode === 'week' ? 'TOTAL (4 weeks)' : 'TOTAL')
 
-  const period = inp.mode === 'week' ? columns[columns.length - 1] : buildCol(fmtRange(inp.start, inp.end), inp.start, inp.end, invs, costs, today)
+  // the summary panel and tiles cover the whole chosen period, even when its table columns are split
+  const period = buildCol(fmtRange(inp.start, inp.end), inp.start, inp.end, invs, costs, today)
   let prevStart: string, prevEnd: string, prevLabel: string
   if (inp.mode === 'week') { prevStart = addDays(inp.start, -7); prevEnd = addDays(inp.start, -1); prevLabel = 'previous week' }
   else if (inp.mode === 'month') { prevStart = addMonths(inp.start, -1); prevEnd = lastOfMonth(prevStart); prevLabel = 'previous month' }

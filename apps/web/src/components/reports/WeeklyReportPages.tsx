@@ -275,7 +275,7 @@ function PageOne({ data }: { data: ReportData }) {
           <tr>
             <th style={{ ...th, textAlign: 'left' }} />
             {cols.map((c, i) => (
-              <th key={i} style={{ ...th, ...(i === cols.length - 1 ? { borderLeft: '1px solid #999' } : null) }}>{i === cols.length - 1 ? (c.label || 'TOTAL') : c.label}</th>
+              <th key={i} style={{ ...th, ...(i === cols.length - 1 ? { borderLeft: '1px solid #999' } : null) }}>{i === cols.length - 1 ? (c.label || 'TOTAL') : c.label}{c.partOf && <div style={{ fontSize: 9, fontWeight: 400, color: '#777' }}>{`part of ${c.partOf}`}</div>}</th>
             ))}
           </tr>
         </thead>
