@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Bell, ChevronDown, LogOut, Menu } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import { canSeeAllBranches } from '@/lib/branchScope'
 import { supabase } from '@/lib/supabase'
 import { ROLE_LABELS } from '@/types'
 import type { Branch } from '@/types'
 
 const ROUTE_LABELS: Record<string, string> = {
   '/dashboard': 'Dashboard',
+  '/pnl': 'P&L by Branch',
   '/workshop': 'Workshop Board',
   '/vehicles': 'Vehicles',
   '/customers': 'Customers',
@@ -41,13 +43,13 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange, onM
   const pageTitle = titleProp ?? ROUTE_LABELS[location.pathname] ?? 'EZWerkFlo'
   const pathParts = location.pathname.split('/').filter(Boolean)
 
-  const isSuperAdmin = user?.role === 'super_admin'
+  const seesAllBranches = canSeeAllBranches(user?.role)
 
   useEffect(() => {
     // super_admin's RLS bypass is project-wide, not tenant-scoped (see the
     // 115-policy audit) — without this explicit filter, a second tenant's
     // branch would show up here by name, indistinguishable from your own.
-    if (isSuperAdmin && user?.tenant_id) {
+    if (seesAllBranches && user?.tenant_id) {
       supabase
         .from('branches')
         .select('id, name, address, phone')
@@ -56,7 +58,7 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange, onM
           if (data) setBranches(data as Branch[])
         })
     }
-  }, [isSuperAdmin, user?.tenant_id])
+  }, [seesAllBranches, user?.tenant_id])
 
   const initials = user?.full_name
     ? user.full_name
@@ -144,8 +146,8 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange, onM
 
       {/* Right: branch selector + notifications + user menu */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        {/* Branch selector (super_admin only) */}
-        {isSuperAdmin && onBranchChange && (
+        {/* Branch selector (roles that can see every branch of the tenant) */}
+        {seesAllBranches && onBranchChange && (
           <select
             value={selectedBranchId ?? 'all'}
             onChange={(e) => onBranchChange(e.target.value === 'all' ? null : e.target.value)}

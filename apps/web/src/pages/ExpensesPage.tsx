@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { scopedBranchId, canSeeAllBranches } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
 import { toast } from '@/components/ui/Toast'
 import {
@@ -23,6 +24,7 @@ function toExpenseDocPath(value: string): string {
 
 interface Expense {
   id: string
+  branch_id: string | null
   type: 'opex' | 'capex'
   category: string
   description: string
@@ -64,6 +66,8 @@ function PaymentStatusBadge({ expense }: { expense: Expense }) {
     </span>
   )
 }
+
+interface BranchOpt { id: string; name: string }
 
 interface SupplierInvoiceOption {
   id: string
@@ -198,6 +202,7 @@ function CategoryBar({ expenses, type }: { expenses: Expense[]; type: 'opex' | '
 // ─── Add / Edit Modal ─────────────────────────────────────────────────────────
 
 interface ExpenseForm {
+  branch_id: string
   type: 'opex' | 'capex'
   category: string
   description: string
@@ -216,7 +221,7 @@ interface ExpenseForm {
 }
 
 const EMPTY: ExpenseForm = {
-  type: 'opex', category: 'Utilities', description: '', amount: '',
+  branch_id: '', type: 'opex', category: 'Utilities', description: '', amount: '',
   expense_date: new Date().toISOString().slice(0, 10),
   payment_method: 'Cash', reference: '', vendor: '',
   is_recurring: false, recurring_period: 'monthly',
@@ -231,6 +236,8 @@ function ExpenseModal({
   tenantId,
   branchId,
   userId,
+  branches,
+  canChooseBranch,
 }: {
   editing: Expense | null
   onClose: () => void
@@ -238,9 +245,12 @@ function ExpenseModal({
   tenantId: string
   branchId: string
   userId: string
+  branches: BranchOpt[]
+  canChooseBranch: boolean
 }) {
   const [form, setForm] = useState<ExpenseForm>(
     editing ? {
+      branch_id: editing.branch_id ?? '',
       type: editing.type, category: editing.category,
       description: editing.description, amount: editing.amount != null ? String(editing.amount) : '',
       expense_date: editing.expense_date, payment_method: editing.payment_method,
@@ -249,7 +259,7 @@ function ExpenseModal({
       lifespan_years: editing.lifespan_years != null ? String(editing.lifespan_years) : '',
       notes: editing.notes ?? '', supplier_invoice_id: editing.supplier_invoice_id ?? '',
       payment_status: editing.payment_status, paid_date: editing.paid_date ?? new Date().toISOString().slice(0, 10),
-    } : EMPTY
+    } : { ...EMPTY, branch_id: branchId }
   )
   const [file, setFile] = useState<File | null>(null)
   const [popFile, setPopFile] = useState<File | null>(null)
@@ -312,7 +322,7 @@ function ExpenseModal({
     }
 
     const payload = {
-      tenant_id: tenantId, branch_id: branchId || null,
+      tenant_id: tenantId, branch_id: (canChooseBranch ? form.branch_id : branchId) || null,
       type: form.type, category: form.category,
       description: form.description.trim(), amount: amt,
       expense_date: form.expense_date, payment_method: form.payment_method,
@@ -359,6 +369,16 @@ function ExpenseModal({
               ))}
             </div>
           </div>
+
+          {canChooseBranch && (
+            <div>
+              <label style={lbl}>Branch</label>
+              <select value={form.branch_id} onChange={e => setForm(f => ({ ...f, branch_id: e.target.value }))} style={inp}>
+                <option value="">Shared / HQ (not tied to one branch)</option>
+                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
@@ -508,7 +528,7 @@ export function ExpensesPage() {
   const { user } = useAuthStore()
   const { selectedBranchId } = useOutletContext<{ selectedBranchId: string | null }>()
   const tenantId = user?.tenant_id ?? ''
-  const branchId = selectedBranchId ?? user?.branch_id ?? ''
+  const branchId = scopedBranchId(user, selectedBranchId) ?? ''
   const userId = user?.id ?? ''
 
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -523,10 +543,12 @@ export function ExpensesPage() {
   const [monthLabour, setMonthLabour] = useState(0)
   const [monthCOGS, setMonthCOGS] = useState(0)
   const [carrying, setCarrying] = useState(false)
+  const [branches, setBranches] = useState<BranchOpt[]>([])
+  const canChooseBranch = canSeeAllBranches(user?.role)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const currentMonth = thisMonth()
+    const currentMonth = month
 
     // expenses
     let query = supabase.from('expenses').select('*, supplier_invoices(status, amount_paid, total_amount)').eq('tenant_id', tenantId).order('expense_date', { ascending: false })
@@ -569,9 +591,14 @@ export function ExpensesPage() {
     setMonthCOGS(revenue - parts - labour)
 
     setLoading(false)
-  }, [tenantId, branchId])
+  }, [tenantId, branchId, month])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (!tenantId) return
+    supabase.from('branches').select('id, name').eq('tenant_id', tenantId).order('name').then(({ data }) => setBranches((data as BranchOpt[]) ?? []))
+  }, [tenantId])
 
   // This month / last month buckets
   const thisMonthExp = expenses.filter(e => e.expense_date.startsWith(month))
@@ -632,7 +659,7 @@ export function ExpensesPage() {
     setCarrying(true)
     const newDate = `${month}-01`
     const payload = source.map(e => ({
-      tenant_id: tenantId, branch_id: branchId || null,
+      tenant_id: tenantId, branch_id: e.branch_id,
       type: e.type, category: e.category, description: e.description,
       amount: null, expense_date: newDate, payment_method: e.payment_method,
       reference: null, vendor: e.vendor,
@@ -848,6 +875,8 @@ export function ExpensesPage() {
           tenantId={tenantId}
           branchId={branchId}
           userId={userId}
+          branches={branches}
+          canChooseBranch={canChooseBranch}
         />
       )}
     </div>

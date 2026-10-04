@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { canSeeAllBranches } from '@/lib/branchScope'
 import { FileText, Plus, X, Printer, CreditCard, Check, ChevronRight, Search, Send, Ban, Wrench, Paperclip, Loader2, Tag } from 'lucide-react'
 import { toast } from '@/components/ui/Toast'
 
@@ -503,7 +504,7 @@ export function InvoicesPage() {
     setLoading(true)
     setInvPage(0)
     let q = supabase.from('invoices').select('*').order('created_at', { ascending: false }).range(0, INV_PAGE_SIZE - 1)
-    if (user?.role !== 'super_admin' && user?.branch_id) q = q.eq('branch_id', user.branch_id)
+    if (!canSeeAllBranches(user?.role) && user?.branch_id) q = q.eq('branch_id', user.branch_id)
     const { data } = await q
     const rows = (data as Invoice[]) ?? []
     setInvoices(rows)
@@ -516,7 +517,7 @@ export function InvoicesPage() {
     setLoadingMore(true)
     const nextPage = invPage + 1
     let q = supabase.from('invoices').select('*').order('created_at', { ascending: false }).range(nextPage * INV_PAGE_SIZE, (nextPage + 1) * INV_PAGE_SIZE - 1)
-    if (user?.role !== 'super_admin' && user?.branch_id) q = q.eq('branch_id', user.branch_id)
+    if (!canSeeAllBranches(user?.role) && user?.branch_id) q = q.eq('branch_id', user.branch_id)
     const { data } = await q
     const rows = (data as Invoice[]) ?? []
     setInvoices(inv => [...inv, ...rows])
@@ -531,7 +532,7 @@ export function InvoicesPage() {
       .from('jobs')
       .select('*, customers(full_name, phone, email), vehicles(plate_number, make, model, year, vehicle_type, is_internal_fleet)')
       .eq('status', 'ready')
-    if (user?.role !== 'super_admin' && user?.branch_id) q = q.eq('branch_id', user.branch_id)
+    if (!canSeeAllBranches(user?.role) && user?.branch_id) q = q.eq('branch_id', user.branch_id)
     const { data, error } = await q
     console.log('[loadJobs] data:', data, 'error:', error, 'user branch:', user?.branch_id, 'role:', user?.role)
     setJobs((data as Job[]) ?? [])
@@ -540,7 +541,7 @@ export function InvoicesPage() {
 
   const loadLabourCharges = useCallback(async () => {
     let q = supabase.from('labour_charges').select('*').order('category').order('name')
-    if (user?.role !== 'super_admin' && user?.branch_id)
+    if (!canSeeAllBranches(user?.role) && user?.branch_id)
       q = q.or(`branch_id.is.null,branch_id.eq.${user.branch_id}`)
     const { data } = await q
     setLabourCharges((data as LabourCharge[]) ?? [])

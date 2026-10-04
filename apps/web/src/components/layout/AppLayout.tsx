@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { useAuthStore } from '@/store/authStore'
+import { canSeeAllBranches } from '@/lib/branchScope'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
@@ -16,9 +17,9 @@ function useIsMobile() {
 
 export function AppLayout() {
   const user = useAuthStore((s) => s.user)
-  const isSuperAdmin = user?.role === 'super_admin'
+  const seesAllBranches = canSeeAllBranches(user?.role)
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(
-    isSuperAdmin ? null : (user?.branch_id ?? null)
+    seesAllBranches ? null : (user?.branch_id ?? null)
   )
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const isMobile = useIsMobile()
@@ -32,7 +33,7 @@ export function AppLayout() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         <Header
           selectedBranchId={selectedBranchId}
-          onBranchChange={isSuperAdmin ? setSelectedBranchId : undefined}
+          onBranchChange={seesAllBranches ? setSelectedBranchId : undefined}
           onMenuToggle={() => setMobileNavOpen(o => !o)}
         />
         <main style={{ flex: 1, overflow: 'hidden', backgroundColor: '#0E0E0E', display: 'flex', flexDirection: 'column' }}>

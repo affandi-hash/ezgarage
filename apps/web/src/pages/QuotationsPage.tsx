@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { scopedBranchId } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
 import { toast } from '@/components/ui/Toast'
 
@@ -625,7 +626,7 @@ export function QuotationsPage() {
   const { user } = useAuthStore()
   const tenantId = user?.tenant_id ?? null
   const { selectedBranchId } = useOutletContext<{ selectedBranchId: string | null }>()
-  const branchId = user?.role === 'super_admin' ? selectedBranchId : (user?.branch_id ?? null)
+  const branchId = scopedBranchId(user, selectedBranchId)
 
   const [quotes, setQuotes]           = useState<QuoteRow[]>([])
   const [loading, setLoading]         = useState(true)

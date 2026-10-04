@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { canSeeAllBranches } from '@/lib/branchScope'
 import { Receipt, Search, X, Printer, ChevronRight, Loader2 } from 'lucide-react'
 
 // ─── Interface ─────────────────────────────────────────────────────────────────
@@ -220,7 +221,7 @@ export function ReceiptsPage() {
       .is('voided_at', null)
       .order('payment_date', { ascending: false })
       .order('created_at', { ascending: false })
-    if (user?.role !== 'super_admin' && user?.branch_id)
+    if (!canSeeAllBranches(user?.role) && user?.branch_id)
       q = q.eq('branch_id', user.branch_id)
     const { data } = await q
     const rows = ((data as unknown as ReceiptRow[]) ?? [])

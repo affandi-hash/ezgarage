@@ -26,6 +26,7 @@ import { SignUpPage } from '@/pages/SignUpPage'
 import { OnboardingPage } from '@/pages/OnboardingPage'
 import { CustomerPortalPage } from '@/pages/CustomerPortalPage'
 import { OnlineBookingPage } from '@/pages/OnlineBookingPage'
+import { PnLByBranchPage } from '@/pages/PnLByBranchPage'
 import { QuotationsPage } from '@/pages/QuotationsPage'
 import { LabourChargesPage } from '@/pages/LabourChargesPage'
 import { ReceiptsPage } from '@/pages/ReceiptsPage'
@@ -450,6 +451,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager','finance','foreman']}>
                 <ExpensesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pnl"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','finance']}>
+                <PnLByBranchPage />
               </ProtectedRoute>
             }
           />

@@ -19,6 +19,7 @@ import {
   Receipt,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import { canSeeAllBranches } from '@/lib/branchScope'
 import { supabase } from '@/lib/supabase'
 
 const BG = '#0E0E0E'
@@ -300,7 +301,7 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
 export function ReportsPage() {
   const user = useAuthStore((s) => s.user)
   const isSuperAdmin = user?.role === 'super_admin'
-  const branchFilter = isSuperAdmin ? null : user?.branch_id ?? null
+  const branchFilter = canSeeAllBranches(user?.role) ? null : user?.branch_id ?? null
 
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [dateRange, setDateRange] = useState<DateRange>('this_month')

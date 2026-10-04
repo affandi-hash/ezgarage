@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { canSeeAllBranches } from '@/lib/branchScope'
 import { Plus, X, Wrench, Edit2, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { toast } from '@/components/ui/Toast'
 
@@ -115,7 +116,7 @@ export function LabourChargesPage() {
   const loadLabourCharges = useCallback(async () => {
     setLabourLoading(true)
     let q = supabase.from('labour_charges').select('*').order('category').order('name')
-    if (user?.role !== 'super_admin' && user?.branch_id)
+    if (!canSeeAllBranches(user?.role) && user?.branch_id)
       q = q.or(`branch_id.is.null,branch_id.eq.${user.branch_id}`)
     const { data } = await q
     setLabourCharges((data as LabourCharge[]) ?? [])

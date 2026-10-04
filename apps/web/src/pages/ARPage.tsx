@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { scopedBranchId } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
 import { toast } from '@/components/ui/Toast'
 import {
@@ -528,7 +529,7 @@ export function ARPage() {
   const { user } = useAuthStore()
   const { selectedBranchId } = useOutletContext<{ selectedBranchId: string | null }>()
   const tenantId = user?.tenant_id ?? ''
-  const branchId = selectedBranchId ?? user?.branch_id ?? ''
+  const branchId = scopedBranchId(user, selectedBranchId) ?? ''
 
   const [invoices, setInvoices] = useState<ARInvoice[]>([])
   const [loading, setLoading] = useState(true)

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { scopedBranchId } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1524,7 +1525,7 @@ export function FinancePage() {
 
   const tenantId: string = user?.tenant_id ?? ''
   const userId: string = user?.id ?? ''
-  const branchId: string = selectedBranchId ?? user?.branch_id ?? ''
+  const branchId: string = scopedBranchId(user, selectedBranchId) ?? ''
   const canPrioritize = ['ops_manager', 'foreman', 'super_admin'].includes(user?.role ?? '')
 
   // Data
