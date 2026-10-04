@@ -156,7 +156,7 @@ export function ProfitLossPage() {
   const [from, setFrom] = useState(presetRange('last_month').start)
   const [to, setTo] = useState(presetRange('last_month').end)
   const [branchId, setBranchId] = useState('')
-  const [colMode, setColMode] = useState<PnlColumns>('months')
+  const [colChoice, setColChoice] = useState<'auto' | PnlColumns>('auto')
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [data, setData] = useState<PnlData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -173,6 +173,8 @@ export function ProfitLossPage() {
   }
 
   const spanDays = from && to ? (parseYmd(to).getTime() - parseYmd(from).getTime()) / 86400000 : 0
+  // auto: a range of up to about 10 weeks shows week by week, anything longer month by month
+  const colMode: PnlColumns = colChoice === 'auto' ? (spanDays <= 70 ? 'weeks' : 'months') : colChoice
   const valid = !!from && !!to && from <= to && spanDays <= (colMode === 'weeks' ? 190 : 740)
 
   useEffect(() => {
@@ -226,9 +228,10 @@ export function ProfitLossPage() {
         </div>
         <div>
           <span style={lab}>Columns</span>
-          <select style={field} value={colMode} onChange={e => setColMode(e.target.value as PnlColumns)}>
-            <option value="months">One per month</option>
+          <select style={field} value={colChoice} onChange={e => setColChoice(e.target.value as 'auto' | PnlColumns)}>
+            <option value="auto">Automatic (weeks up to 10 weeks)</option>
             <option value="weeks">One per week (Mon-Sun)</option>
+            <option value="months">One per month</option>
           </select>
         </div>
         {loading && <Loader2 size={20} className="animate-spin" style={{ color: C.orange, marginBottom: 8 }} />}
