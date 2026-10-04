@@ -7,6 +7,7 @@ import {
   addDays, computeReport, DEFAULT_BASIS, DEFAULT_SETTINGS, loadReportInput, loadSettings, mondayOf, parseYmd, toYmd,
   type ComputeInput, type ReportBasis, type ReportData, type ReportMode, type ReportSettings, type ReportWord,
 } from '@/lib/weeklyReport'
+import { SheetSyncButton } from '@/components/reports/SheetSyncButton'
 import { openReportPrintWindow, reportPageCount, WeeklyReportPages } from '@/components/reports/WeeklyReportPages'
 
 const C = { bg: '#0E0E0E', surface: '#1E1E1E', border: '#2A2A2A', orange: '#F15A22', text: '#F0F0F0', muted: '#A0A0A0' }
@@ -206,7 +207,10 @@ export function WeeklyReportPage() {
           <button style={btn(true)} onClick={generate} disabled={busy}>
             {busy ? <Loader2 size={16} className="animate-spin" /> : <FileBarChart size={16} />} Generate report
           </button>
-          <button style={{ ...btn(), marginLeft: 'auto' }} onClick={() => setShowTargets(s => !s)}><Settings2 size={16} /> Targets</button>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <SheetSyncButton />
+            <button style={btn()} onClick={() => setShowTargets(s => !s)}><Settings2 size={16} /> Targets</button>
+          </div>
         </div>
         {branchId && <div style={{ fontSize: 12, color: C.muted, marginTop: 10 }}>For a single branch, only that branch's invoices and expenses are counted. Shared / HQ expenses appear in All branches only.</div>}
 

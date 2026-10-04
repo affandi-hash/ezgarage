@@ -58,6 +58,7 @@ function doPost(e) {
     }
 
     const dry = !!body.dryRun;
+    const tmplFormat = sheet.getRange(headerRow + 1, inputs[0].c).getNumberFormat();
     const res = { ok: true, dryRun: dry, updated: 0, appended: 0, unchanged: 0, skippedFormulaCells: [], changes: [] };
 
     (body.rows || []).forEach(function (r) {
@@ -90,6 +91,10 @@ function doPost(e) {
         res.changes.push(r.date + ' ' + x.name + ': ' + (cur === '' ? '(blank)' : cur) + ' -> ' + v);
         if (!dry) cell.setValue(v);
       });
+      // keep the sheet's look: give any row not formatted like the first data row that row's formatting
+      if (!dry && sheet.getRange(row, inputs[0].c).getNumberFormat() !== tmplFormat) {
+        sheet.getRange(headerRow + 1, 1, 1, lastCol).copyTo(sheet.getRange(row, 1, 1, lastCol), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+      }
       if (isNew) res.appended++; else if (touched) res.updated++; else res.unchanged++;
     });
 

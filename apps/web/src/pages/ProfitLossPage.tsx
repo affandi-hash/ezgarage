@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
 import { addDays, parseYmd, toYmd } from '@/lib/weeklyReport'
+import { SheetSyncButton } from '@/components/reports/SheetSyncButton'
 import { fmtDay, loadPnl, type PnlCol, type PnlColumns, type PnlData } from '@/lib/profitLoss'
 
 const C = { surface: '#1E1E1E', border: '#2A2A2A', orange: '#F15A22', text: '#F0F0F0', muted: '#A0A0A0', green: '#22C55E', red: '#EF4444' }
@@ -202,12 +203,15 @@ export function ProfitLossPage() {
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Profit &amp; Loss</h1>
           <p style={{ color: C.muted, fontSize: 13, margin: '4px 0 0' }}>Management P&amp;L for any date range, one column per month, compared with the period before.</p>
         </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <SheetSyncButton />
         <button
           disabled={!data}
           onClick={() => data && !printPnl(data, rows, `Profit and Loss ${data.start} to ${data.end}`) && toast('Allow pop-ups to download the PDF', 'error')}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderRadius: 8, fontSize: 14, fontWeight: 700, border: `1px solid ${C.orange}`, background: C.orange, color: '#fff', cursor: data ? 'pointer' : 'not-allowed', opacity: data ? 1 : 0.5 }}>
           <FileDown size={16} /> Download PDF
         </button>
+        </div>
       </div>
 
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
