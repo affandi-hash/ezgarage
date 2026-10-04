@@ -104,6 +104,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/expenses', label: 'Expenses (OPEX/CAPEX)', icon: TrendingUp, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/finance', label: 'Accounts Payable', icon: Landmark, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
       { to: '/ar', label: 'Accounts Receivable', icon: TrendingUp, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
+      { to: '/profit-loss', label: 'Profit & Loss', icon: TrendingUp, roles: ['super_admin', 'ops_manager', 'finance'] },
       { to: '/pnl', label: 'P&L by Branch', icon: BarChart3, roles: ['super_admin', 'ops_manager', 'finance'] },
       { to: '/weekly-report', label: 'Weekly Report', icon: FileBarChart, roles: ['super_admin', 'ops_manager', 'finance'] },
       { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },

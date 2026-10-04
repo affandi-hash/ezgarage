@@ -457,7 +457,7 @@ export function computeReport(inp: ComputeInput): ReportData {
 }
 
 // ── loading ─────────────────────────────────────────────────────────────
-async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
+export async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
   const out: T[] = []
   for (let from = 0; ; from += 1000) {
     const { data, error } = await build(from, from + 999)
