@@ -10,6 +10,7 @@ import type { Branch } from '@/types'
 const ROUTE_LABELS: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/pnl': 'P&L by Branch',
+  '/weekly-report': 'Weekly Report',
   '/onsite-bookings': 'ON-SITE Bookings',
   '/onsite-jobs': 'ON-SITE Jobs',
   '/onsite-settings': 'ON-SITE Settings',
