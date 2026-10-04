@@ -82,6 +82,14 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: 'ON-SITE',
+    items: [
+      { to: '/onsite-bookings', label: 'ON-SITE Bookings', icon: CalendarCheck, roles: ['super_admin', 'ops_manager', 'foreman', 'front_desk', 'finance'] },
+      { to: '/onsite-jobs', label: 'Van Jobs', icon: Truck, roles: ['super_admin', 'ops_manager', 'foreman', 'mechanic', 'front_desk'] },
+      { to: '/onsite-settings', label: 'ON-SITE Settings', icon: Settings, roles: ['super_admin', 'ops_manager'] },
+    ],
+  },
+  {
     label: 'ESP Program',
     items: [
       { to: '/esp/members', label: 'ESP Members', icon: Users, roles: ['super_admin', 'ops_manager', 'front_desk', 'foreman'] },

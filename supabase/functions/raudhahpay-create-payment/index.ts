@@ -25,7 +25,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { invoice_id, payment_method, amount: requestedAmount, redirect_url, plate, phone: requestPhone, ic_first6, password } = await req.json()
+    const { invoice_id, payment_method, amount: requestedAmount, redirect_url: requestedRedirect, plate, phone: requestPhone, ic_first6, password, os_token } = await req.json()
+    let redirect_url = requestedRedirect
 
     if (!invoice_id || !['fpx', 'duitnow', 'credit_card'].includes(payment_method)) {
       return new Response(JSON.stringify({ error: 'invoice_id and payment_method ("fpx", "duitnow", or "credit_card") are required' }), { status: 400, headers: corsHeaders })
@@ -60,19 +61,36 @@ Deno.serve(async (req) => {
     // have esp_member_id = NULL, so route password-authenticated requests
     // through the customer-scoped check instead of the plate+IC one, which
     // the password-only portal session has no plate/IC to satisfy.
-    const verifyRpc = invoice.esp_member_id
-      ? (password ? 'esp_verify_invoice_access_by_password' : 'esp_verify_invoice_access')
-      : (password ? 'esp_verify_customer_invoice_by_password' : 'portal_verify_invoice_access')
-    const verifyArgs = invoice.esp_member_id
-      ? (password
-          ? { p_invoice_id: invoice_id, p_phone: requestPhone, p_password: password }
-          : { p_invoice_id: invoice_id, p_phone: requestPhone, p_ic_first6: ic_first6 })
-      : (password
-          ? { p_invoice_id: invoice_id, p_phone: requestPhone, p_password: password }
-          : { p_invoice_id: invoice_id, p_plate: plate, p_phone: requestPhone, p_ic_first6: ic_first6 })
-    const { data: verified, error: verifyErr } = await supabase.rpc(verifyRpc, verifyArgs)
-    if (verifyErr || !verified) {
-      return new Response(JSON.stringify({ error: 'Could not verify your identity for this invoice' }), { status: 403, headers: corsHeaders })
+    // ON-SITE bookings are paid from a private status link: the booking token
+    // is the credential, and the amount is fixed by the booking (deposit while
+    // awaiting_deposit, balance once completed), never taken from the caller.
+    let osAmount: number | null = null
+    let osTitle: string | null = null
+    if (os_token) {
+      const { data: ctx } = await supabase.rpc('os_payment_context', { p_token: os_token, p_invoice: invoice_id })
+      if (!ctx || !(Number(ctx.amount) > 0)) {
+        return new Response(JSON.stringify({ error: 'Nothing is payable on this booking right now' }), { status: 403, headers: corsHeaders })
+      }
+      osAmount = Number(ctx.amount)
+      osTitle = `ON-SITE ${ctx.booking_number} ${ctx.kind}`
+      redirect_url = `${Deno.env.get('APP_URL') ?? 'https://ezgarage-web.vercel.app'}/on-site/status/${os_token}`
+    } else {
+      const verifyRpc = invoice.esp_member_id
+        ? (password ? 'esp_verify_invoice_access_by_password' : 'esp_verify_invoice_access')
+        : (password ? 'esp_verify_customer_invoice_by_password' : 'portal_verify_invoice_access')
+      const verifyArgs = invoice.esp_member_id
+        ? (password
+            ? { p_invoice_id: invoice_id, p_phone: requestPhone, p_password: password }
+            : { p_invoice_id: invoice_id, p_phone: requestPhone, p_ic_first6: ic_first6 })
+        : (password
+            ? { p_invoice_id: invoice_id, p_phone: requestPhone, p_password: password }
+            : { p_invoice_id: invoice_id, p_plate: plate, p_phone: requestPhone, p_ic_first6: ic_first6 })
+      const { data: verified, error: verifyErr } = await supabase.rpc(verifyRpc, verifyArgs)
+      if (verifyErr || !verified) {
+        return new Response(JSON.stringify({ error: 'Could not verify your identity for this invoice' }), { status: 403, headers: corsHeaders })
+      }
+
+
     }
 
     // Each tenant can plug in their own RaudhahPay merchant account so their
@@ -91,7 +109,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Invoice is already fully paid' }), { status: 400, headers: corsHeaders })
     }
 
-    const amount = requestedAmount ? Number(requestedAmount) : Number(invoice.balance_due)
+    const amount = osAmount ?? (requestedAmount ? Number(requestedAmount) : Number(invoice.balance_due))
     if (!amount || amount <= 0 || amount > invoice.balance_due + 0.01) {
       return new Response(JSON.stringify({ error: 'Invalid amount' }), { status: 400, headers: corsHeaders })
     }
@@ -113,7 +131,7 @@ Deno.serve(async (req) => {
 
     const payload: Record<string, unknown> = {
       action: 'create-bill',
-      title: `Invoice ${invoice.invoice_number}`,
+      title: osTitle ?? `Invoice ${invoice.invoice_number}`,
       amount,
       payment_method,
       customer_name: invoice.customer_name || 'Customer',

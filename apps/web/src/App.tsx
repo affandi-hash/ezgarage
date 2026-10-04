@@ -27,6 +27,11 @@ import { OnboardingPage } from '@/pages/OnboardingPage'
 import { CustomerPortalPage } from '@/pages/CustomerPortalPage'
 import { OnlineBookingPage } from '@/pages/OnlineBookingPage'
 import { PnLByBranchPage } from '@/pages/PnLByBranchPage'
+import { OnSiteSettingsPage } from '@/pages/OnSiteSettingsPage'
+import { OnSiteBookingsPage } from '@/pages/OnSiteBookingsPage'
+import { OnSiteJobsPage } from '@/pages/OnSiteJobsPage'
+import { OnSiteBookPage } from '@/pages/OnSiteBookPage'
+import { OnSiteStatusPage } from '@/pages/OnSiteStatusPage'
 import { QuotationsPage } from '@/pages/QuotationsPage'
 import { LabourChargesPage } from '@/pages/LabourChargesPage'
 import { ReceiptsPage } from '@/pages/ReceiptsPage'
@@ -113,6 +118,9 @@ export default function App() {
         <Route path="/portal" element={<CustomerPortalPage />} />
         <Route path="/portal/:tenantSlug" element={<CustomerPortalPage />} />
         <Route path="/book" element={<OnlineBookingPage />} />
+        <Route path="/on-site" element={<OnSiteBookPage />} />
+        <Route path="/on-site/:tenantSlug" element={<OnSiteBookPage />} />
+        <Route path="/on-site/status/:token" element={<OnSiteStatusPage />} />
         <Route path="/book/:tenantSlug" element={<OnlineBookingPage />} />
         {/* No bare /esp route at all -- a community slug is always required,
             never an ambiguous fallback (same bug class 099 fixed for the
@@ -451,6 +459,30 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager','finance','foreman']}>
                 <ExpensesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/onsite-bookings"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','foreman','front_desk','finance']}>
+                <OnSiteBookingsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/onsite-jobs"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','foreman','mechanic','front_desk']}>
+                <OnSiteJobsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/onsite-settings"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <OnSiteSettingsPage />
               </ProtectedRoute>
             }
           />

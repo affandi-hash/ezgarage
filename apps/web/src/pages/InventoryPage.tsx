@@ -17,6 +17,7 @@ import {
   Paperclip,
   FileText,
   Wallet,
+  ArrowRightLeft,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -126,6 +127,30 @@ interface CataloguePart {
   is_active: boolean
   created_at: string
   suppliers?: { name: string } | null
+}
+
+interface BranchOpt { id: string; name: string }
+
+interface StockTransfer {
+  id: string
+  from_branch_id: string
+  to_branch_id: string
+  part_name: string
+  qty: number
+  note?: string | null
+  created_at: string
+}
+
+const TRANSFER_ROLES = ['super_admin', 'ops_manager', 'parts_admin', 'foreman']
+const TRANSFER_VIEW_ROLES = [...TRANSFER_ROLES, 'finance']
+
+const TRANSFER_ERRORS: Record<string, string> = {
+  forbidden: "You don't have permission to transfer this stock",
+  invalid_qty: 'Enter a valid quantity',
+  not_found: 'Part not found',
+  same_branch: 'Destination must be a different branch',
+  branch_not_found: 'Destination branch not found',
+  insufficient_stock: 'Not enough stock to transfer that quantity',
 }
 
 const PART_CATEGORIES = ['Engine', 'Brakes', 'Electrical', 'Body', 'Tyres', 'Fluids', 'Filters', 'Suspension', 'Accessories', 'Other']
@@ -612,9 +637,163 @@ function SuppliersTab({ tenantId, branchId }: { tenantId: string; branchId: stri
   )
 }
 
+// ─── Transfer Modal ───────────────────────────────────────────────────────────
+
+interface TransferModalProps {
+  part: CataloguePart
+  branches: BranchOpt[]
+  onClose: () => void
+  onDone: () => void
+}
+
+function TransferModal({ part, branches, onClose, onDone }: TransferModalProps) {
+  const destinations = branches.filter(b => b.id !== part.branch_id)
+  const fromName = branches.find(b => b.id === part.branch_id)?.name ?? 'this branch'
+  const [toBranchId, setToBranchId] = useState('')
+  const [qty, setQty] = useState('1')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const qtyNum = Number(qty)
+  const qtyValid = Number.isInteger(qtyNum) && qtyNum >= 1 && qtyNum <= part.stock_qty
+  const canSubmit = !!toBranchId && qtyValid && !saving
+
+  async function handleSubmit(ev: React.FormEvent) {
+    ev.preventDefault()
+    if (!canSubmit) return
+    setSaving(true)
+    const { data, error } = await supabase.rpc('transfer_stock', {
+      p_from_part_id: part.id,
+      p_to_branch_id: toBranchId,
+      p_qty: qtyNum,
+      p_note: note.trim() || null,
+    })
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    if (data?.error) { toast(TRANSFER_ERRORS[data.error as string] ?? 'Transfer failed', 'error'); return }
+    const toName = destinations.find(b => b.id === toBranchId)?.name ?? 'branch'
+    toast(`Moved ${qtyNum} × ${part.name} to ${toName}`)
+    onDone()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 16, width: '100%', maxWidth: 440 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #2A2A2A' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ArrowRightLeft size={18} style={{ color: '#F15A22' }} />
+            <div>
+              <h2 style={{ color: '#F0F0F0', fontSize: 16, fontWeight: 700, margin: 0 }}>Transfer Stock</h2>
+              <p style={{ color: '#A0A0A0', fontSize: 12, margin: 0 }}>{part.name}{part.part_number ? ` · ${part.part_number}` : ''}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A0A0A0' }}><X size={18} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Destination Branch *</label>
+              <select value={toBranchId} onChange={e => setToBranchId(e.target.value)} style={{ ...inputStyle, color: toBranchId ? '#F0F0F0' : '#6B7280' }}>
+                <option value="">— Select Branch —</option>
+                {destinations.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Quantity * <span style={{ color: '#4A4A4A', fontWeight: 400 }}>(max {part.stock_qty})</span></label>
+              <input type="number" min={1} max={part.stock_qty} step={1} value={qty} onChange={e => setQty(e.target.value)} style={{ ...inputStyle, borderColor: qty && !qtyValid ? '#F15A22' : '#2A2A2A' }} />
+              {qty && !qtyValid && <p style={{ color: '#F15A22', fontSize: 11, margin: '4px 0 0' }}>Enter a whole number between 1 and {part.stock_qty}</p>}
+            </div>
+            <div>
+              <label style={labelStyle}>Note</label>
+              <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Optional" style={{ ...inputStyle, resize: 'none' }} />
+            </div>
+            <div style={{ background: '#161616', border: '1px solid #2A2A2A', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#A0A0A0' }}>
+              From {fromName} stock <span style={{ color: '#F0F0F0', fontWeight: 700 }}>{part.stock_qty}</span> → after{' '}
+              <span style={{ color: qtyValid ? '#22C55E' : '#4A4A4A', fontWeight: 700 }}>{qtyValid ? part.stock_qty - qtyNum : '—'}</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: '1px solid #2A2A2A' }}>
+            <button type="button" onClick={onClose} style={{ background: '#2A2A2A', color: '#A0A0A0', border: 'none', borderRadius: 8, padding: '0 20px', minHeight: 44, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
+            <button type="submit" disabled={!canSubmit} style={{ background: canSubmit ? '#F15A22' : '#2A2A2A', color: '#fff', border: 'none', borderRadius: 8, padding: '0 20px', minHeight: 44, cursor: canSubmit ? 'pointer' : 'not-allowed', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {saving && <Loader2 size={14} className="animate-spin" />}Transfer
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Transfers Tab ────────────────────────────────────────────────────────────
+
+function TransfersTab({ tenantId }: { tenantId: string }) {
+  const [transfers, setTransfers] = useState<StockTransfer[]>([])
+  const [branches, setBranches] = useState<BranchOpt[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!tenantId) return
+    setLoading(true)
+    Promise.all([
+      supabase.from('stock_transfers').select('id, from_branch_id, to_branch_id, part_name, qty, note, created_at').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(50),
+      supabase.from('branches').select('id, name').eq('tenant_id', tenantId),
+    ]).then(([{ data: t, error }, { data: b }]) => {
+      if (error) toast(error.message, 'error')
+      setTransfers((t as StockTransfer[]) ?? [])
+      setBranches((b as BranchOpt[]) ?? [])
+      setLoading(false)
+    })
+  }, [tenantId])
+
+  const branchName = (id: string) => branches.find(b => b.id === id)?.name ?? '—'
+
+  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Loader2 size={28} style={{ color: '#F15A22' }} className="animate-spin" /></div>
+  if (transfers.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: 60, color: '#A0A0A0' }}>
+        <ArrowRightLeft size={40} style={{ margin: '0 auto 12px', color: '#2A2A2A' }} />
+        <p>No stock transfers yet.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <p style={{ color: '#A0A0A0', fontSize: 12, margin: '0 0 12px' }}>Last {transfers.length} transfers between branches</p>
+      <div style={{ border: '1px solid #2A2A2A', borderRadius: 12, overflowX: 'auto' }}>
+        <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: '#161616', borderBottom: '1px solid #2A2A2A' }}>
+              {['Date', 'Part', 'Qty', 'From', 'To', 'Note'].map(h => (
+                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 700, color: '#A0A0A0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {transfers.map((t, i) => (
+              <tr key={t.id} style={{ background: i % 2 === 0 ? '#0E0E0E' : '#161616', borderBottom: '1px solid #2A2A2A' }}>
+                <td style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 13, whiteSpace: 'nowrap' }}>{formatDate(t.created_at)}</td>
+                <td style={{ padding: '12px 16px', color: '#F0F0F0', fontWeight: 600, fontSize: 14 }}>{t.part_name}</td>
+                <td style={{ padding: '12px 16px', color: '#22C55E', fontWeight: 700, fontSize: 14 }}>{t.qty}</td>
+                <td style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 13 }}>{branchName(t.from_branch_id)}</td>
+                <td style={{ padding: '12px 16px', color: '#F0F0F0', fontSize: 13 }}>{branchName(t.to_branch_id)}</td>
+                <td style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 12, fontStyle: t.note ? 'italic' : 'normal' }}>{t.note ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ─── Catalogue Tab ────────────────────────────────────────────────────────────
 
 function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: string }) {
+  const role = useAuthStore(s => s.user?.role) as string | undefined
+  const canTransfer = !!role && TRANSFER_ROLES.includes(role)
+  const [branches, setBranches] = useState<BranchOpt[]>([])
+  const [transferPart, setTransferPart] = useState<CataloguePart | null>(null)
   const [parts, setParts] = useState<CataloguePart[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
@@ -641,6 +820,11 @@ function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: stri
   }, [tenantId])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (!canTransfer || !tenantId) return
+    supabase.from('branches').select('id, name').eq('tenant_id', tenantId).order('name').then(({ data }) => setBranches((data as BranchOpt[]) ?? []))
+  }, [canTransfer, tenantId])
 
   async function handleSaveSupplier() {
     if (!newSupplier.name.trim()) return
@@ -756,6 +940,7 @@ function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: stri
                   <tr key={p.id} style={{ background: i % 2 === 0 ? '#0E0E0E' : '#161616', borderBottom: '1px solid #2A2A2A' }}>
                     <td style={{ padding: '12px 16px' }}>
                       <p style={{ color: '#F0F0F0', fontWeight: 600, fontSize: 14, margin: 0 }}>{p.name}</p>
+                      {canTransfer && branches.length > 1 && p.branch_id && <p style={{ color: '#A0A0A0', fontSize: 11, margin: '2px 0 0' }}>{branches.find(b => b.id === p.branch_id)?.name ?? ''}</p>}
                       {p.notes && <p style={{ color: '#4A4A4A', fontSize: 11, margin: '2px 0 0', fontStyle: 'italic' }}>{p.notes}</p>}
                     </td>
                     <td style={{ padding: '12px 16px', color: '#A0A0A0', fontSize: 13, fontFamily: 'monospace' }}>{p.part_number ?? '—'}</td>
@@ -777,6 +962,11 @@ function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: stri
                     <td style={{ padding: '12px 16px', color: '#F0F0F0', fontSize: 13 }}>{p.selling_price != null ? `RM ${p.selling_price.toFixed(2)}` : '—'}</td>
                     <td style={{ padding: '12px 16px' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
+                        {canTransfer && p.stock_qty > 0 && (
+                          <button onClick={() => setTransferPart(p)} title="Transfer stock to another branch" style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(241,90,34,0.12)', border: '1px solid #F15A22', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: '#F15A22', fontSize: 12, fontWeight: 600 }}>
+                            <ArrowRightLeft size={13} /> Transfer
+                          </button>
+                        )}
                         <button onClick={() => openEdit(p)} style={{ background: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: '#A0A0A0' }}><Pencil size={13} /></button>
                         <button onClick={() => deletePart(p)} style={{ background: '#1A0E0E', border: '1px solid #F87171', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: '#F87171' }}><Trash2 size={13} /></button>
                       </div>
@@ -787,6 +977,9 @@ function CatalogueTab({ tenantId, branchId }: { tenantId: string; branchId: stri
             </tbody>
           </table>
         </div>
+      )}
+      {transferPart && (
+        <TransferModal part={transferPart} branches={branches} onClose={() => setTransferPart(null)} onDone={() => { setTransferPart(null); load() }} />
       )}
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={e => e.target === e.currentTarget && setShowModal(false)}>
@@ -1382,18 +1575,20 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-type InvTab = 'stock' | 'catalogue' | 'suppliers'
+type InvTab = 'stock' | 'catalogue' | 'suppliers' | 'transfers'
 
 export function InventoryPage() {
   const { user } = useAuthStore()
   const branchId: string = user?.branch_id ?? ''
   const tenantId: string = user?.tenant_id ?? ''
   const [activeTab, setActiveTab] = useState<InvTab>('stock')
+  const canViewTransfers = TRANSFER_VIEW_ROLES.includes(user?.role as string)
 
   const tabs: { key: InvTab; label: string; icon: React.ReactNode }[] = [
     { key: 'stock', label: 'Stock Purchases', icon: <Package size={14} /> },
     { key: 'catalogue', label: 'Catalogue', icon: <BookOpen size={14} /> },
     { key: 'suppliers', label: 'Suppliers', icon: <Building2 size={14} /> },
+    ...(canViewTransfers ? [{ key: 'transfers' as const, label: 'Transfers', icon: <ArrowRightLeft size={14} /> }] : []),
   ]
 
   return (
@@ -1412,6 +1607,7 @@ export function InventoryPage() {
       {activeTab === 'stock' && <StockPurchasesTab tenantId={tenantId} branchId={branchId} />}
       {activeTab === 'catalogue' && <CatalogueTab tenantId={tenantId} branchId={branchId} />}
       {activeTab === 'suppliers' && <SuppliersTab tenantId={tenantId} branchId={branchId} />}
+      {activeTab === 'transfers' && canViewTransfers && <TransfersTab tenantId={tenantId} />}
     </div>
   )
 }
