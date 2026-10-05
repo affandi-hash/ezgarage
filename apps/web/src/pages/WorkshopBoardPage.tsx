@@ -750,7 +750,7 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
     loadStaff()
   }, [])
 
-  const foremanOpts = staffOptions.filter(s => s.role === 'foreman')
+  const foremanOpts = staffOptions.filter(s => s.role === 'foreman' || s.role === 'ops_manager')
   const mechanicOpts = staffOptions.filter(s => s.role === 'mechanic')
 
   function startEdit() {
@@ -1387,7 +1387,7 @@ function NewJobModal({ branchId, onClose, onCreated }: NewJobModalProps) {
     }
   }
 
-  const foremanOptions = staffOptions.filter(s => s.role === 'foreman')
+  const foremanOptions = staffOptions.filter(s => s.role === 'foreman' || s.role === 'ops_manager')
   const mechanicOptions = staffOptions.filter(s => s.role === 'mechanic' || s.role === 'foreman')
 
   return (
