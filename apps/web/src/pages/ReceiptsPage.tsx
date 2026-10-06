@@ -2,12 +2,17 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { canSeeAllBranches } from '@/lib/branchScope'
-import { Receipt, Search, X, Printer, ChevronRight, Loader2 } from 'lucide-react'
+import { toast } from '@/components/ui/Toast'
+import { attachReceiptProof, canManageProof, proofMissing } from '@/lib/paymentProof'
+import { Receipt, Search, X, Printer, ChevronRight, Loader2, Paperclip } from 'lucide-react'
 
 // ─── Interface ─────────────────────────────────────────────────────────────────
 
 interface ReceiptRecord {
   id: string
+  proof_url: string | null
+  proof_bucket: string | null
+  proof_missing: boolean
   branch_id: string
   invoice_number: string
   receipt_number: string | null
@@ -30,6 +35,9 @@ interface ReceiptRecord {
 
 interface ReceiptRow {
   id: string
+  proof_url: string | null
+  proof_bucket: string | null
+  gateway_ref: string | null
   branch_id: string
   amount: number
   payment_method: string | null
@@ -207,6 +215,8 @@ export function ReceiptsPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [selected, setSelected] = useState<ReceiptRecord | null>(null)
+  const [missingOnly, setMissingOnly] = useState(false)
+  const [attaching, setAttaching] = useState(false)
 
   const loadReceipts = useCallback(async () => {
     setLoading(true)
@@ -217,7 +227,7 @@ export function ReceiptsPage() {
     // the earlier payment(s) entirely.
     let q = supabase
       .from('receipts')
-      .select('id,branch_id,amount,payment_method,payment_date,reference_number,invoices!invoice_id(invoice_number,receipt_number,customer_name,customer_phone,vehicle_plate,vehicle_info,total_amount,balance_due,issue_date,is_internal_fleet,branches(logo_url))')
+      .select('id,branch_id,amount,payment_method,payment_date,reference_number,proof_url,proof_bucket,gateway_ref,invoices!invoice_id(invoice_number,receipt_number,customer_name,customer_phone,vehicle_plate,vehicle_info,total_amount,balance_due,issue_date,is_internal_fleet,branches(logo_url))')
       .is('voided_at', null)
       .order('payment_date', { ascending: false })
       .order('created_at', { ascending: false })
@@ -228,6 +238,9 @@ export function ReceiptsPage() {
       .filter((r) => r.invoices)
       .map((r): ReceiptRecord => ({
         id: r.id,
+        proof_url: r.proof_url,
+        proof_bucket: r.proof_bucket,
+        proof_missing: proofMissing({ payment_method: r.payment_method, proof_url: r.proof_url, gateway_ref: r.gateway_ref }),
         branch_id: r.branch_id,
         invoice_number: r.invoices!.invoice_number,
         receipt_number: r.invoices!.receipt_number,
@@ -264,10 +277,32 @@ export function ReceiptsPage() {
       ) return false
     }
     if (methodFilter && r.payment_method !== methodFilter) return false
+    if (missingOnly && !r.proof_missing) return false
     if (dateFrom && r.payment_date && r.payment_date < dateFrom) return false
     if (dateTo && r.payment_date && r.payment_date > dateTo) return false
     return true
   })
+
+  const missingCount = receipts.filter(r => r.proof_missing).length
+
+  async function attachProof(r: ReceiptRecord, file: File | null) {
+    if (!file) return
+    setAttaching(true)
+    const res = await attachReceiptProof(r.id, file)
+    setAttaching(false)
+    if (!res.ok) { toast(res.error ?? 'Could not attach the proof', 'error'); return }
+    toast(r.proof_url ? 'Proof replaced' : 'Proof added')
+    const { data: fresh } = await supabase.from('receipts').select('proof_url, proof_bucket').eq('id', r.id).single()
+    setSelected(prev => (prev && prev.id === r.id ? { ...prev, proof_url: fresh?.proof_url ?? prev.proof_url, proof_bucket: fresh?.proof_bucket ?? prev.proof_bucket, proof_missing: false } : prev))
+    loadReceipts()
+  }
+
+  async function viewProof(r: ReceiptRecord) {
+    if (!r.proof_url) return
+    const { data, error } = await supabase.storage.from(r.proof_bucket ?? 'payment-proofs').createSignedUrl(r.proof_url, 3600)
+    if (error || !data?.signedUrl) { toast('Failed to open proof of payment', 'error'); return }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+  }
 
   // ─── Print ──────────────────────────────────────────────────────────────────
 
@@ -341,13 +376,22 @@ export function ReceiptsPage() {
             {METHOD_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
 
+          {/* Payments missing a slip */}
+          <button
+            onClick={() => setMissingOnly(v => !v)}
+            style={{ ...chip(missingOnly), display: 'flex', alignItems: 'center', gap: 6 }}
+            title="Bank transfer, QR or DuitNow payments with no proof attached"
+          >
+            <Paperclip size={12} /> Proof missing ({missingCount})
+          </button>
+
           {/* Date from/to */}
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inputStyle }} title="From date" />
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inputStyle }} title="To date" />
 
-          {(search || methodFilter || dateFrom || dateTo) && (
+          {(search || methodFilter || dateFrom || dateTo || missingOnly) && (
             <button
-              onClick={() => { setSearch(''); setMethodFilter(''); setDateFrom(''); setDateTo('') }}
+              onClick={() => { setSearch(''); setMethodFilter(''); setDateFrom(''); setDateTo(''); setMissingOnly(false) }}
               style={{ ...chip(false), display: 'flex', alignItems: 'center', gap: 4 }}
             >
               <X size={12} /> Clear
@@ -368,7 +412,7 @@ export function ReceiptsPage() {
             </div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: C.text2 }}>
-              {search || methodFilter || dateFrom || dateTo ? 'No receipts match your filters.' : 'No payment receipts yet.'}
+              {search || methodFilter || dateFrom || dateTo || missingOnly ? 'No receipts match your filters.' : 'No payment receipts yet.'}
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -411,6 +455,9 @@ export function ReceiptsPage() {
                       <span style={{ background: '#1E1E1E', border: `1px solid ${C.border}`, borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600, color: C.text2 }}>
                         {methodLabel(r.payment_method)}
                       </span>
+                      {r.proof_missing && (
+                        <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#F59E0B', border: '1px solid #F59E0B66', borderRadius: 4, padding: '1px 6px' }}>NO PROOF</span>
+                      )}
                     </td>
                     <td style={{ padding: '10px 16px' }}>
                       <ChevronRight size={14} color={C.text2} />
@@ -480,6 +527,22 @@ export function ReceiptsPage() {
                   <span style={{ fontWeight: 600 }}>{f.value}</span>
                 </div>
               ))}
+
+              <div style={{ marginTop: 20, marginBottom: 8, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.text2 }}>Proof of payment</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', fontSize: 13 }}>
+                {selected.proof_url
+                  ? <button onClick={() => viewProof(selected)} style={{ background: 'none', border: 'none', color: C.orange, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}><Paperclip size={13} /> View proof</button>
+                  : selected.proof_missing
+                    ? <span style={{ color: '#F59E0B', fontWeight: 700 }}>No proof attached</span>
+                    : <span style={{ color: C.text2 }}>Not required for this payment method</span>}
+                {canManageProof(user?.role) && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.orange, cursor: attaching ? 'wait' : 'pointer', fontSize: 13 }}>
+                    {attaching ? <Loader2 size={13} className="animate-spin" /> : <Paperclip size={13} />} {selected.proof_url ? 'Replace' : 'Add proof'}
+                    <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf" style={{ display: 'none' }} disabled={attaching}
+                      onChange={e => { const f = e.target.files?.[0] ?? null; e.target.value = ''; attachProof(selected, f) }} />
+                  </label>
+                )}
+              </div>
 
               <div style={{ marginTop: 20, marginBottom: 8, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: C.text2 }}>Customer</div>
               {[

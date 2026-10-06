@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { attachReceiptProof, canManageProof, proofMissing } from '@/lib/paymentProof'
 import { useAuthStore } from '@/store/authStore'
 import { canSeeAllBranches } from '@/lib/branchScope'
 import { FileText, Plus, X, Printer, CreditCard, Check, ChevronRight, Search, Send, Ban, Wrench, Paperclip, Loader2, Tag } from 'lucide-react'
@@ -444,7 +445,7 @@ export function InvoicesPage() {
   const [payment, setPayment] = useState({ payment_method: 'cash', amount_paid: 0, payment_date: todayStr(), payment_reference: '' })
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [proofFileError, setProofFileError] = useState<string | null>(null)
-  const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; payment_method: string; payment_date: string; proof_url: string | null; proof_bucket: string | null; voided_at: string | null; void_reason: string | null }[]>([])
+  const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; payment_method: string; payment_date: string; proof_url: string | null; proof_bucket: string | null; voided_at: string | null; void_reason: string | null; gateway_ref: string | null; reference_number: string | null }[]>([])
   const [paymentFailures, setPaymentFailures] = useState<{ id: string; event: string; failure_code: string | null; failure_reason: string | null; created_at: string }[]>([])
   const [viewingProofId, setViewingProofId] = useState<string | null>(null)
   const [voidingId, setVoidingId] = useState<string | null>(null)
@@ -459,7 +460,7 @@ export function InvoicesPage() {
   }
 
   async function loadPaymentHistory(invoiceId: string) {
-    const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url, proof_bucket, voided_at, void_reason').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
+    const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url, proof_bucket, voided_at, void_reason, gateway_ref, reference_number').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
     setPaymentHistory(data ?? [])
   }
 
@@ -482,6 +483,18 @@ export function InvoicesPage() {
       const { data: inv } = await supabase.from('invoices').select('*').eq('id', editInvoice.id).single()
       if (inv) { setSelected(inv as Invoice); setEditInvoice(inv as Invoice) }
     }
+  }
+
+  const [attachingProofId, setAttachingProofId] = useState<string | null>(null)
+
+  async function handleAttachProof(receiptId: string, file: File | null, hadProof: boolean) {
+    if (!file) return
+    setAttachingProofId(receiptId)
+    const res = await attachReceiptProof(receiptId, file)
+    setAttachingProofId(null)
+    if (!res.ok) { toast.error(res.error ?? 'Could not attach the proof'); return }
+    toast.success(hadProof ? 'Proof replaced' : 'Proof added')
+    if (editInvoice) await loadPaymentHistory(editInvoice.id)
   }
 
   async function handleViewProof(proofUrl: string, id: string, proofBucket?: string | null) {
@@ -1695,6 +1708,16 @@ export function InvoicesPage() {
                               <button onClick={() => handleViewProof(r.proof_url!, r.id, r.proof_bucket)} disabled={viewingProofId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: C.orange, cursor: 'pointer', fontSize: 12 }}>
                                 {viewingProofId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} Proof
                               </button>
+                            )}
+                            {proofMissing(r) && (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#F59E0B', border: '1px solid #F59E0B66', borderRadius: 4, padding: '1px 6px' }}>NO PROOF</span>
+                            )}
+                            {!r.voided_at && canManageProof(user?.role) && (
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.orange, cursor: attachingProofId === r.id ? 'wait' : 'pointer', fontSize: 12 }}>
+                                {attachingProofId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />} {r.proof_url ? 'Replace' : 'Add proof'}
+                                <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf" style={{ display: 'none' }} disabled={attachingProofId === r.id}
+                                  onChange={e => { const f = e.target.files?.[0] ?? null; e.target.value = ''; handleAttachProof(r.id, f, !!r.proof_url) }} />
+                              </label>
                             )}
                             {!r.voided_at && canVoidPayments && (
                               <button onClick={() => handleVoidReceipt(r.id)} disabled={voidingId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: '#EF4444', cursor: 'pointer', fontSize: 12 }}>
