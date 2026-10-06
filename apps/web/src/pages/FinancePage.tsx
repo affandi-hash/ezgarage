@@ -18,6 +18,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { scopedBranchId } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
+import { EzAccPanel } from '@/components/finance/EzAccPanel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,8 @@ interface SupplierPayment {
   notes: string | null
   created_by: string | null
   created_at: string
+  source?: 'manual' | 'ezacc' | null
+  ezacc_payment_id?: string | null
 }
 
 type StatusFilter = 'all' | 'outstanding' | 'unpaid' | 'partial' | 'paid' | 'overdue' | 'voided'
@@ -728,6 +731,7 @@ interface DetailPanelProps {
   tenantId: string
   userId: string
   canVoid: boolean
+  canRecordPayment: boolean
 }
 
 function DetailPanel({
@@ -740,6 +744,7 @@ function DetailPanel({
   tenantId,
   userId,
   canVoid,
+  canRecordPayment,
 }: DetailPanelProps) {
   const supplier = invoice.suppliers
   const balance = invoice.total_amount - invoice.amount_paid
@@ -1191,7 +1196,17 @@ function DetailPanel({
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                      <p style={{ color: '#F0F0F0', fontSize: 14, fontWeight: 700, margin: 0 }}>{formatRM(pay.amount)}</p>
+                      <p style={{ color: '#F0F0F0', fontSize: 14, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {formatRM(pay.amount)}
+                        {pay.source === 'ezacc' && (
+                          <span
+                            title="Recorded automatically from ezAcc"
+                            style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 9999, color: '#A78BFA', background: 'rgba(167,139,250,0.14)' }}
+                          >
+                            ezAcc
+                          </span>
+                        )}
+                      </p>
                       <p style={{ color: '#A0A0A0', fontSize: 12, margin: '3px 0 0' }}>
                         {formatDate(pay.payment_date)} · <span style={{ textTransform: 'capitalize' }}>{pay.payment_method}</span>
                         {pay.reference ? ` · Ref: ${pay.reference}` : ''}
@@ -1230,7 +1245,7 @@ function DetailPanel({
           )}
 
           {/* Add payment */}
-          {!showPaymentForm && !['paid', 'voided'].includes(invoice.status) && (
+          {canRecordPayment && !showPaymentForm && !['paid', 'voided'].includes(invoice.status) && (
             <button
               onClick={() => {
                 const currentBalance = invoice.total_amount - invoice.amount_paid
@@ -1259,7 +1274,7 @@ function DetailPanel({
             </button>
           )}
 
-          {showPaymentForm && (
+          {canRecordPayment && showPaymentForm && (
             <form
               onSubmit={handleSavePayment}
               style={{
@@ -1381,6 +1396,12 @@ function DetailPanel({
                 </button>
               </div>
             </form>
+          )}
+
+          {canRecordPayment && invoice.status !== 'voided' && (
+            <p style={{ color: '#6B7280', fontSize: 11, margin: '8px 0 0' }}>
+              Payments are normally recorded in ezAcc and appear here automatically. Use this only if a payment is not in ezAcc.
+            </p>
           )}
         </div>
 
@@ -1527,6 +1548,7 @@ export function FinancePage() {
   const userId: string = user?.id ?? ''
   const branchId: string = scopedBranchId(user, selectedBranchId) ?? ''
   const canPrioritize = ['ops_manager', 'foreman', 'super_admin'].includes(user?.role ?? '')
+  const canRecordPayment = ['ops_manager', 'super_admin'].includes(user?.role ?? '')
 
   // Data
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([])
@@ -1607,7 +1629,7 @@ export function FinancePage() {
     setPaymentsLoading(true)
     const { data } = await supabase
       .from('supplier_payments')
-      .select('*')
+      .select('*, source, ezacc_payment_id')
       .eq('supplier_invoice_id', invoiceId)
       .order('payment_date', { ascending: false })
     setPayments((data as SupplierPayment[]) ?? [])
@@ -1617,6 +1639,12 @@ export function FinancePage() {
   useEffect(() => {
     if (selectedInvoice) loadPayments(selectedInvoice.id)
   }, [selectedInvoice?.id, loadPayments])
+
+  // After a reload (e.g. an ezAcc payment was matched) keep the open panel's
+  // totals in step with the refreshed list.
+  useEffect(() => {
+    setSelectedInvoice((cur) => (cur ? invoices.find((i) => i.id === cur.id) ?? cur : cur))
+  }, [invoices])
 
   // ── Summary metrics ───────────────────────────────────────────────────────────
 
@@ -1809,6 +1837,16 @@ export function FinancePage() {
             <Plus size={16} /> New Invoice
           </button>
         </div>
+
+        {/* ── ezAcc payments needing review (hidden unless finance/ops/super_admin) ── */}
+        <EzAccPanel
+          tenantId={tenantId}
+          role={user?.role ?? ''}
+          onChanged={() => {
+            loadInvoices()
+            if (selectedInvoice) loadPayments(selectedInvoice.id)
+          }}
+        />
 
         {/* ── Summary cards ── */}
         <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
@@ -2248,6 +2286,7 @@ export function FinancePage() {
             tenantId={tenantId}
             userId={userId}
             canVoid={canPrioritize}
+            canRecordPayment={canRecordPayment}
           />
         </>
       )}
