@@ -84,6 +84,11 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
   const [rows, setRows] = useState<UnmatchedAlloc[]>([])
   const [invInfo, setInvInfo] = useState<Record<string, InvoiceLite>>({})
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
+  const [confirmPayee, setConfirmPayee] = useState<string | null>(null)
+  const [autoIgnored, setAutoIgnored] = useState(0)
+  const [payees, setPayees] = useState<{ payee_key: string; payee_name: string | null }[]>([])
+  const [payeesOpen, setPayeesOpen] = useState(false)
+  const [payeeBusy, setPayeeBusy] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [busyKey, setBusyKey] = useState<string | null>(null)
@@ -102,7 +107,7 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
   const load = useCallback(async () => {
     if (!allowed || !tenantId) return
     const cols = 'ezacc_payment_id, idx, bill_number, supplier_name, amount, note, state, suggested_invoice_id, supplier_invoice_id'
-    const [um, vr] = await Promise.all([
+    const [um, vr, ai, pe] = await Promise.all([
       supabase
         .from('ezacc_allocations')
         .select(`${cols}, ezacc_payments!inner(payment_date, status, reference)`)
@@ -118,7 +123,17 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
         .eq('tenant_id', tenantId)
         .eq('state', 'void_review')
         .eq('user_ignored', false),
+      supabase
+        .from('ezacc_allocations')
+        .select('ezacc_payment_id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('state', 'ignored')
+        .like('note', 'bill dated before%'),
+      supabase.from('ezacc_ignored_payees').select('payee_key, payee_name').eq('tenant_id', tenantId).order('payee_name'),
     ])
+    // footer info is best-effort: a failure here must not hide the review list
+    setAutoIgnored(ai.error ? 0 : ai.count ?? 0)
+    setPayees(pe.error ? [] : ((pe.data as { payee_key: string; payee_name: string | null }[]) ?? []))
     const error = um.error ?? vr.error
     if (error) {
       setLoadError(error.message)
@@ -198,6 +213,24 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
       return false
     } finally {
       setBusyKey(null)
+    }
+  }
+
+  async function payeeRpc(busy: string, fn: 'ezacc_set_payee_ignored' | 'ezacc_restore_payee', args: Record<string, unknown>) {
+    setPayeeBusy(busy)
+    setActionError(null)
+    try {
+      const { data, error } = await supabase.rpc(fn, args)
+      if (error) throw error
+      const res = data as { ok?: boolean; error?: string } | null
+      if (res?.error) throw new Error(res.error)
+      setConfirmPayee(null)
+      await load()
+      onChanged()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setPayeeBusy(null)
     }
   }
 
@@ -302,12 +335,54 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
     <span style={{ fontSize: 12, color: syncMsg.ok ? '#22C55E' : '#EF4444' }}>{syncMsg.text}</span>
   )
 
+  const footer = (
+    <>
+      {autoIgnored > 0 && (
+        <p style={{ margin: '10px 0 0', fontSize: 11, color: '#6B7280' }}>
+          {autoIgnored} {autoIgnored === 1 ? 'bill' : 'bills'} dated before 1 Jul 2026 {autoIgnored === 1 ? 'was' : 'were'} left out automatically.
+        </p>
+      )}
+      {payees.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <button
+            onClick={() => setPayeesOpen((v) => !v)}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11, color: '#A0A0A0' }}
+          >
+            {payeesOpen ? '▾' : '▸'} Payees left out ({payees.length})
+          </button>
+          {payeesOpen && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+              {payees.map((py) => (
+                <div
+                  key={py.payee_key}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 8, padding: '6px 12px' }}
+                >
+                  <span style={{ fontSize: 12, color: '#F0F0F0' }}>{py.payee_name || py.payee_key}</span>
+                  <button
+                    onClick={() => payeeRpc(`restore:${py.payee_key}`, 'ezacc_restore_payee', { p_key: py.payee_key })}
+                    disabled={!!payeeBusy}
+                    style={{ ...btn, minHeight: 28, padding: '4px 10px', color: '#F15A22' }}
+                  >
+                    {payeeBusy === `restore:${py.payee_key}` ? 'Restoring…' : 'Restore'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+
   // Nothing to review: a quiet one-liner (keeps "Sync now" reachable)
   if (rows.length === 0 && !loadError && !syncMsg && !actionError) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, color: '#22C55E' }}>ezAcc feed: all payments matched</span>
-        {syncButton}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: '#22C55E' }}>ezAcc feed: all payments matched</span>
+          {syncButton}
+        </div>
+        {footer}
       </div>
     )
   }
@@ -390,6 +465,23 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
                           {sug.supplier ? ` · ${sug.supplier}` : ''} · {rm(sug.total_amount)} / {rm(sug.total_amount - sug.amount_paid)} due
                         </p>
                       )}
+                      {confirmPayee === key && (
+                        <p style={{ margin: '6px 0 0', fontSize: 12, color: '#F59E0B' }}>
+                          Leave out all payments to {a.supplier_name || 'this payee'}, now and in future?
+                          <span style={{ display: 'inline-flex', gap: 8, marginLeft: 10, verticalAlign: 'middle' }}>
+                            <button
+                              onClick={() => payeeRpc(key, 'ezacc_set_payee_ignored', { p_payment: a.ezacc_payment_id, p_ignored: true })}
+                              disabled={!!payeeBusy}
+                              style={{ ...btn, minHeight: 28, padding: '4px 10px', background: '#F59E0B', borderColor: '#F59E0B', color: '#0E0E0E' }}
+                            >
+                              {payeeBusy === key ? 'Working…' : 'Yes, leave out'}
+                            </button>
+                            <button onClick={() => setConfirmPayee(null)} disabled={!!payeeBusy} style={{ ...btn, minHeight: 28, padding: '4px 10px', color: '#A0A0A0' }}>
+                              Cancel
+                            </button>
+                          </span>
+                        </p>
+                      )}
                       {confirmRemove === key && (
                         <p style={{ margin: '6px 0 0', fontSize: 12, color: '#EF4444' }}>
                           Delete the {rm(a.amount)} payment from invoice {onInv?.invoice_number || '(no number)'}?
@@ -441,6 +533,15 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
                           <button onClick={() => handleIgnore(a)} disabled={busy} style={{ ...btn, color: '#A0A0A0' }}>
                             Ignore
                           </button>
+                          {confirmPayee !== key && (
+                            <button
+                              onClick={() => { setActionError(null); setConfirmPayee(key) }}
+                              disabled={busy}
+                              style={{ ...btn, fontWeight: 500, color: '#6B7280' }}
+                            >
+                              Not a supplier
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
@@ -451,6 +552,8 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
           </div>
         ),
       )}
+
+      {footer}
 
       {/* Invoice picker */}
       {pickFor && (
