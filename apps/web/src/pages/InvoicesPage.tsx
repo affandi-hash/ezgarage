@@ -525,6 +525,22 @@ export function InvoicesPage() {
     setLoading(false)
   }, [user])
 
+  // The list loads 50 at a time. "Unpaid" must show every invoice still owed, however old, so they
+  // are fetched separately and kept apart from the paged list (a reload of the page list must not
+  // wipe them). They are fetched again whenever the page list reloads, so a payment shows at once.
+  const [unpaidAll, setUnpaidAll] = useState<Invoice[]>([])
+  useEffect(() => {
+    if (statusFilter !== 'unpaid') return
+    let cancelled = false
+    ;(async () => {
+      let q = supabase.from('invoices').select('*').in('status', ['sent', 'overdue']).order('created_at', { ascending: false }).limit(1000)
+      if (!canSeeAllBranches(user?.role) && user?.branch_id) q = q.eq('branch_id', user.branch_id)
+      const { data } = await q
+      if (!cancelled && data) setUnpaidAll(data as Invoice[])
+    })()
+    return () => { cancelled = true }
+  }, [statusFilter, invoices, user])
+
   async function loadMoreInvoices() {
     if (loadingMore) return
     setLoadingMore(true)
@@ -848,9 +864,14 @@ export function InvoicesPage() {
 
   // ─── Filtered lists ────────────────────────────────────────────────────────────
 
-  const filtered = invoices.filter(inv => {
+  // Unpaid filter: the freshly loaded page rows win over the separately fetched copies
+  const listSource = statusFilter === 'unpaid'
+    ? [...invoices, ...unpaidAll.filter(u => !invoices.some(i => i.id === u.id))].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+    : invoices
+  const filtered = listSource.filter(inv => {
     const matchSearch = !searchTerm || inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) || (inv.customer_name ?? '').toLowerCase().includes(searchTerm.toLowerCase())
-    const matchStatus = statusFilter === 'all' || inv.status === statusFilter
+    // Unpaid = issued to the customer and not yet settled (sent or overdue); drafts and voids are not owed
+    const matchStatus = statusFilter === 'all' || (statusFilter === 'unpaid' ? ['sent', 'overdue'].includes(inv.status) : inv.status === statusFilter)
     const matchInternal = !internalFilter || inv.is_internal_fleet
     const invDate = inv.issue_date ?? inv.created_at?.slice(0, 10)
     const matchFrom = !dateFrom || invDate >= dateFrom
@@ -909,7 +930,7 @@ export function InvoicesPage() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
-                {['all', 'draft', 'sent', 'paid', 'void'].map(s => (
+                {['all', 'draft', 'sent', 'unpaid', 'paid', 'void'].map(s => (
                   <button key={s} onClick={() => setStatusFilter(s)} style={{ flexShrink: 0, background: statusFilter === s ? C.orange : C.bg, color: statusFilter === s ? '#fff' : C.text2, border: `1px solid ${statusFilter === s ? C.orange : C.border}`, borderRadius: 16, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize' as const }}>
                     {s === 'all' ? 'All' : s}
                   </button>
