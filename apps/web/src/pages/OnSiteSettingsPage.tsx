@@ -1018,8 +1018,8 @@ function RulesTab({ tenantId }: { tenantId: string }) {
 // ── 6. BB Care Day ──────────────────────────────────────────────────────
 // BrainyBunch staff pickup-and-return service: settings plus the BB packages
 // (audience 'bb_staff'), each priced with tier 'bb'.
-type BbForm = { bb_enabled: boolean; bb_capacity_per_day: string; bb_days: number[]; bb_hq_address: string; bb_pickup_note: string; bb_instalment_min: string }
-const BB_DEFAULT: BbForm = { bb_enabled: true, bb_capacity_per_day: '8', bb_days: [1, 2, 3, 4, 5], bb_hq_address: '', bb_pickup_note: '', bb_instalment_min: '500' }
+type BbForm = { bb_enabled: boolean; bb_capacity_per_day: string; bb_days: number[]; bb_hq_address: string; bb_pickup_note: string; bb_instalment_min: string; contact_whatsapp: string }
+const BB_DEFAULT: BbForm = { bb_enabled: true, bb_capacity_per_day: '8', bb_days: [1, 2, 3, 4, 5], bb_hq_address: '', bb_pickup_note: '', bb_instalment_min: '500', contact_whatsapp: '' }
 
 interface BbPrice { id: string; package_id: string; price: number; effective_from: string }
 
@@ -1049,6 +1049,7 @@ function BbSettingsCard({ tenantId }: { tenantId: string }) {
         bb_hq_address: s.bb_hq_address ?? '',
         bb_pickup_note: s.bb_pickup_note ?? '',
         bb_instalment_min: String(s.bb_instalment_min ?? 500),
+        contact_whatsapp: s.contact_whatsapp ?? '',
       })
     }
     setLoading(false)
@@ -1070,6 +1071,7 @@ function BbSettingsCard({ tenantId }: { tenantId: string }) {
     const { error } = await supabase.from('os_settings').upsert({
       tenant_id: tenantId, bb_enabled: f.bb_enabled, bb_capacity_per_day: cap, bb_days: f.bb_days,
       bb_hq_address: f.bb_hq_address.trim() || null, bb_pickup_note: f.bb_pickup_note.trim(), bb_instalment_min: instMin,
+      contact_whatsapp: f.contact_whatsapp.replace(/[\s-]/g, '') || null,
       updated_by: user?.id ?? null,
     }, { onConflict: 'tenant_id' })
     setSaving(false)
@@ -1119,6 +1121,12 @@ function BbSettingsCard({ tenantId }: { tenantId: string }) {
         <Field label="Pickup and return note shown to customers" grow={300}>
           <textarea style={{ ...inp, minHeight: 70, resize: 'vertical' }} value={f.bb_pickup_note} onChange={e => setF(x => ({ ...x, bb_pickup_note: e.target.value }))} />
         </Field>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <Field label="WhatsApp number shown to customers" grow={300}>
+          <input style={inp} inputMode="tel" value={f.contact_whatsapp} onChange={e => setF(x => ({ ...x, contact_whatsapp: e.target.value }))} placeholder="01175931383" />
+        </Field>
+        <div style={{ color: C.mute, fontSize: 12, marginTop: 6 }}>Shown on the booking and status pages as a WhatsApp link.</div>
       </div>
       <p style={helper}>Payment is not taken at booking. The customer pays at return, through the normal workshop invoice. Blackout dates and the booking window come from the other tabs.</p>
       <div style={{ marginTop: 12 }}><Btn onClick={save} disabled={saving}><Save size={15} /> {saving ? 'Saving...' : 'Save BB settings'}</Btn></div>

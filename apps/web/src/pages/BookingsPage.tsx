@@ -51,6 +51,10 @@ const SOURCE_OPTIONS = [
   { value: 'other',      label: 'Other' },
 ]
 
+// 'bb_staff' bookings come from the BB Care Day page, so they are shown and filtered
+// but not offered when staff create a booking by hand.
+const SOURCE_FILTER_OPTIONS = [...SOURCE_OPTIONS, { value: 'bb_staff', label: 'BB Staff' }]
+
 const SOURCE_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
   whatsapp:  { bg: 'rgba(34,197,94,0.2)',   text: '#86EFAC' },
   call:      { bg: 'rgba(59,130,246,0.2)',  text: '#60A5FA' },
@@ -60,6 +64,7 @@ const SOURCE_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
   walk_in:   { bg: 'rgba(107,114,128,0.2)', text: '#9CA3AF' },
   website:   { bg: 'rgba(139,92,246,0.2)', text: '#A78BFA' },
   referral:  { bg: 'rgba(245,158,11,0.2)', text: '#FCD34D' },
+  bb_staff:  { bg: 'rgba(249,115,22,0.2)', text: '#FDBA74' },
 }
 
 const MODE_BADGE_COLORS: Record<string, { bg: string; text: string }> = {
@@ -103,6 +108,8 @@ interface BookingRow extends Booking {
   vehicles?: { plate_number: string; make: string; model: string } | null
   customer_ic_last4?: string | null
   assigned_staff?: string | null
+  customer_id?: string | null
+  vehicle_id?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +179,7 @@ function StatusBadge({ status }: { status: string }) {
 function SourceBadge({ source }: { source: string | null }) {
   if (!source) return <span style={{ color: '#A0A0A0', fontSize: 11 }}>—</span>
   const colors = SOURCE_BADGE_COLORS[source] ?? { bg: 'rgba(107,114,128,0.2)', text: '#9CA3AF' }
-  const label = SOURCE_OPTIONS.find((s) => s.value === source)?.label ?? source
+  const label = SOURCE_FILTER_OPTIONS.find((s) => s.value === source)?.label ?? source
   return (
     <span
       style={{
@@ -185,6 +192,25 @@ function SourceBadge({ source }: { source: string | null }) {
       {label}
     </span>
   )
+}
+
+function BBCareDayBadge() {
+  return (
+    <span
+      style={{
+        backgroundColor: 'rgba(241,90,34,0.2)', color: '#F15A22',
+        padding: '2px 7px', borderRadius: 9999,
+        fontSize: 10, fontWeight: 700,
+        whiteSpace: 'nowrap' as const,
+      }}
+    >
+      BB Care Day
+    </span>
+  )
+}
+
+function fmtBookingTime(t: string | null | undefined) {
+  return t ? t.slice(0, 5) : ''
 }
 
 function ModeBadge({ mode }: { mode: string | null }) {
@@ -740,6 +766,31 @@ function ConvertToJobModal({ booking, branchId, tenantId, onClose, onCreated }: 
 
   const [saving, setSaving] = useState(false)
 
+  // ── Preselect the customer and vehicle already linked to the booking
+  // (BB Care Day bookings are created with both). Staff can still change them.
+  useEffect(() => {
+    let cancelled = false
+    if (booking.customer_id) {
+      supabase.from('customers').select('id, full_name, phone, email').eq('id', booking.customer_id).maybeSingle()
+        .then(({ data }) => {
+          if (cancelled || !data) return
+          setSelCust(data as CustomerRow)
+          setCustMode('selected')
+          setCustResults([])
+        })
+    }
+    if (booking.vehicle_id) {
+      supabase.from('vehicles').select('id, plate_number, make, model, year').eq('id', booking.vehicle_id).maybeSingle()
+        .then(({ data }) => {
+          if (cancelled || !data) return
+          setSelVeh(data as VehicleRow)
+          setVehMode('selected')
+          setVehResults([])
+        })
+    }
+    return () => { cancelled = true }
+  }, [booking.customer_id, booking.vehicle_id])
+
   // ── Customer search ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (custMode !== 'search' || custSearch.trim().length < 2) { setCustResults([]); return }
@@ -1050,7 +1101,7 @@ export function BookingsPage() {
       const { data, error: err } = await supabase
         .from('bookings')
         .select(`
-          id, booking_number, status, booking_date, booking_time,
+          id, booking_number, status, booking_date, booking_time, customer_id, vehicle_id,
           service_type, source, arrival_mode, deposit_amount, deposit_paid,
           customer_name, customer_phone, vehicle_plate, vehicle_brand, vehicle_model,
           customers!customer_id(full_name, phone),
@@ -1247,7 +1298,7 @@ export function BookingsPage() {
             style={{ ...inputStyle, fontSize: 12, padding: '7px 28px 7px 12px', width: 'auto', appearance: 'none' as const, paddingRight: 28 }}
           >
             <option value="all">All Sources</option>
-            {SOURCE_OPTIONS.map((s) => (
+            {SOURCE_FILTER_OPTIONS.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
@@ -1307,7 +1358,7 @@ export function BookingsPage() {
                 const dateStr = booking.booking_date
                   ? new Date(booking.booking_date + 'T00:00').toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' })
                   : '—'
-                const timeStr = booking.booking_time ?? ''
+                const timeStr = fmtBookingTime(booking.booking_time)
                 const serviceLabel = SERVICE_TYPES.find((s) => s.value === booking.service_type)?.label ?? booking.service_type ?? '—'
 
                 return (
@@ -1325,9 +1376,12 @@ export function BookingsPage() {
                     onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.backgroundColor = 'transparent' }}
                   >
                     {/* Booking # */}
-                    <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'rgba(241,90,34,0.9)', fontWeight: 600 }}>
-                      {booking.booking_number ?? '—'}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'rgba(241,90,34,0.9)', fontWeight: 600 }}>
+                        {booking.booking_number ?? '—'}
+                      </span>
+                      {booking.source === 'bb_staff' && <BBCareDayBadge />}
+                    </div>
 
                     {/* Customer */}
                     <div>

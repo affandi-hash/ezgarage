@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: 'Nothing is payable on this booking right now' }), { status: 403, headers: corsHeaders })
       }
       osAmount = Number(ctx.amount)
-      osTitle = `ON-SITE ${ctx.booking_number} ${ctx.kind}`
+      osTitle = ctx.mode === 'bb_pickup' ? `BB Care Day ${ctx.booking_number} payment` : `ON-SITE ${ctx.booking_number} ${ctx.kind}`
       redirect_url = `${Deno.env.get('APP_URL') ?? 'https://ezgarage-web.vercel.app'}/on-site/status/${os_token}`
     } else {
       const verifyRpc = invoice.esp_member_id

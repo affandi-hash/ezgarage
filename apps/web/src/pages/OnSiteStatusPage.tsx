@@ -3,10 +3,17 @@ import { useParams } from 'react-router-dom'
 import { Car, Check, Loader2, Truck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { BB_STATUS_LABEL, fmtDate, OS_STATUS_COLOR, OS_STATUS_LABEL, osError, rm, rmShort, type BbDay, type OsStatus } from '@/lib/onsite'
-import { BbDayPicker, Button, C, Card, Field, Notice, Page, PAYMENT_METHODS, startPayment } from '@/components/onsite/OsUi'
+import { BbDayPicker, Button, C, Card, ContactLine, Field, Notice, Page, PAYMENT_METHODS, startPayment, usePageMeta, usePublicContact } from '@/components/onsite/OsUi'
+
+interface BillPlan {
+  instalment: 1 | 2; pay_now: number; first_amount: number; second_amount: number
+  first_due: string | null; second_due: string | null; amount_paid: number; total: number; overdue: boolean
+}
+interface Bill { invoice_id: string; status: 'sent' | 'overdue' | 'paid'; total: number; paid: number; balance: number; plan: BillPlan | null }
 
 interface Booking {
   error?: string
+  contact_whatsapp?: string | null; access_notes?: string | null; bill?: Bill | null
   service_mode?: 'van' | 'bb_pickup'; staff_id?: string | null; pickup_note?: string | null
   booking_number: string; status: OsStatus; request_type: string
   customer_name: string; vehicle_plate: string; vehicle: string
@@ -43,6 +50,28 @@ const BB_STAGES: { key: OsStatus[]; label: string }[] = [
   { key: ['completed'], label: 'Returned' },
 ]
 
+const FINISHED: OsStatus[] = ['completed', 'cancelled', 'declined', 'expired', 'no_show']
+const DEAD: OsStatus[] = ['cancelled', 'declined', 'expired', 'no_show']
+
+// "2026-11-05" (or a full timestamp) as a short date
+const billDate = (d: string | null | undefined) => (d ? fmtDate(d.slice(0, 10)) : '')
+
+// is the customer still expected to pay something?
+function owesMoney(b: Booking): boolean {
+  if (b.service_mode === 'bb_pickup') return !!b.bill && b.bill.status !== 'paid' && b.bill.balance > 0.009
+  return b.status === 'completed' && (b.balance_due ?? 0) > 0.009
+}
+
+// how often to refresh, in ms (0 = not at all)
+function pollInterval(b: Booking | null): number {
+  if (!b) return 0
+  if (b.status === 'awaiting_deposit') return 5000
+  // someone may be paying right now: pick up "Fully paid" without a refresh
+  if (owesMoney(b) && !DEAD.includes(b.status)) return 5000
+  if (FINISHED.includes(b.status)) return 0
+  return 20000
+}
+
 function fmtTime(ts: string | null) {
   return ts ? new Date(ts).toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''
 }
@@ -60,6 +89,9 @@ export function OnSiteStatusPage() {
   const [slotId, setSlotId] = useState('')
   const [bbDays, setBbDays] = useState<BbDay[]>([])
   const [now, setNow] = useState(Date.now())
+  const publicContact = usePublicContact(null, missing)
+  usePageMeta(b ? `Your booking ${b.booking_number} | Motoverse` : 'Your booking | Motoverse',
+    'See the latest on your Motoverse booking, and pay or change it here.')
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.rpc('os_get_booking', { p_token: token })
@@ -69,18 +101,25 @@ export function OnSiteStatusPage() {
   }, [token])
 
   useEffect(() => { load() }, [load])
-  // poll while something is still moving (payment confirming, technician travelling)
+  // poll while something is still moving (payment confirming, technician travelling, money still owed)
+  const pollMs = pollInterval(b)
   useEffect(() => {
-    if (!b || ['completed', 'cancelled', 'declined', 'expired', 'no_show'].includes(b.status)) return
-    const t = setInterval(load, b.status === 'awaiting_deposit' ? 5000 : 20000)
+    if (!pollMs) return
+    const t = setInterval(load, pollMs)
     return () => clearInterval(t)
-  }, [b, load])
+  }, [pollMs, load])
+  // coming back from the payment page: refresh at once
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [load])
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [])
 
-  async function pay() {
-    if (!b?.invoice_id) return
+  async function pay(invoiceId: string | null | undefined = b?.invoice_id) {
+    if (!invoiceId) return
     setBusy(true); setErr('')
-    const r = await startPayment(b.invoice_id, token, method)
+    const r = await startPayment(invoiceId, token, method)
     if (r.url) { window.location.href = r.url; return }
     setBusy(false); setErr(r.error ?? 'Could not start the payment.')
   }
@@ -111,16 +150,17 @@ export function OnSiteStatusPage() {
     load()
   }
 
-  if (missing) return <Page><Notice tone="error">We could not find this booking. Please check the link in your email.</Notice></Page>
+  if (missing) return <Page><Notice tone="error">We could not find this booking. Please check the link you were sent, or WhatsApp us and we will help.</Notice><ContactLine number={publicContact} inline /></Page>
   if (!b) return <Page><div style={{ textAlign: 'center', padding: 60 }}><Loader2 className="animate-spin" color={C.orange} /></div></Page>
 
-  const live = !['cancelled', 'declined', 'expired', 'no_show'].includes(b.status)
+  const live = !DEAD.includes(b.status)
   const isBb = b.service_mode === 'bb_pickup'
   const stages = isBb ? BB_STAGES : STAGES
   const stageIdx = stages.findIndex(s => s.key.includes(b.status))
   const holdLeft = b.hold_expires_at ? Math.max(0, Math.floor((new Date(b.hold_expires_at).getTime() - now) / 1000)) : 0
   const selectedDay = days.find(d => d.date === date)
   const statusColor = OS_STATUS_COLOR[b.status]
+  const bill = isBb ? b.bill ?? null : null
 
   return (
     <Page>
@@ -159,7 +199,7 @@ export function OnSiteStatusPage() {
             ? <div style={{ color: C.amber, fontSize: 14, marginBottom: 12 }}>We are holding your slot for {Math.floor(holdLeft / 60)}:{String(holdLeft % 60).padStart(2, '0')}</div>
             : <div style={{ color: C.muted, fontSize: 14, marginBottom: 12 }}>Checking your payment…</div>}
           <MethodPicker method={method} setMethod={setMethod} />
-          <Button busy={busy} onClick={pay}>Pay deposit {rm(b.deposit_amount)}</Button>
+          <Button busy={busy} onClick={() => pay()}>Pay deposit {rm(b.deposit_amount)}</Button>
         </Card>
       )}
 
@@ -167,10 +207,26 @@ export function OnSiteStatusPage() {
         <Card style={{ marginBottom: 12 }}>
           <div style={{ fontWeight: 700, marginBottom: 10 }}>Balance to pay: {rm(b.balance_due)}</div>
           <MethodPicker method={method} setMethod={setMethod} />
-          <Button busy={busy} onClick={pay}>Pay balance {rm(b.balance_due)}</Button>
+          <Button busy={busy} onClick={() => pay()}>Pay balance {rm(b.balance_due)}</Button>
         </Card>
       )}
       {!isBb && b.status === 'completed' && (b.balance_due ?? 1) <= 0.009 && <Notice tone="ok">Fully paid. Thank you!</Notice>}
+
+      {bill && (
+        <Card style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Your bill</div>
+          <Row k="Total" v={rm(bill.total)} />
+          <Row k="Paid so far" v={rm(bill.paid)} />
+          <Row k="Balance" v={rm(Math.max(0, bill.balance))} />
+          {(bill.status === 'paid' || bill.balance <= 0.009) ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.green, fontWeight: 700, fontSize: 15, marginTop: 10 }}>
+              <Check size={16} /> Paid. Thank you!
+            </div>
+          ) : (
+            <BillDue bill={bill} live={live} busy={busy} method={method} setMethod={setMethod} onPay={() => pay(bill.invoice_id)} />
+          )}
+        </Card>
+      )}
 
       {isBb ? (
         <Card style={{ marginBottom: 12 }}>
@@ -179,10 +235,12 @@ export function OnSiteStatusPage() {
           <Row k="Package" v={b.package_name ?? ''} />
           <Row k="Collect from" v={b.address ?? 'BB HQ'} />
           <Row k="Date" v={b.service_date ? fmtDate(b.service_date) : 'To be confirmed'} />
-          {b.price_total != null && <>
+          {b.access_notes && <Row k="Your note" v={b.access_notes} />}
+          {b.price_total != null && !bill && <>
             <div style={{ borderTop: `1px solid ${C.border}`, margin: '8px 0' }} />
-            <Row k="Price" v={`${rmShort(b.price_total)} (BB staff price)`} />
-            {live && <div style={{ color: C.muted, fontSize: 13, marginTop: 6 }}>Payment is made when your car is returned.</div>}
+            <Row k="Package price" v={`${rmShort(b.price_total)} (BB staff price)`} />
+            {live && !bill && (b.status === 'in_progress' || b.status === 'arrived') && <div style={{ color: C.muted, fontSize: 13, marginTop: 6 }}>Your bill will appear here when your car is ready.</div>}
+            {live && !bill && b.status !== 'in_progress' && b.status !== 'arrived' && b.status !== 'completed' && <div style={{ color: C.muted, fontSize: 13, marginTop: 6 }}>Payment is made when your car is returned.</div>}
           </>}
         </Card>
       ) : (
@@ -191,12 +249,13 @@ export function OnSiteStatusPage() {
         <Row k="Service" v={`${b.package_name ?? ''}${b.grade_name ? ` (${b.grade_name})` : ''}`} />
         <Row k="Where" v={b.address ?? ''} />
         <Row k="When" v={b.service_date ? `${fmtDate(b.service_date)}${b.slot_label ? `, ${b.slot_label}` : ''}` : 'To be confirmed'} />
+        {b.access_notes && <Row k="Your note" v={b.access_notes} />}
         {b.price_total != null && <>
           <div style={{ borderTop: `1px solid ${C.border}`, margin: '8px 0' }} />
           <Row k="Total" v={rm(b.price_total)} />
           <Row k="Paid so far" v={rm(b.amount_paid)} />
           {/* nothing is owed on a booking that was cancelled, declined, expired or missed */}
-          {!['cancelled', 'declined', 'expired', 'no_show'].includes(b.status) && <Row k="Balance" v={rm(b.balance_due)} />}
+          {live && <Row k="Balance" v={rm(b.balance_due)} />}
         </>}
       </Card>
       )}
@@ -307,6 +366,7 @@ export function OnSiteStatusPage() {
       <div style={{ color: C.muted, fontSize: 12, textAlign: 'center', marginTop: 24 }}>
         <Check size={12} style={{ verticalAlign: -2 }} /> Keep this page. It is your private link for this booking.
       </div>
+      <ContactLine number={b.contact_whatsapp} />
     </Page>
   )
 }
@@ -340,7 +400,38 @@ function bbHeadline(b: Booking): string {
 }
 
 function Row({ k, v }: { k: string; v: string }) {
-  return <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 14, padding: '3px 0' }}><span style={{ color: C.muted }}>{k}</span><span style={{ textAlign: 'right' }}>{v}</span></div>
+  return <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 14, padding: '3px 0' }}><span style={{ color: C.muted, flexShrink: 0 }}>{k}</span><span style={{ textAlign: 'right', overflowWrap: 'anywhere' }}>{v}</span></div>
+}
+
+// What is still owed on a BB bill: the plan wording, the payment method and the pay button.
+function BillDue({ bill, live, busy, method, setMethod, onPay }: {
+  bill: Bill; live: boolean; busy: boolean; method: string; setMethod: (m: string) => void; onPay: () => void
+}) {
+  const plan = bill.plan
+  const amount = plan ? plan.pay_now : bill.balance
+  const overdue = plan ? plan.overdue : bill.status === 'overdue'
+  let planText = ''
+  if (plan) {
+    const due = billDate(plan.second_due)
+    planText = plan.instalment === 2
+      ? `This is your last payment${due ? `, due on ${due}` : ''}.`
+      : `Payment plan: pay ${rm(plan.pay_now)} now (payment 1 of 2). The other payment, ${rm(plan.second_amount)}, is due${due ? ` on ${due}` : ' later'}.`
+    if (plan.instalment === 2) planText = `Payment plan: pay ${rm(plan.pay_now)} now (payment 2 of 2). ${planText}`
+  }
+  return (
+    <div style={{ marginTop: 10 }}>
+      {overdue && (
+        <span style={{ display: 'inline-block', background: `${C.red}22`, color: C.red, borderRadius: 20, padding: '3px 10px', fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Overdue</span>
+      )}
+      {planText && <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.5, marginBottom: 12 }}>{planText}</div>}
+      {live && amount > 0.009 && (
+        <>
+          <MethodPicker method={method} setMethod={setMethod} />
+          <Button busy={busy} onClick={onPay}>Pay {rm(amount)}</Button>
+        </>
+      )}
+    </div>
+  )
 }
 
 function MethodPicker({ method, setMethod }: { method: string; setMethod: (m: string) => void }) {

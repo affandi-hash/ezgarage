@@ -164,11 +164,12 @@ interface ContentProps {
   onNavClick?: () => void
   showCollapseToggle?: boolean
   pendingProofCount: number
+  onsitePendingCount: number
 }
 
 function SidebarContent({
   collapsed, setCollapsed, logoutHover, setLogoutHover,
-  branchLogoUrl, visibleGroups, signOut, onNavClick, showCollapseToggle = true, pendingProofCount,
+  branchLogoUrl, visibleGroups, signOut, onNavClick, showCollapseToggle = true, pendingProofCount, onsitePendingCount,
 }: ContentProps) {
   return (
     <>
@@ -210,6 +211,7 @@ function SidebarContent({
                     title={collapsed ? item.label : undefined}
                     onClick={onNavClick}
                     style={({ isActive }) => ({
+                      position: 'relative' as const,
                       display: 'flex',
                       alignItems: 'center',
                       gap: collapsed ? 0 : 10,
@@ -231,6 +233,21 @@ function SidebarContent({
                         {!collapsed && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, flex: 1 }}>{item.label}</span>}
                         {!collapsed && item.to === '/payment-verifications' && pendingProofCount > 0 && (
                           <span style={{ background: '#F15A22', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>{pendingProofCount}</span>
+                        )}
+                        {item.to === '/onsite-bookings' && onsitePendingCount > 0 && (
+                          collapsed ? (
+                            <span
+                              title={`${onsitePendingCount} waiting for staff`}
+                              style={{ position: 'absolute', top: 6, right: 14, width: 8, height: 8, borderRadius: '50%', background: '#F15A22' }}
+                            />
+                          ) : (
+                            <span
+                              title={`${onsitePendingCount} waiting for staff`}
+                              style={{ background: '#F15A22', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}
+                            >
+                              {onsitePendingCount}
+                            </span>
+                          )
                         )}
                       </>
                     )}
@@ -293,6 +310,35 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
       .then(({ count }) => setPendingProofCount(count ?? 0))
   }, [user?.role])
 
+  // ON-SITE Bookings badge: new requests waiting for approval plus deposit refunds
+  // that are due. RLS already scopes both counts; errors are ignored on purpose.
+  const [onsitePendingCount, setOnsitePendingCount] = useState(0)
+  const canSeeOnsite = !!user && NAV_GROUPS.some(g => g.items.some(i => i.to === '/onsite-bookings' && i.roles.includes(user.role)))
+  useEffect(() => {
+    if (!canSeeOnsite) { setOnsitePendingCount(0); return }
+    let cancelled = false
+    async function refresh() {
+      try {
+        const [requested, refunds] = await Promise.all([
+          supabase.from('os_bookings').select('id', { count: 'exact', head: true }).eq('status', 'requested'),
+          supabase.from('os_bookings').select('id', { count: 'exact', head: true }).eq('deposit_status', 'refund_due'),
+        ])
+        if (cancelled || requested.error || refunds.error) return
+        setOnsitePendingCount((requested.count ?? 0) + (refunds.count ?? 0))
+      } catch {
+        // ignore: the badge is only a hint
+      }
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 60_000)
+    window.addEventListener('focus', refresh)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+    }
+  }, [canSeeOnsite])
+
   if (!user) return null
 
   const visibleGroups = NAV_GROUPS
@@ -301,7 +347,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
 
   const contentProps: ContentProps = {
     collapsed, setCollapsed, logoutHover, setLogoutHover,
-    branchLogoUrl, visibleGroups, signOut, pendingProofCount,
+    branchLogoUrl, visibleGroups, signOut, pendingProofCount, onsitePendingCount,
   }
 
   // Mobile: slide-in drawer with backdrop

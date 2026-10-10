@@ -185,7 +185,9 @@ export function SplitPaymentModal({ invoiceId, total, onClose, onDone }: {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const cleanId = staffId.replace(/\s+/g, '').toUpperCase()
+  // BB1234, bb 1234 or just 1234 all mean the same staff ID
+  const rawId = staffId.replace(/\s+/g, '').toUpperCase()
+  const cleanId = /^[0-9]{4}$/.test(rawId) ? `BB${rawId}` : rawId
   const firstNum = Math.round((Number(first) || 0) * 100) / 100
   const secondNum = Math.round((total - firstNum) * 100) / 100
   const idOk = /^BB[0-9]{4}$/.test(cleanId)

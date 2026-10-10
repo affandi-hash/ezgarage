@@ -274,23 +274,31 @@ function CompleteFlow({ b, onClose, onDone }: { b: Row; onClose: () => void; onD
 
   const setItem = (item: string, patch: Partial<Health>) => setHealth(h => ({ ...h, [item]: { ...h[item], ...patch } }))
 
-  async function createQuote() {
+  // Returns true when the quotation was created.
+  async function createQuote(): Promise<boolean> {
     const total = Number(quoteTotal)
-    if (!(total >= 0) || quoteTotal === '') return toast('Enter the quotation total', 'error')
+    if (!(total >= 0) || quoteTotal === '') { toast('Enter the quotation total', 'error'); return false }
     setQuoting(true)
     const notesText = quoteNotes.trim()
       || flagged.map(i => `${i} (${health[i].status})${health[i].note ? `: ${health[i].note}` : ''}`).join('\n')
     const { data, error } = await supabase.rpc('os_create_hub_quote', { p_booking: b.id, p_total: total, p_notes: notesText })
     setQuoting(false)
-    if (error) return toast(error.message, 'error')
+    if (error) { toast(error.message, 'error'); return false }
     const res = data as { ok?: boolean; error?: string; quote_number?: string }
-    if (res?.error) return toast(osError(res.error), 'error')
+    if (res?.error) { toast(osError(res.error), 'error'); return false }
     setQuoteNo(res.quote_number ?? null)
     toast('Hub quotation created')
+    return true
   }
 
   async function save() {
+    if (saving || quoting) return
     setSaving(true)
+    // A total was typed but the quotation button was never pressed: create it first.
+    if (flagged.length > 0 && quoteTotal.trim() !== '' && !b.hub_quote_id && !quoteNo) {
+      const ok = await createQuote()
+      if (!ok) { setSaving(false); return }
+    }
     const { error } = await supabase.from('os_bookings').update({
       photos_before: before,
       photos_after: after,
@@ -390,7 +398,7 @@ function CompleteFlow({ b, onClose, onDone }: { b: Row; onClose: () => void; onD
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <input type="number" inputMode="decimal" min="0" step="0.01" placeholder="Quotation total (RM)" value={quoteTotal} onChange={e => setQuoteTotal(e.target.value)} style={inp} />
               <textarea placeholder="Notes (defaults to the flagged items)" value={quoteNotes} onChange={e => setQuoteNotes(e.target.value)} rows={2} style={{ ...inp, resize: 'vertical' }} />
-              <button onClick={createQuote} disabled={quoting} style={btn('ghost', quoting)}>{quoting && <Loader2 size={16} className="animate-spin" />} Create Hub quotation</button>
+              <button onClick={() => { void createQuote() }} disabled={quoting || saving} style={btn('ghost', quoting || saving)}>{quoting && <Loader2 size={16} className="animate-spin" />} Create Hub quotation</button>
             </div>
           )}
         </Step>
@@ -400,6 +408,12 @@ function CompleteFlow({ b, onClose, onDone }: { b: Row; onClose: () => void; onD
         <p style={{ margin: 0, color: '#F0F0F0', fontSize: 14, fontWeight: 600 }}>Balance due {rm(balance)}</p>
         <p style={{ margin: '4px 0 0', color: '#A0A0A0', fontSize: 12 }}>The customer pays through the link we email after you complete the job.</p>
       </div>
+
+      {flagged.length > 0 && quoteTotal.trim() === '' && !b.hub_quote_id && !quoteNo && (
+        <p style={{ margin: '0 0 10px', color: '#F59E0B', fontSize: 13, lineHeight: 1.5 }}>
+          Items need attention. Add a quotation total above if the customer should get a quote.
+        </p>
+      )}
 
       <button onClick={save} disabled={saving} style={{ ...btn('primary', saving, true), width: '100%' }}>
         {saving ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />} Complete service

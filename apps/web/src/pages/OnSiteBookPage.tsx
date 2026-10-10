@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { CheckCircle2, ChevronLeft, Loader2, Truck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { makeOptionsFor, modelOptionsFor, OTHER } from '@/lib/vehicleMakes'
-import { fmtDate, normStaffId, osError, rm, rmShort, staffIdOk, type BbDay } from '@/lib/onsite'
-import { BbDayPicker, Button, C, Card, Field, inputStyle, Notice, Page, PAYMENT_METHODS, startPayment } from '@/components/onsite/OsUi'
+import { clearDraft, draftStr, fmtDate, loadDraft, normStaffId, osError, rm, rmShort, saveDraft, staffIdOk, type BbDay } from '@/lib/onsite'
+import { BbDayPicker, Button, C, Card, ContactLine, Field, inputStyle, Notice, Page, PAYMENT_METHODS, startPayment, usePageMeta, usePublicContact } from '@/components/onsite/OsUi'
 
 interface Pkg { id: string; name: string; description: string | null; duration_min: number; grades: { id: string; name: string }[]; tiers: string[] }
 interface BbPkg { id: string; name: string; description: string | null; price: number | null }
@@ -23,6 +23,9 @@ interface Day { date: string; slots: { slot_id: string; label: string; available
 
 const STEPS = ['Vehicle', 'Package', 'Address', 'Time', 'Confirm']
 const BB_STEPS = ['Details', 'Car', 'Day', 'Confirm']
+const VAN_DRAFT = 'os_draft_v1_van'
+const BB_DRAFT = 'os_draft_v1_bb'
+const META_DESCRIPTION = 'Book Motoverse Garage ON-SITE service, or BB Staff Car Care Day pickup and return.'
 const mobileOk = (phone: string) => /^01\d{8,9}$/.test(phone.replace(/\D/g, '').replace(/^60/, '0'))
 
 export function OnSiteBookPage() {
@@ -35,28 +38,38 @@ export function OnSiteBookPage() {
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [draft] = useState(() => loadDraft(VAN_DRAFT))
+  const contact = usePublicContact(slug)
+  usePageMeta(flow === 'bb' ? 'BB Staff Car Care Day | Motoverse' : 'Book a service | Motoverse ON-SITE', META_DESCRIPTION)
 
-  const [vType, setVType] = useState<'car' | 'bike'>('car')
-  const [make, setMake] = useState('')
-  const [makeOther, setMakeOther] = useState('')
-  const [model, setModel] = useState('')
-  const [modelOther, setModelOther] = useState('')
-  const [plate, setPlate] = useState('')
+  const [vType, setVType] = useState<'car' | 'bike'>(draft.vType === 'bike' ? 'bike' : 'car')
+  const [make, setMake] = useState(draftStr(draft, 'make'))
+  const [makeOther, setMakeOther] = useState(draftStr(draft, 'makeOther'))
+  const [model, setModel] = useState(draftStr(draft, 'model'))
+  const [modelOther, setModelOther] = useState(draftStr(draft, 'modelOther'))
+  const [plate, setPlate] = useState(draftStr(draft, 'plate'))
   const [pkgId, setPkgId] = useState('')
   const [gradeId, setGradeId] = useState('')
-  const [address, setAddress] = useState('')
-  const [postcode, setPostcode] = useState('')
-  const [access, setAccess] = useState('')
+  const [address, setAddress] = useState(draftStr(draft, 'address'))
+  const [postcode, setPostcode] = useState(draftStr(draft, 'postcode'))
+  const [access, setAccess] = useState(draftStr(draft, 'access'))
   const [quote, setQuote] = useState<Quote | null>(null)
   const [days, setDays] = useState<Day[]>([])
   const [date, setDate] = useState('')
   const [slotId, setSlotId] = useState('')
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
+  const [name, setName] = useState(draftStr(draft, 'name'))
+  const [phone, setPhone] = useState(draftStr(draft, 'phone'))
+  const [email, setEmail] = useState(draftStr(draft, 'email'))
   const [method, setMethod] = useState('fpx')
   const [requestMode, setRequestMode] = useState<null | { reason: string }>(null)
-  const [requestNote, setRequestNote] = useState('')
+  const [requestNote, setRequestNote] = useState(draftStr(draft, 'requestNote'))
+  const draftDone = useRef(false)
+
+  // keep what the customer typed (never the payment method) so a refresh does not lose it
+  useEffect(() => {
+    if (draftDone.current) return
+    saveDraft(VAN_DRAFT, { vType, make, makeOther, model, modelOther, plate, address, postcode, access, name, phone, email, requestNote })
+  }, [vType, make, makeOther, model, modelOther, plate, address, postcode, access, name, phone, email, requestNote])
 
   useEffect(() => {
     supabase.rpc('os_get_public_config', { p_tenant_slug: slug }).then(({ data, error }) => {
@@ -128,13 +141,15 @@ export function OnSiteBookPage() {
       if (data.error === 'slot_taken' || data.error === 'too_soon') { setStep(3); setDate(''); setSlotId('') }
       return reset(osError(data.error))
     }
+    draftDone.current = true
+    clearDraft(VAN_DRAFT)
     if (special) { window.location.href = `/on-site/status/${data.token}`; return }
     const pay = await startPayment(data.invoice_id, data.token, method)
     if (pay.error || !pay.url) { window.location.href = `/on-site/status/${data.token}`; return }
     window.location.href = pay.url
   }
 
-  if (loadErr) return <Page><Notice tone="error">{loadErr}</Notice></Page>
+  if (loadErr) return <Page><Notice tone="error">{loadErr}</Notice><ContactLine number={contact} inline /></Page>
   if (!cfg) return <Page><div style={{ textAlign: 'center', padding: 60 }}><Loader2 className="animate-spin" color={C.orange} /></div></Page>
 
   const bb = cfg.bb ?? null
@@ -155,13 +170,19 @@ export function OnSiteBookPage() {
           For BrainyBunch staff. We collect your car at BB HQ, service and wash it, and return it before the end of the day.
           {from != null && <span style={{ display: 'block', marginTop: 6, color: C.orange, fontWeight: 700 }}>From {rmShort(from)}. Pay when your car is returned.</span>}
         </ChoiceCard>
+        <ContactLine number={contact} />
       </Page>
     )
   }
-  if (bb && flow === 'bb') return <Page><BbFlow slug={slug} bb={bb} onChoice={() => setFlow(null)} /></Page>
+  if (bb && flow === 'bb') return <Page><BbFlow slug={slug} bb={bb} onChoice={() => setFlow(null)} /><ContactLine number={contact} /></Page>
 
   const selectedDay = days.find(d => d.date === date)
-  const back = () => { setErr(''); setRequestMode(null); setStep(s => Math.max(0, s - 1)) }
+  const back = () => {
+    setErr(''); setRequestMode(null)
+    // the request form lives on the Address step: Back goes to the address fields, not the Package step
+    if (step === 2 && requestMode) return
+    setStep(s => Math.max(0, s - 1))
+  }
 
   return (
     <Page>
@@ -199,7 +220,7 @@ export function OnSiteBookPage() {
           <Field label="Plate number">
             <input style={{ ...inputStyle, textTransform: 'uppercase' }} placeholder="e.g. VAB 1234" value={plate} onChange={e => setPlate(e.target.value)} />
           </Field>
-          {tier === 'hub_only' && <Notice tone="warn">This vehicle is serviced at our workshop, not by the van. Please contact Motoverse Garage to book.</Notice>}
+          {tier === 'hub_only' && <Notice tone="warn">This vehicle is serviced at our workshop, not by the van. Please contact Motoverse Garage to book.<ContactLine number={contact} inline /></Notice>}
           {!vehicleOk && tier !== 'hub_only' && <div style={{ color: C.muted, fontSize: 13, marginBottom: 8 }}>{!makeValue ? 'Choose your make.' : !modelValue ? 'Choose your model.' : 'Enter your plate number.'}</div>}
           <Button disabled={!vehicleOk || tier === 'hub_only'} onClick={() => { setErr(''); setStep(1) }}>Continue</Button>
         </Card>
@@ -344,6 +365,7 @@ export function OnSiteBookPage() {
           <div style={{ marginTop: 12 }}><Button variant="ghost" onClick={back}>Back</Button></div>
         </>
       )}
+      <ContactLine number={contact} />
     </Page>
   )
 }
@@ -401,20 +423,28 @@ function BbFlow({ slug, bb, onChoice }: { slug: string | null; bb: BbConfig; onC
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
-  const [staffId, setStaffId] = useState('')
-  const [make, setMake] = useState('')
-  const [makeOther, setMakeOther] = useState('')
-  const [model, setModel] = useState('')
-  const [modelOther, setModelOther] = useState('')
-  const [plate, setPlate] = useState('')
+  const [draft] = useState(() => loadDraft(BB_DRAFT))
+  const [name, setName] = useState(draftStr(draft, 'name'))
+  const [phone, setPhone] = useState(draftStr(draft, 'phone'))
+  const [email, setEmail] = useState(draftStr(draft, 'email'))
+  const [staffId, setStaffId] = useState(draftStr(draft, 'staffId'))
+  const [make, setMake] = useState(draftStr(draft, 'make'))
+  const [makeOther, setMakeOther] = useState(draftStr(draft, 'makeOther'))
+  const [model, setModel] = useState(draftStr(draft, 'model'))
+  const [modelOther, setModelOther] = useState(draftStr(draft, 'modelOther'))
+  const [plate, setPlate] = useState(draftStr(draft, 'plate'))
   const [pkgId, setPkgId] = useState('')
   const [days, setDays] = useState<BbDay[] | null>(null)
   const [daysFailed, setDaysFailed] = useState(false)
   const [date, setDate] = useState('')
-  const [notes, setNotes] = useState('')
+  const [notes, setNotes] = useState(draftStr(draft, 'notes'))
+  const draftDone = useRef(false)
+
+  // keep what the customer typed so a refresh does not lose it
+  useEffect(() => {
+    if (draftDone.current) return
+    saveDraft(BB_DRAFT, { name, phone, email, staffId, make, makeOther, model, modelOther, plate, notes })
+  }, [name, phone, email, staffId, make, makeOther, model, modelOther, plate, notes])
 
   // one package on offer: choose it for the customer
   useEffect(() => {
@@ -456,6 +486,8 @@ function BbFlow({ slug, bb, onChoice }: { slug: string | null; bb: BbConfig; onC
       else if (['invalid_staff_id', 'invalid_details', 'invalid_email'].includes(code)) setStep(0)
       setBusy(false); setErr(osError(code)); return
     }
+    draftDone.current = true
+    clearDraft(BB_DRAFT)
     window.location.href = `/on-site/status/${data.token}`
   }
 
@@ -488,13 +520,13 @@ function BbFlow({ slug, bb, onChoice }: { slug: string | null; bb: BbConfig; onC
             <Field label="Email (optional)" hint={email.trim() !== '' && !emailOk ? 'That email address does not look right.' : 'We send your booking updates here.'}>
               <input style={inputStyle} type="email" value={email} onChange={e => setEmail(e.target.value)} />
             </Field>
-            <Field label="BB staff ID" hint={staffId.trim() !== '' && !staffOk ? 'Your staff ID is BB followed by 4 digits, like BB1234.' : undefined}>
+            <Field label="BB staff ID" hint={staffOk ? undefined : 'Your staff ID: BB1234, or just the 4 digits.'}>
               <input style={{ ...inputStyle, textTransform: 'uppercase' }} placeholder="BB1234" autoCapitalize="characters" autoComplete="off" maxLength={12}
                 value={staffId} onChange={e => setStaffId(e.target.value.toUpperCase())} />
             </Field>
           </Card>
           <BackNext onBack={back} nextDisabled={!detailsOk}
-            hint={name.trim() === '' ? 'Enter your name.' : !phoneOk ? 'Enter a Malaysian mobile number.' : !emailOk ? 'Check your email address, or leave it empty.' : 'Enter your BB staff ID, like BB1234.'}
+            hint={name.trim() === '' ? 'Enter your name.' : !phoneOk ? 'Enter a Malaysian mobile number.' : !emailOk ? 'Check your email address, or leave it empty.' : 'Enter your BB staff ID: BB1234, or just the 4 digits.'}
             onNext={() => { setErr(''); setStep(1) }} />
         </>
       )}

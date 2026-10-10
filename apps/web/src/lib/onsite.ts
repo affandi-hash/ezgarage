@@ -118,7 +118,7 @@ export const OS_ERRORS: Record<string, string> = {
   day_not_served: 'We do not work on that day. Please pick another day.',
   outside_window: 'That date is outside the booking window. Please pick another day.',
   too_soon: 'That time is too close to book online. Please pick another.',
-  invalid_staff_id: 'Enter your BB staff ID, like BB1234.',
+  invalid_staff_id: 'Enter your BB staff ID, like BB1234, or just the 4 digits.',
   day_full: 'That day is full. Please pick another day.',
   date_required: 'Please pick a day.',
   too_late: 'It is too late to reschedule. You can still cancel, but the deposit is not refundable.',
@@ -149,9 +149,46 @@ export const BB_STATUS_LABEL: Partial<Record<OsStatus, string>> = {
   completed: 'Returned',
 }
 
-// Staff ID is "BB" + 4 digits; case and spaces are ignored (the server normalises the same way).
-export const normStaffId = (s: string) => s.replace(/\s/g, '').toUpperCase()
+// Staff ID is "BB" + 4 digits. Customers may type just the 4 digits, and case and spaces are ignored.
+export function normStaffId(s: string): string {
+  const t = s.replace(/\s/g, '').toUpperCase()
+  return /^[0-9]{4}$/.test(t) ? `BB${t}` : t
+}
 export const staffIdOk = (s: string) => /^BB[0-9]{4}$/.test(normStaffId(s))
+
+// WhatsApp contact: "01175931383" shows as "011-7593 1383" and links to wa.me with the country code.
+function contactDigits(n: string | null | undefined): string {
+  const d = (n ?? '').replace(/\D/g, '')
+  return d.length >= 8 ? d : ''
+}
+export function formatContact(n: string | null | undefined): string {
+  const d = contactDigits(n)
+  if (!d) return ''
+  return d.length === 11 && d.startsWith('0') ? `${d.slice(0, 3)}-${d.slice(3, 7)} ${d.slice(7)}` : d
+}
+export function contactLink(n: string | null | undefined): string {
+  const d = contactDigits(n)
+  if (!d) return ''
+  return `https://wa.me/${d.startsWith('60') ? d : '60' + d.replace(/^0/, '')}`
+}
+
+// Booking form drafts kept in sessionStorage so a refresh does not lose what was typed.
+// Never put a payment method or a token in a draft.
+export type Draft = Record<string, unknown>
+export function loadDraft(key: string): Draft {
+  try {
+    const raw = sessionStorage.getItem(key)
+    const o = raw ? JSON.parse(raw) : null
+    return o && typeof o === 'object' && !Array.isArray(o) ? (o as Draft) : {}
+  } catch { return {} }
+}
+export function saveDraft(key: string, data: Draft): void {
+  try { sessionStorage.setItem(key, JSON.stringify(data)) } catch { /* storage unavailable */ }
+}
+export function clearDraft(key: string): void {
+  try { sessionStorage.removeItem(key) } catch { /* storage unavailable */ }
+}
+export const draftStr = (d: Draft, k: string): string => (typeof d[k] === 'string' ? (d[k] as string) : '')
 
 // "RM 199" for whole amounts, "RM 199.50" otherwise.
 export function rmShort(n: number | null | undefined): string {
