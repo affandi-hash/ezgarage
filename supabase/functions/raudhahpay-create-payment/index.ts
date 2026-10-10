@@ -109,7 +109,13 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Invoice is already fully paid' }), { status: 400, headers: corsHeaders })
     }
 
-    const amount = osAmount ?? (requestedAmount ? Number(requestedAmount) : Number(invoice.balance_due))
+    // An invoice on a two-payment plan (BB staff) asks for the instalment that is due now, not the whole balance.
+    let planAmount: number | null = null
+    if (osAmount == null && !requestedAmount) {
+      const { data: next } = await supabase.rpc('invoice_plan_next', { p_invoice: invoice.id })
+      if (next && Number(next.pay_now) > 0) planAmount = Number(next.pay_now)
+    }
+    const amount = osAmount ?? (requestedAmount ? Number(requestedAmount) : (planAmount ?? Number(invoice.balance_due)))
     if (!amount || amount <= 0 || amount > invoice.balance_due + 0.01) {
       return new Response(JSON.stringify({ error: 'Invalid amount' }), { status: 400, headers: corsHeaders })
     }

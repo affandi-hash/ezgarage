@@ -1018,8 +1018,8 @@ function RulesTab({ tenantId }: { tenantId: string }) {
 // ── 6. BB Care Day ──────────────────────────────────────────────────────
 // BrainyBunch staff pickup-and-return service: settings plus the BB packages
 // (audience 'bb_staff'), each priced with tier 'bb'.
-type BbForm = { bb_enabled: boolean; bb_capacity_per_day: string; bb_days: number[]; bb_hq_address: string; bb_pickup_note: string }
-const BB_DEFAULT: BbForm = { bb_enabled: true, bb_capacity_per_day: '8', bb_days: [1, 2, 3, 4, 5], bb_hq_address: '', bb_pickup_note: '' }
+type BbForm = { bb_enabled: boolean; bb_capacity_per_day: string; bb_days: number[]; bb_hq_address: string; bb_pickup_note: string; bb_instalment_min: string }
+const BB_DEFAULT: BbForm = { bb_enabled: true, bb_capacity_per_day: '8', bb_days: [1, 2, 3, 4, 5], bb_hq_address: '', bb_pickup_note: '', bb_instalment_min: '500' }
 
 interface BbPrice { id: string; package_id: string; price: number; effective_from: string }
 
@@ -1048,6 +1048,7 @@ function BbSettingsCard({ tenantId }: { tenantId: string }) {
         bb_days: ((s.bb_days as number[] | null) ?? [1, 2, 3, 4, 5]).map(Number).sort(),
         bb_hq_address: s.bb_hq_address ?? '',
         bb_pickup_note: s.bb_pickup_note ?? '',
+        bb_instalment_min: String(s.bb_instalment_min ?? 500),
       })
     }
     setLoading(false)
@@ -1063,10 +1064,12 @@ function BbSettingsCard({ tenantId }: { tenantId: string }) {
     const cap = parseInt0(f.bb_capacity_per_day, 1)
     if (cap == null) { toast('Cars per day must be a whole number, at least 1', 'error'); return }
     if (f.bb_days.length === 0) { toast('Choose at least one day we run', 'error'); return }
+    const instMin = Number(f.bb_instalment_min)
+    if (!Number.isFinite(instMin) || instMin < 0) { toast('The payment plan minimum must be 0 or more', 'error'); return }
     setSaving(true)
     const { error } = await supabase.from('os_settings').upsert({
       tenant_id: tenantId, bb_enabled: f.bb_enabled, bb_capacity_per_day: cap, bb_days: f.bb_days,
-      bb_hq_address: f.bb_hq_address.trim() || null, bb_pickup_note: f.bb_pickup_note.trim(),
+      bb_hq_address: f.bb_hq_address.trim() || null, bb_pickup_note: f.bb_pickup_note.trim(), bb_instalment_min: instMin,
       updated_by: user?.id ?? null,
     }, { onConflict: 'tenant_id' })
     setSaving(false)
@@ -1088,7 +1091,11 @@ function BbSettingsCard({ tenantId }: { tenantId: string }) {
         <Field label="Cars per day" grow={140}>
           <input style={inp} inputMode="numeric" value={f.bb_capacity_per_day} onChange={e => setF(x => ({ ...x, bb_capacity_per_day: e.target.value }))} />
         </Field>
+        <Field label="Payment plan from (RM)" grow={200}>
+          <input style={inp} inputMode="decimal" value={f.bb_instalment_min} onChange={e => setF(x => ({ ...x, bb_instalment_min: e.target.value }))} />
+        </Field>
       </div>
+      <div style={{ color: C.mute, fontSize: 12, marginTop: 6 }}>Bills at or above the payment plan amount can be split into 2 payments (half at return, half a month later). An operations manager can approve a smaller bill.</div>
       <div style={{ marginTop: 14 }}>
         <span style={{ color: C.mute, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Days we run</span>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>

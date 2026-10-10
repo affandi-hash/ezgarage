@@ -5,6 +5,7 @@ import { useAuthStore } from '@/store/authStore'
 import { canSeeAllBranches } from '@/lib/branchScope'
 import { FileText, Plus, X, Printer, CreditCard, Check, ChevronRight, Search, Send, Ban, Wrench, Paperclip, Loader2, Tag } from 'lucide-react'
 import { toast } from '@/components/ui/Toast'
+import { PaymentPlanCard, SplitPaymentModal, nextInstalment, fmtPlanDate, type PaymentPlanRow, type PlanNext } from '@/components/invoices/PaymentPlan'
 
 const MAX_PROOF_FILE_BYTES = 10 * 1024 * 1024
 const ALLOWED_PROOF_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
@@ -508,6 +509,17 @@ export function InvoicesPage() {
     }
   }
 
+  // Payment plan (two payments) on the selected invoice
+  const [plan, setPlan] = useState<PaymentPlanRow | null>(null)
+  const [planNext, setPlanNext] = useState<PlanNext | null>(null)
+  const [showSplitModal, setShowSplitModal] = useState(false)
+  const canCancelPlan = ['super_admin', 'ops_manager', 'finance'].includes(user?.role ?? '')
+
+  const loadPlan = useCallback(async (invoiceId: string) => {
+    const { data } = await supabase.from('invoice_payment_plans').select('*').eq('invoice_id', invoiceId).in('status', ['active', 'completed']).maybeSingle()
+    setPlan((data as PaymentPlanRow | null) ?? null)
+  }, [])
+
   // Labour Charges (kept for the labour picker used when editing invoices)
   const [labourCharges, setLabourCharges] = useState<LabourCharge[]>([])
 
@@ -628,6 +640,43 @@ export function InvoicesPage() {
     if (selected) setEditInvoice(JSON.parse(JSON.stringify(selected)))
     else setEditInvoice(null)
   }, [selected])
+
+  // Load the payment plan of the selected invoice; reload when a payment or status change updates it
+  const selectedId = selected?.id
+  useEffect(() => {
+    setPlan(null)
+    if (!selectedId) return
+    let cancelled = false
+    supabase.from('invoice_payment_plans').select('*').eq('invoice_id', selectedId).in('status', ['active', 'completed']).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setPlan((data as PaymentPlanRow | null) ?? null) })
+    return () => { cancelled = true }
+  }, [selectedId, selected?.amount_paid, selected?.status, selected?.updated_at])
+
+  // "Payment plans" filter: every active plan, then its invoice, even when it is not in the first loaded
+  // page. Kept apart from the paged list (like Unpaid) and fetched again whenever the page list reloads.
+  const [planList, setPlanList] = useState<{ inv: Invoice; plan: PaymentPlanRow }[]>([])
+  useEffect(() => {
+    if (statusFilter !== 'plans') return
+    let cancelled = false
+    ;(async () => {
+      const { data: plans } = await supabase.from('invoice_payment_plans').select('*').eq('status', 'active')
+      const planRows = (plans as PaymentPlanRow[]) ?? []
+      const ids = planRows.map(p => p.invoice_id)
+      const found: Invoice[] = []
+      for (let i = 0; i < ids.length; i += 100) {
+        let q = supabase.from('invoices').select('*').in('id', ids.slice(i, i + 100))
+        if (!canSeeAllBranches(user?.role) && user?.branch_id) q = q.eq('branch_id', user.branch_id)
+        const { data } = await q
+        if (data) found.push(...(data as Invoice[]))
+      }
+      if (cancelled) return
+      setPlanList(planRows.flatMap(p => {
+        const inv = found.find(f => f.id === p.invoice_id)
+        return inv ? [{ inv, plan: p }] : []
+      }))
+    })()
+    return () => { cancelled = true }
+  }, [statusFilter, invoices, user])
 
   // ─── ESP discount banner ─────────────────────────────────────────────────
   // editInvoice has no vehicle_id/vehicle_type of its own (only vehicle_plate/
@@ -782,6 +831,7 @@ export function InvoicesPage() {
       await loadInvoices()
       const { data } = await supabase.from('invoices').select('*').eq('id', editInvoice.id).single()
       if (data) setSelected(data as Invoice)
+      await loadPlan(editInvoice.id)
       setShowPaymentModal(false)
       setProofFile(null)
       toast.success(result?.new_status === 'paid' ? 'Payment recorded — invoice marked as Paid' : 'Partial payment recorded')
@@ -865,13 +915,22 @@ export function InvoicesPage() {
   // ─── Filtered lists ────────────────────────────────────────────────────────────
 
   // Unpaid filter: the freshly loaded page rows win over the separately fetched copies
-  const listSource = statusFilter === 'unpaid'
+  // Payment plans filter: only invoices with an active plan, soonest next due date first
+  const planById: Record<string, PaymentPlanRow> = {}
+  for (const x of planList) planById[x.inv.id] = x.plan
+  const planListInvoices = planList
+    .map(x => ({ ...x, inv: invoices.find(i => i.id === x.inv.id) ?? x.inv }))
+    .sort((a, b) => nextInstalment(a.plan, a.inv.amount_paid ?? 0, a.inv.total_amount ?? 0).due.localeCompare(nextInstalment(b.plan, b.inv.amount_paid ?? 0, b.inv.total_amount ?? 0).due))
+    .map(x => x.inv)
+  const listSource = statusFilter === 'plans'
+    ? planListInvoices
+    : statusFilter === 'unpaid'
     ? [...invoices, ...unpaidAll.filter(u => !invoices.some(i => i.id === u.id))].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
     : invoices
   const filtered = listSource.filter(inv => {
     const matchSearch = !searchTerm || inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) || (inv.customer_name ?? '').toLowerCase().includes(searchTerm.toLowerCase())
     // Unpaid = issued to the customer and not yet settled (sent or overdue); drafts and voids are not owed
-    const matchStatus = statusFilter === 'all' || (statusFilter === 'unpaid' ? ['sent', 'overdue'].includes(inv.status) : inv.status === statusFilter)
+    const matchStatus = statusFilter === 'all' || statusFilter === 'plans' || (statusFilter === 'unpaid' ? ['sent', 'overdue'].includes(inv.status) : inv.status === statusFilter)
     const matchInternal = !internalFilter || inv.is_internal_fleet
     const invDate = inv.issue_date ?? inv.created_at?.slice(0, 10)
     const matchFrom = !dateFrom || invDate >= dateFrom
@@ -930,9 +989,9 @@ export function InvoicesPage() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
-                {['all', 'draft', 'sent', 'unpaid', 'paid', 'void'].map(s => (
+                {['all', 'draft', 'sent', 'unpaid', 'paid', 'void', 'plans'].map(s => (
                   <button key={s} onClick={() => setStatusFilter(s)} style={{ flexShrink: 0, background: statusFilter === s ? C.orange : C.bg, color: statusFilter === s ? '#fff' : C.text2, border: `1px solid ${statusFilter === s ? C.orange : C.border}`, borderRadius: 16, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize' as const }}>
-                    {s === 'all' ? 'All' : s}
+                    {s === 'all' ? 'All' : s === 'plans' ? 'Payment plans' : s}
                   </button>
                 ))}
                 <button onClick={() => setInternalFilter(v => !v)} style={{ flexShrink: 0, background: internalFilter ? 'rgba(241,90,34,0.2)' : C.bg, color: internalFilter ? C.orange : C.text2, border: `1px solid ${internalFilter ? C.orange : C.border}`, borderRadius: 16, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
@@ -944,7 +1003,7 @@ export function InvoicesPage() {
               {loading ? (
                 <div style={{ padding: 32, textAlign: 'center', color: C.text2 }}>Loading...</div>
               ) : filtered.length === 0 ? (
-                <div style={{ padding: 32, textAlign: 'center', color: C.text2 }}>No invoices found</div>
+                <div style={{ padding: 32, textAlign: 'center', color: C.text2 }}>{statusFilter === 'plans' ? 'No active payment plans' : 'No invoices found'}</div>
               ) : filtered.map(inv => (
                 <div key={inv.id} onClick={() => setSelected(inv)} style={{ padding: '14px 16px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', borderLeft: selected?.id === inv.id ? `3px solid ${C.orange}` : '3px solid transparent', background: selected?.id === inv.id ? '#1E1E1E' : 'transparent' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
@@ -957,6 +1016,15 @@ export function InvoicesPage() {
                     <span style={{ fontSize: 13, fontWeight: 700 }}>{formatRM(inv.total_amount)}</span>
                   </div>
                   <div style={{ fontSize: 11, color: C.text2, marginTop: 4 }}>{formatDate(inv.issue_date)}</div>
+                  {statusFilter === 'plans' && planById[inv.id] && (() => {
+                    const nx = nextInstalment(planById[inv.id], inv.amount_paid ?? 0, inv.total_amount ?? 0)
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12, color: C.text }}>
+                        <span>Payment {nx.n} of 2: {formatRM(nx.amount).replace(/\.00$/, '')} due {fmtPlanDate(nx.due, false)}</span>
+                        {nx.overdue && <span style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444', border: '1px solid #EF444466', borderRadius: 10, padding: '1px 8px', fontSize: 10, fontWeight: 700 }}>Overdue</span>}
+                      </div>
+                    )
+                  })()}
                 </div>
               ))}
               {!loading && hasMore && searchTerm === '' && statusFilter === 'all' && (
@@ -1123,6 +1191,17 @@ export function InvoicesPage() {
                   </div>
                 </div>
 
+                {/* Payment plan */}
+                {plan && (
+                  <PaymentPlanCard plan={plan} amountPaid={editInvoice.amount_paid ?? 0} total={editInvoice.total_amount ?? 0} canCancel={canCancelPlan}
+                    onChanged={async () => {
+                      await loadInvoices()
+                      const { data } = await supabase.from('invoices').select('*').eq('id', editInvoice.id).single()
+                      if (data) setSelected(data as Invoice)
+                      await loadPlan(editInvoice.id)
+                    }} />
+                )}
+
                 {/* Notes */}
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ fontSize: 12, color: C.text2, fontWeight: 600, marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 1 }}>Notes</div>
@@ -1140,8 +1219,15 @@ export function InvoicesPage() {
                     <button style={btnOrange} onClick={issueInvoice} disabled={saving}><Send size={15} /> Issue Invoice</button>
                   </>}
                   {(editInvoice.status === 'sent') && (
-                    <button style={btnGreen} onClick={() => {
-                      setPayment({ payment_method: 'cash', amount_paid: Math.max(0, editInvoice.total_amount - editInvoice.amount_paid), payment_date: todayStr(), payment_reference: '' })
+                    <button style={btnGreen} onClick={async () => {
+                      const fullBalance = Math.max(0, editInvoice.total_amount - editInvoice.amount_paid)
+                      let next: PlanNext | null = null
+                      if (plan?.status === 'active') {
+                        const { data } = await supabase.rpc('invoice_plan_next', { p_invoice: editInvoice.id })
+                        if (data && typeof data === 'object') next = data as PlanNext
+                      }
+                      setPlanNext(next)
+                      setPayment({ payment_method: 'cash', amount_paid: next ? Math.min(fullBalance, Number(next.pay_now)) : fullBalance, payment_date: todayStr(), payment_reference: '' })
                       setProofFile(null)
                       loadPaymentHistory(editInvoice.id)
                       loadPaymentFailures(editInvoice.id)
@@ -1158,6 +1244,9 @@ export function InvoicesPage() {
                     }}>
                       <CreditCard size={15} /> Payment History
                     </button>
+                  )}
+                  {(editInvoice.status === 'sent' || editInvoice.status === 'overdue') && Number(editInvoice.amount_paid ?? 0) === 0 && !plan && (
+                    <button style={btnOutline} onClick={() => setShowSplitModal(true)}><CreditCard size={15} /> Split into 2 payments</button>
                   )}
                   <button style={btnOutline} onClick={() => openPrintTab(buildInvoiceHtml(editInvoice, branchInfo))}><Printer size={15} /> Print Invoice</button>
                   {editInvoice.status === 'paid' && (
@@ -1642,6 +1731,21 @@ export function InvoicesPage() {
         </div>
       )}
 
+      {showSplitModal && editInvoice && (
+        <SplitPaymentModal
+          invoiceId={editInvoice.id}
+          total={editInvoice.total_amount}
+          onClose={() => setShowSplitModal(false)}
+          onDone={async () => {
+            setShowSplitModal(false)
+            await loadInvoices()
+            const { data } = await supabase.from('invoices').select('*').eq('id', editInvoice.id).single()
+            if (data) setSelected(data as Invoice)
+            await loadPlan(editInvoice.id)
+          }}
+        />
+      )}
+
       {/* ── RECORD PAYMENT MODAL ─────────────────────────────────────────────────── */}
       {showPaymentModal && editInvoice && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1671,6 +1775,13 @@ export function InvoicesPage() {
               <div>
                 <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Payment Amount (RM)</label>
                 <input type="number" style={inputStyle} value={payment.amount_paid} onChange={e => setPayment({ ...payment, amount_paid: Number(e.target.value) })} />
+                {planNext && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const, marginTop: 8 }}>
+                    <span style={{ fontSize: 12, color: C.text2 }}>Payment plan: payment {planNext.instalment} of 2 is {formatRM(Number(planNext.pay_now))} due now</span>
+                    <button type="button" onClick={() => setPayment({ ...payment, amount_paid: Math.min(Math.max(0, editInvoice.total_amount - editInvoice.amount_paid), Number(planNext.pay_now)) })} style={{ background: 'transparent', color: C.orange, border: `1px solid ${C.orange}`, borderRadius: 12, padding: '2px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Instalment</button>
+                    <button type="button" onClick={() => setPayment({ ...payment, amount_paid: Math.max(0, editInvoice.total_amount - editInvoice.amount_paid) })} style={{ background: 'transparent', color: C.text2, border: `1px solid ${C.border}`, borderRadius: 12, padding: '2px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Full balance</button>
+                  </div>
+                )}
               </div>
               <div>
                 <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Payment Date</label>

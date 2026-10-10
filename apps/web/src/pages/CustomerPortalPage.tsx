@@ -339,6 +339,23 @@ const FPX_ENABLED = true
 function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanceDue: number }) {
   const [loading, setLoading] = useState<'duitnow' | 'credit_card' | 'fpx' | null>(null)
   const [error, setError] = useState('')
+  // Payment plan (two payments). The server already charges the instalment, so this is information only.
+  const [plan, setPlan] = useState<{ instalment: number; pay_now: number; second_amount: number; first_due: string; second_due: string } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data, error: planErr } = await supabase.rpc('invoice_plan_next', { p_invoice: invoiceId })
+        if (cancelled || planErr || !data || typeof data !== 'object') return
+        setPlan(data as { instalment: number; pay_now: number; second_amount: number; first_due: string; second_due: string })
+      } catch { /* no plan box if the lookup fails */ }
+    })()
+    return () => { cancelled = true }
+  }, [invoiceId])
+  const planDate = (d: string) => {
+    const dt = new Date(String(d).slice(0, 10) + 'T00:00:00')
+    return isNaN(dt.getTime()) ? String(d) : dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
 
   async function startPayment(method: 'duitnow' | 'credit_card' | 'fpx') {
     setLoading(method); setError('')
@@ -378,6 +395,15 @@ function PayOnlineSection({ invoiceId, balanceDue }: { invoiceId: string; balanc
         <div style={{ fontSize: 13, fontWeight: 700, color: C.textPrimary }}>Pay Online</div>
         <div style={{ fontSize: 12, color: C.textSecondary, marginTop: 2 }}>Balance due: <strong style={{ color: C.orange }}>{formatRM(balanceDue)}</strong></div>
       </div>
+
+      {plan && (
+        <div style={{ background: 'rgba(241,90,34,0.08)', border: `1px solid ${C.orange}`, borderRadius: 8, padding: '10px 12px', fontSize: 12, color: C.textPrimary, lineHeight: 1.5 }}>
+          <strong>Payment plan:</strong> pay RM {Number(plan.pay_now).toFixed(2)} now (payment {plan.instalment} of 2).
+          {plan.instalment === 1
+            ? <> The other payment, RM {Number(plan.second_amount).toFixed(2)}, is due on {planDate(plan.second_due)}.</>
+            : <> This is the last payment, due on {planDate(plan.second_due)}.</>}
+        </div>
+      )}
 
       {error && <div style={{ fontSize: 12, color: C.red }}>{error}</div>}
 
