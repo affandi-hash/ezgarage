@@ -71,7 +71,7 @@ export async function startPayment(invoiceId: string, token: string, method: str
   if (error) {
     let msg = ''
     try { msg = (await (error as { context?: Response }).context?.json())?.error ?? '' } catch { /* ignore */ }
-    return { error: msg || 'Could not start the payment. Please try again.' }
+    return { error: msg || 'Could not start the payment. Try another payment method, or check that your mobile number is correct.' }
   }
   if (!data?.payment_url) return { error: 'Could not start the payment. Please try again.' }
   return { url: data.payment_url as string }

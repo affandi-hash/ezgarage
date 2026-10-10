@@ -156,7 +156,8 @@ export function OnSiteStatusPage() {
           <div style={{ borderTop: `1px solid ${C.border}`, margin: '8px 0' }} />
           <Row k="Total" v={rm(b.price_total)} />
           <Row k="Paid so far" v={rm(b.amount_paid)} />
-          <Row k="Balance" v={rm(b.balance_due)} />
+          {/* nothing is owed on a booking that was cancelled, declined, expired or missed */}
+          {!['cancelled', 'declined', 'expired', 'no_show'].includes(b.status) && <Row k="Balance" v={rm(b.balance_due)} />}
         </>}
       </Card>
 

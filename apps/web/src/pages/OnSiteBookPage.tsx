@@ -71,7 +71,16 @@ export function OnSiteBookPage() {
 
   const pkg = cfg?.packages.find(p => p.id === pkgId)
   const offered = useMemo(() => (cfg?.packages ?? []).filter(p => !tier || tier === 'hub_only' ? true : p.tiers.includes(tier)), [cfg, tier])
-  const phoneOk = phone.replace(/\D/g, '').length >= 9
+  // one package on offer: choose it for the customer (they were left staring at a greyed Continue)
+  useEffect(() => {
+    if (step !== 1 || pkgId || offered.length !== 1) return
+    setPkgId(offered[0].id)
+    if (offered[0].grades.length === 1) setGradeId(offered[0].grades[0].id)
+  }, [step, pkgId, offered])
+  // a Malaysian mobile (01x xxx xxxx, with or without +60). The payment gateway rejects other numbers
+  // with an unhelpful error, so catch them here.
+  const phoneOk = /^01\d{8,9}$/.test(phone.replace(/\D/g, '').replace(/^60/, '0'))
+  const phoneHint = phone.trim() !== '' && !phoneOk ? 'Enter a Malaysian mobile number, e.g. 012 345 6789.' : undefined
   const vehicleOk = !!makeValue && !!modelValue && plate.trim().length >= 2
 
   function reset(msg = '') { setErr(msg); setBusy(false) }
@@ -181,6 +190,7 @@ export function OnSiteBookPage() {
             <input style={{ ...inputStyle, textTransform: 'uppercase' }} placeholder="e.g. VAB 1234" value={plate} onChange={e => setPlate(e.target.value)} />
           </Field>
           {tier === 'hub_only' && <Notice tone="warn">This vehicle is serviced at our workshop, not by the van. Please contact Motoverse Garage to book.</Notice>}
+          {!vehicleOk && tier !== 'hub_only' && <div style={{ color: C.muted, fontSize: 13, marginBottom: 8 }}>{!makeValue ? 'Choose your make.' : !modelValue ? 'Choose your model.' : 'Enter your plate number.'}</div>}
           <Button disabled={!vehicleOk || tier === 'hub_only'} onClick={() => { setErr(''); setStep(1) }}>Continue</Button>
         </Card>
       )}
@@ -188,12 +198,20 @@ export function OnSiteBookPage() {
       {step === 1 && (
         <>
           {offered.length === 0 && <Notice tone="warn">No package is available for this vehicle yet.</Notice>}
+          {offered.length > 0 && !pkg && <div style={{ color: C.muted, fontSize: 13, marginBottom: 8 }}>Tap a service to choose it.</div>}
           {offered.map(p => (
             <Card key={p.id} style={{ marginBottom: 12, borderColor: pkgId === p.id ? C.orange : C.border, cursor: 'pointer' }}>
-              <div onClick={() => { setPkgId(p.id); setGradeId('') }}>
-                <div style={{ fontWeight: 800, fontSize: 17 }}>{p.name}</div>
-                {p.description && <div style={{ color: C.muted, fontSize: 14, margin: '4px 0' }}>{p.description}</div>}
-                <div style={{ color: C.muted, fontSize: 13 }}>About {p.duration_min} minutes at your location</div>
+              <div role="radio" aria-checked={pkgId === p.id} tabIndex={0} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}
+                onClick={() => { setPkgId(p.id); setGradeId(p.grades.length === 1 ? p.grades[0].id : '') }}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPkgId(p.id); setGradeId(p.grades.length === 1 ? p.grades[0].id : '') } }}>
+                <span aria-hidden style={{ flexShrink: 0, marginTop: 3, width: 20, height: 20, borderRadius: 10, border: `2px solid ${pkgId === p.id ? C.orange : C.muted}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {pkgId === p.id && <span style={{ width: 10, height: 10, borderRadius: 5, background: C.orange }} />}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, fontSize: 17 }}>{p.name}</div>
+                  {p.description && <div style={{ color: C.muted, fontSize: 14, margin: '4px 0' }}>{p.description}</div>}
+                  <div style={{ color: C.muted, fontSize: 13 }}>About {p.duration_min} minutes at your location</div>
+                </div>
               </div>
               {pkgId === p.id && p.grades.length > 0 && (
                 <div style={{ marginTop: 12 }}>
@@ -207,7 +225,7 @@ export function OnSiteBookPage() {
               )}
             </Card>
           ))}
-          <BackNext onBack={back} nextDisabled={!pkg || (pkg.grades.length > 0 && !gradeId)} onNext={() => { setErr(''); setStep(2) }} />
+          <BackNext onBack={back} nextDisabled={!pkg || (pkg.grades.length > 0 && !gradeId)} hint={!pkg ? 'Tap a service above to choose it.' : 'Choose an oil grade to continue.'} onNext={() => { setErr(''); setStep(2) }} />
         </>
       )}
 
@@ -224,7 +242,7 @@ export function OnSiteBookPage() {
             <input style={inputStyle} value={access} onChange={e => setAccess(e.target.value)} />
           </Field>
         </Card>
-          <BackNext onBack={back} busy={busy} nextDisabled={address.trim().length < 5 || postcode.length < 5} nextLabel="Check and see times" onNext={fetchQuote} />
+          <BackNext onBack={back} busy={busy} nextDisabled={address.trim().length < 5 || postcode.length < 5} hint={address.trim().length < 5 ? 'Enter your service address.' : 'Enter your 5-digit postcode.'} nextLabel="Check and see times" onNext={fetchQuote} />
         </>
       )}
 
@@ -277,7 +295,7 @@ export function OnSiteBookPage() {
               Need another time or more than one car? <button onClick={() => { setRequestMode({ reason: 'Special request (other time / more cars)' }); setStep(2) }} style={{ background: 'none', border: 'none', color: C.orange, textDecoration: 'underline', fontSize: 13, padding: 0 }}>Send us a request</button>
             </div>
           </Card>
-          <BackNext onBack={back} nextDisabled={!slotId} onNext={() => { setErr(''); setStep(4) }} />
+          <BackNext onBack={back} nextDisabled={!slotId} hint={!date ? 'Pick a day, then a time.' : 'Pick a time to continue.'} onNext={() => { setErr(''); setStep(4) }} />
         </>
       )}
 
@@ -294,7 +312,7 @@ export function OnSiteBookPage() {
           </Card>
           <Card>
             <Field label="Your name"><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} /></Field>
-            <Field label="Mobile number"><input style={inputStyle} inputMode="tel" placeholder="e.g. 012 345 6789" value={phone} onChange={e => setPhone(e.target.value)} /></Field>
+            <Field label="Mobile number" hint={phoneHint}><input style={inputStyle} inputMode="tel" placeholder="e.g. 012 345 6789" value={phone} onChange={e => setPhone(e.target.value)} /></Field>
             <Field label="Email" hint="We send your confirmation and updates here."><input style={inputStyle} type="email" value={email} onChange={e => setEmail(e.target.value)} /></Field>
             <Field label="Pay deposit with">
               <div style={{ display: 'grid', gap: 8 }}>
@@ -315,11 +333,14 @@ export function OnSiteBookPage() {
   )
 }
 
-function BackNext({ onBack, onNext, nextDisabled, busy, nextLabel = 'Continue' }: { onBack: () => void; onNext: () => void; nextDisabled?: boolean; busy?: boolean; nextLabel?: string }) {
+function BackNext({ onBack, onNext, nextDisabled, busy, hint, nextLabel = 'Continue' }: { onBack: () => void; onNext: () => void; nextDisabled?: boolean; busy?: boolean; hint?: string; nextLabel?: string }) {
   return (
-    <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-      <Button variant="ghost" onClick={onBack} style={{ width: 'auto', padding: '14px 16px' }}><ChevronLeft size={18} /></Button>
-      <Button onClick={onNext} disabled={nextDisabled} busy={busy}>{nextLabel}</Button>
+    <div style={{ marginTop: 14 }}>
+      {nextDisabled && hint && <div style={{ color: C.muted, fontSize: 13, marginBottom: 8 }}>{hint}</div>}
+      <div style={{ display: 'flex', gap: 10 }}>
+        <Button variant="ghost" onClick={onBack} style={{ width: 'auto', padding: '14px 16px' }}><ChevronLeft size={18} /></Button>
+        <Button onClick={onNext} disabled={nextDisabled} busy={busy}>{nextLabel}</Button>
+      </div>
     </div>
   )
 }
@@ -366,7 +387,7 @@ function RequestForm(p: {
       </p>
       <Field label="Anything we should know? (optional)"><textarea style={{ ...inputStyle, minHeight: 70 }} placeholder={outside ? '' : 'Preferred date and time, number of cars, etc.'} value={p.note} onChange={e => p.setNote(e.target.value)} /></Field>
       <Field label="Your name"><input style={inputStyle} value={p.name} onChange={e => p.setName(e.target.value)} /></Field>
-      <Field label="Mobile number"><input style={inputStyle} inputMode="tel" value={p.phone} onChange={e => p.setPhone(e.target.value)} /></Field>
+      <Field label="Mobile number" hint={p.phone.trim() !== '' && !p.phoneOk ? 'Enter a Malaysian mobile number, e.g. 012 345 6789.' : undefined}><input style={inputStyle} inputMode="tel" placeholder="e.g. 012 345 6789" value={p.phone} onChange={e => p.setPhone(e.target.value)} /></Field>
       <Field label="Email"><input style={inputStyle} type="email" value={p.email} onChange={e => p.setEmail(e.target.value)} /></Field>
       <div style={{ display: 'flex', gap: 10 }}>
         <Button variant="ghost" onClick={p.onBack} style={{ width: 'auto', padding: '14px 16px' }}><ChevronLeft size={18} /></Button>
