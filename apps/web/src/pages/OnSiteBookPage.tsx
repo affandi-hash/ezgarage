@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { CheckCircle2, ChevronLeft, Loader2, Truck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { makeOptionsFor, modelOptionsFor, OTHER } from '@/lib/vehicleMakes'
-import { fmtDate, osError, rm } from '@/lib/onsite'
-import { Button, C, Card, Field, inputStyle, Notice, Page, PAYMENT_METHODS, startPayment } from '@/components/onsite/OsUi'
+import { fmtDate, normStaffId, osError, rm, rmShort, staffIdOk, type BbDay } from '@/lib/onsite'
+import { BbDayPicker, Button, C, Card, Field, inputStyle, Notice, Page, PAYMENT_METHODS, startPayment } from '@/components/onsite/OsUi'
 
 interface Pkg { id: string; name: string; description: string | null; duration_min: number; grades: { id: string; name: string }[]; tiers: string[] }
+interface BbPkg { id: string; name: string; description: string | null; price: number | null }
+interface BbConfig { packages: BbPkg[]; capacity_per_day: number; hq_address: string | null; pickup_note: string | null; window_days: number }
 interface Config {
   error?: string
   tenant_name: string
@@ -14,17 +16,22 @@ interface Config {
   packages: Pkg[]
   zones: { name: string; surcharge: number }[]
   makes: { type: string; make: string; model: string | null; tier: string }[]
+  bb?: BbConfig | null
 }
 interface Quote { error: string | null; tier: string | null; base: number | null; zone_name: string | null; zone_surcharge: number; total: number | null; deposit: number | null }
 interface Day { date: string; slots: { slot_id: string; label: string; available: boolean }[] }
 
 const STEPS = ['Vehicle', 'Package', 'Address', 'Time', 'Confirm']
+const BB_STEPS = ['Details', 'Car', 'Day', 'Confirm']
+const mobileOk = (phone: string) => /^01\d{8,9}$/.test(phone.replace(/\D/g, '').replace(/^60/, '0'))
 
 export function OnSiteBookPage() {
   const { tenantSlug } = useParams()
   const slug = tenantSlug ?? null
   const [cfg, setCfg] = useState<Config | null>(null)
   const [loadErr, setLoadErr] = useState('')
+  // which service the customer picked; only asked when BB Staff Car Care Day is on (cfg.bb)
+  const [flow, setFlow] = useState<null | 'van' | 'bb'>(null)
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -73,13 +80,13 @@ export function OnSiteBookPage() {
   const offered = useMemo(() => (cfg?.packages ?? []).filter(p => !tier || tier === 'hub_only' ? true : p.tiers.includes(tier)), [cfg, tier])
   // one package on offer: choose it for the customer (they were left staring at a greyed Continue)
   useEffect(() => {
-    if (step !== 1 || pkgId || offered.length !== 1) return
+    if (flow === 'bb' || step !== 1 || pkgId || offered.length !== 1) return
     setPkgId(offered[0].id)
     if (offered[0].grades.length === 1) setGradeId(offered[0].grades[0].id)
-  }, [step, pkgId, offered])
+  }, [flow, step, pkgId, offered])
   // a Malaysian mobile (01x xxx xxxx, with or without +60). The payment gateway rejects other numbers
   // with an unhelpful error, so catch them here.
-  const phoneOk = /^01\d{8,9}$/.test(phone.replace(/\D/g, '').replace(/^60/, '0'))
+  const phoneOk = mobileOk(phone)
   const phoneHint = phone.trim() !== '' && !phoneOk ? 'Enter a Malaysian mobile number, e.g. 012 345 6789.' : undefined
   const vehicleOk = !!makeValue && !!modelValue && plate.trim().length >= 2
 
@@ -130,6 +137,29 @@ export function OnSiteBookPage() {
   if (loadErr) return <Page><Notice tone="error">{loadErr}</Notice></Page>
   if (!cfg) return <Page><div style={{ textAlign: 'center', padding: 60 }}><Loader2 className="animate-spin" color={C.orange} /></div></Page>
 
+  const bb = cfg.bb ?? null
+  if (bb && flow === null) {
+    const prices = bb.packages.map(p => p.price).filter((n): n is number => n != null)
+    const from = prices.length ? Math.min(...prices) : null
+    return (
+      <Page>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <Truck color={C.orange} />
+          <div style={{ fontWeight: 800, fontSize: 20 }}>Motoverse ON-SITE</div>
+        </div>
+        <p style={{ color: C.muted, margin: '0 0 18px', fontSize: 14 }}>How would you like to book?</p>
+        <ChoiceCard title="Service at my location (van)" onClick={() => setFlow('van')}>
+          We come to you. Engine and gearbox lube at your home or office.
+        </ChoiceCard>
+        <ChoiceCard title="BB Staff Car Care Day" onClick={() => setFlow('bb')}>
+          For BrainyBunch staff. We collect your car at BB HQ, service and wash it, and return it before the end of the day.
+          {from != null && <span style={{ display: 'block', marginTop: 6, color: C.orange, fontWeight: 700 }}>From {rmShort(from)}. Pay when your car is returned.</span>}
+        </ChoiceCard>
+      </Page>
+    )
+  }
+  if (bb && flow === 'bb') return <Page><BbFlow slug={slug} bb={bb} onChoice={() => setFlow(null)} /></Page>
+
   const selectedDay = days.find(d => d.date === date)
   const back = () => { setErr(''); setRequestMode(null); setStep(s => Math.max(0, s - 1)) }
 
@@ -164,28 +194,8 @@ export function OnSiteBookPage() {
               ))}
             </div>
           </Field>
-          <Field label="Make">
-            <select style={inputStyle} value={make} onChange={e => { setMake(e.target.value); setModel('') }}>
-              <option value="">Select make</option>
-              {makeOptionsFor(vType).map(m => <option key={m} value={m}>{m}</option>)}
-              <option value={OTHER}>Other</option>
-            </select>
-            {make === OTHER && <input style={{ ...inputStyle, marginTop: 8 }} placeholder="Type the make" value={makeOther} onChange={e => setMakeOther(e.target.value)} />}
-          </Field>
-          <Field label="Model">
-            {make && make !== OTHER && modelOptionsFor(vType, make).length > 0 ? (
-              <>
-                <select style={inputStyle} value={model} onChange={e => setModel(e.target.value)}>
-                  <option value="">Select model</option>
-                  {modelOptionsFor(vType, make).map(m => <option key={m} value={m}>{m}</option>)}
-                  <option value={OTHER}>Other</option>
-                </select>
-                {model === OTHER && <input style={{ ...inputStyle, marginTop: 8 }} placeholder="Type the model" value={modelOther} onChange={e => setModelOther(e.target.value)} />}
-              </>
-            ) : (
-              <input style={inputStyle} placeholder="e.g. Vios" value={model === OTHER ? modelOther : model} onChange={e => { setModel(e.target.value); setModelOther(e.target.value) }} />
-            )}
-          </Field>
+          <MakeModelFields vType={vType} make={make} setMake={setMake} makeOther={makeOther} setMakeOther={setMakeOther}
+            model={model} setModel={setModel} modelOther={modelOther} setModelOther={setModelOther} />
           <Field label="Plate number">
             <input style={{ ...inputStyle, textTransform: 'uppercase' }} placeholder="e.g. VAB 1234" value={plate} onChange={e => setPlate(e.target.value)} />
           </Field>
@@ -193,6 +203,11 @@ export function OnSiteBookPage() {
           {!vehicleOk && tier !== 'hub_only' && <div style={{ color: C.muted, fontSize: 13, marginBottom: 8 }}>{!makeValue ? 'Choose your make.' : !modelValue ? 'Choose your model.' : 'Enter your plate number.'}</div>}
           <Button disabled={!vehicleOk || tier === 'hub_only'} onClick={() => { setErr(''); setStep(1) }}>Continue</Button>
         </Card>
+      )}
+      {step === 0 && bb && (
+        <div style={{ marginTop: 12 }}>
+          <Button variant="ghost" onClick={() => { setErr(''); setFlow(null) }}><ChevronLeft size={18} /> Choose a different service</Button>
+        </div>
       )}
 
       {step === 1 && (
@@ -330,6 +345,238 @@ export function OnSiteBookPage() {
         </>
       )}
     </Page>
+  )
+}
+
+function ChoiceCard({ title, children, onClick }: { title: string; children: ReactNode; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{ display: 'block', width: '100%', textAlign: 'left', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, marginBottom: 12, color: C.text, cursor: 'pointer' }}>
+      <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{title}</div>
+      <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.5 }}>{children}</div>
+    </button>
+  )
+}
+
+// Make and model selects (with "Other" free text), shared by the van and BB flows.
+function MakeModelFields(p: {
+  vType: 'car' | 'bike'; make: string; setMake: (v: string) => void; makeOther: string; setMakeOther: (v: string) => void
+  model: string; setModel: (v: string) => void; modelOther: string; setModelOther: (v: string) => void
+}) {
+  const { vType, make, model } = p
+  return (
+    <>
+      <Field label="Make">
+        <select style={inputStyle} value={make} onChange={e => { p.setMake(e.target.value); p.setModel('') }}>
+          <option value="">Select make</option>
+          {makeOptionsFor(vType).map(m => <option key={m} value={m}>{m}</option>)}
+          <option value={OTHER}>Other</option>
+        </select>
+        {make === OTHER && <input style={{ ...inputStyle, marginTop: 8 }} placeholder="Type the make" value={p.makeOther} onChange={e => p.setMakeOther(e.target.value)} />}
+      </Field>
+      <Field label="Model">
+        {make && make !== OTHER && modelOptionsFor(vType, make).length > 0 ? (
+          <>
+            <select style={inputStyle} value={model} onChange={e => p.setModel(e.target.value)}>
+              <option value="">Select model</option>
+              {modelOptionsFor(vType, make).map(m => <option key={m} value={m}>{m}</option>)}
+              <option value={OTHER}>Other</option>
+            </select>
+            {model === OTHER && <input style={{ ...inputStyle, marginTop: 8 }} placeholder="Type the model" value={p.modelOther} onChange={e => p.setModelOther(e.target.value)} />}
+          </>
+        ) : (
+          <input style={inputStyle} placeholder="e.g. Vios" value={model === OTHER ? p.modelOther : model} onChange={e => { p.setModel(e.target.value); p.setModelOther(e.target.value) }} />
+        )}
+      </Field>
+    </>
+  )
+}
+
+// errors that mean "this day will not work": go back to the Day step and reload the list
+const BB_DAY_ERRORS = ['day_full', 'too_soon', 'date_blocked', 'day_not_served', 'outside_window', 'date_required']
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+
+// BB Staff Car Care Day: pickup and return, no deposit, no payment step.
+function BbFlow({ slug, bb, onChoice }: { slug: string | null; bb: BbConfig; onChoice: () => void }) {
+  const [step, setStep] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [staffId, setStaffId] = useState('')
+  const [make, setMake] = useState('')
+  const [makeOther, setMakeOther] = useState('')
+  const [model, setModel] = useState('')
+  const [modelOther, setModelOther] = useState('')
+  const [plate, setPlate] = useState('')
+  const [pkgId, setPkgId] = useState('')
+  const [days, setDays] = useState<BbDay[] | null>(null)
+  const [daysFailed, setDaysFailed] = useState(false)
+  const [date, setDate] = useState('')
+  const [notes, setNotes] = useState('')
+
+  // one package on offer: choose it for the customer
+  useEffect(() => {
+    if (!pkgId && bb.packages.length === 1) setPkgId(bb.packages[0].id)
+  }, [bb.packages, pkgId])
+
+  const makeValue = make === OTHER ? makeOther.trim() : make
+  const modelValue = model === OTHER ? modelOther.trim() : model
+  const pkg = bb.packages.find(p => p.id === pkgId)
+  const phoneOk = mobileOk(phone)
+  const emailOk = email.trim() === '' || EMAIL_RE.test(email.trim())
+  const staffOk = staffIdOk(staffId)
+  const detailsOk = name.trim() !== '' && phoneOk && emailOk && staffOk
+  const carOk = !!makeValue && !!modelValue && plate.trim().length >= 2 && !!pkg
+  const hq = bb.hq_address?.trim() || 'BB HQ'
+  const selectedDay = days?.find(d => d.date === date)
+  const anyOpen = !!days?.some(d => d.available)
+
+  async function loadDays() {
+    setDays(null); setDaysFailed(false); setDate('')
+    const { data, error } = await supabase.rpc('os_bb_available_days', { p_tenant_slug: slug })
+    if (error || !Array.isArray(data)) { setDays([]); setDaysFailed(true); return }
+    setDays(data as BbDay[])
+  }
+
+  const back = () => { setErr(''); if (step === 0) onChoice(); else setStep(s => s - 1) }
+
+  async function submit() {
+    setBusy(true); setErr('')
+    const { data, error } = await supabase.rpc('os_create_bb_booking', {
+      p_tenant_slug: slug, p_name: name.trim(), p_phone: phone, p_email: email.trim(), p_staff_id: normStaffId(staffId),
+      p_make: makeValue, p_model: modelValue, p_plate: plate, p_package: pkgId, p_date: date, p_notes: notes.trim() || null,
+    })
+    if (error || !data) { setBusy(false); setErr('Something went wrong. Please try again.'); return }
+    if (data.error) {
+      const code = String(data.error)
+      if (BB_DAY_ERRORS.includes(code)) { setStep(2); loadDays() }
+      else if (code === 'package_unavailable') setStep(1)
+      else if (['invalid_staff_id', 'invalid_details', 'invalid_email'].includes(code)) setStep(0)
+      setBusy(false); setErr(osError(code)); return
+    }
+    window.location.href = `/on-site/status/${data.token}`
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+        <Truck color={C.orange} />
+        <div style={{ fontWeight: 800, fontSize: 20 }}>BB Staff Car Care Day</div>
+      </div>
+      <p style={{ color: C.muted, margin: '0 0 18px', fontSize: 14 }}>We collect your car at BB HQ, service and wash it, and return it before the end of the day.</p>
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
+        {BB_STEPS.map((s, i) => (
+          <div key={s} style={{ flex: 1 }}>
+            <div style={{ height: 4, borderRadius: 2, background: i <= step ? C.orange : C.border }} />
+            <div style={{ fontSize: 11, marginTop: 4, color: i === step ? C.text : C.muted, fontWeight: i === step ? 700 : 500 }}>{s}</div>
+          </div>
+        ))}
+      </div>
+
+      {err && <Notice tone="error">{err}</Notice>}
+
+      {step === 0 && (
+        <>
+          <Card>
+            <Field label="Your name"><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} /></Field>
+            <Field label="Mobile number" hint={phone.trim() !== '' && !phoneOk ? 'Enter a Malaysian mobile number, e.g. 012 345 6789.' : undefined}>
+              <input style={inputStyle} inputMode="tel" placeholder="e.g. 012 345 6789" value={phone} onChange={e => setPhone(e.target.value)} />
+            </Field>
+            <Field label="Email (optional)" hint={email.trim() !== '' && !emailOk ? 'That email address does not look right.' : 'We send your booking updates here.'}>
+              <input style={inputStyle} type="email" value={email} onChange={e => setEmail(e.target.value)} />
+            </Field>
+            <Field label="BB staff ID" hint={staffId.trim() !== '' && !staffOk ? 'Your staff ID is BB followed by 4 digits, like BB1234.' : undefined}>
+              <input style={{ ...inputStyle, textTransform: 'uppercase' }} placeholder="BB1234" autoCapitalize="characters" autoComplete="off" maxLength={12}
+                value={staffId} onChange={e => setStaffId(e.target.value.toUpperCase())} />
+            </Field>
+          </Card>
+          <BackNext onBack={back} nextDisabled={!detailsOk}
+            hint={name.trim() === '' ? 'Enter your name.' : !phoneOk ? 'Enter a Malaysian mobile number.' : !emailOk ? 'Check your email address, or leave it empty.' : 'Enter your BB staff ID, like BB1234.'}
+            onNext={() => { setErr(''); setStep(1) }} />
+        </>
+      )}
+
+      {step === 1 && (
+        <>
+          <Card style={{ marginBottom: 12 }}>
+            <MakeModelFields vType="car" make={make} setMake={setMake} makeOther={makeOther} setMakeOther={setMakeOther}
+              model={model} setModel={setModel} modelOther={modelOther} setModelOther={setModelOther} />
+            <Field label="Plate number">
+              <input style={{ ...inputStyle, textTransform: 'uppercase' }} placeholder="e.g. VAB 1234" value={plate} onChange={e => setPlate(e.target.value)} />
+            </Field>
+          </Card>
+          {bb.packages.length > 1 && !pkg && <div style={{ color: C.muted, fontSize: 13, marginBottom: 8 }}>Tap a package to choose it.</div>}
+          {bb.packages.map(p => (
+            <Card key={p.id} style={{ marginBottom: 12, borderColor: pkgId === p.id ? C.orange : C.border, cursor: 'pointer' }}>
+              <div role="radio" aria-checked={pkgId === p.id} tabIndex={0} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}
+                onClick={() => setPkgId(p.id)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPkgId(p.id) } }}>
+                <span aria-hidden style={{ flexShrink: 0, marginTop: 3, width: 20, height: 20, borderRadius: 10, border: `2px solid ${pkgId === p.id ? C.orange : C.muted}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {pkgId === p.id && <span style={{ width: 10, height: 10, borderRadius: 5, background: C.orange }} />}
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                    <div style={{ fontWeight: 800, fontSize: 17 }}>{p.name}</div>
+                    {p.price != null && <div style={{ fontWeight: 800, fontSize: 17, color: C.orange, whiteSpace: 'nowrap' }}>{rmShort(p.price)}</div>}
+                  </div>
+                  {p.description && <div style={{ color: C.muted, fontSize: 14, margin: '4px 0' }}>{p.description}</div>}
+                </div>
+              </div>
+            </Card>
+          ))}
+          <BackNext onBack={back} nextDisabled={!carOk}
+            hint={!makeValue ? 'Choose your make.' : !modelValue ? 'Choose your model.' : plate.trim().length < 2 ? 'Enter your plate number.' : 'Tap a package above to choose it.'}
+            onNext={() => { setErr(''); setStep(2); loadDays() }} />
+        </>
+      )}
+
+      {step === 2 && (
+        <>
+          <Card>
+            <Field label="Pick a day">
+              {days === null && <div style={{ textAlign: 'center', padding: 16 }}><Loader2 className="animate-spin" color={C.orange} /></div>}
+              {days !== null && daysFailed && (
+                <div style={{ color: C.muted, fontSize: 14 }}>
+                  We could not load the days. <button onClick={loadDays} style={{ background: 'none', border: 'none', color: C.orange, textDecoration: 'underline', fontSize: 14, padding: 0 }}>Try again</button>
+                </div>
+              )}
+              {days !== null && !daysFailed && !anyOpen && <div style={{ color: C.muted, fontSize: 14 }}>No days are open right now. Please check back soon.</div>}
+              {days !== null && days.length > 0 && <BbDayPicker days={days} value={date} onChange={setDate} />}
+            </Field>
+            {bb.pickup_note && <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.5 }}>{bb.pickup_note}</div>}
+            {bb.hq_address?.trim() && <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.5, marginTop: 6 }}>We collect from {bb.hq_address.trim()}.</div>}
+          </Card>
+          <BackNext onBack={back} nextDisabled={!date || !selectedDay?.available}
+            hint={days === null ? 'Loading the days…' : !anyOpen ? 'No days are open right now. Please check back soon.' : 'Pick a day to continue.'}
+            onNext={() => { setErr(''); setStep(3) }} />
+        </>
+      )}
+
+      {step === 3 && (
+        <>
+          <Card style={{ marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Your booking</div>
+            <Row k="Name" v={name.trim()} />
+            <Row k="Staff ID" v={normStaffId(staffId)} />
+            <Row k="Car" v={`${makeValue} ${modelValue} · ${plate.toUpperCase()}`} />
+            <Row k="Package" v={`${pkg?.name ?? ''}${pkg?.price != null ? ` (${rmShort(pkg.price)})` : ''}`} />
+            <Row k="Day" v={fmtDate(date)} />
+            <Row k="Collect from" v={hq} />
+            {bb.pickup_note && <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.5, marginTop: 8 }}>{bb.pickup_note}</div>}
+          </Card>
+          <Notice tone="info">No payment now. You pay when your car is returned.</Notice>
+          <Card>
+            <Field label="Notes (optional)" hint="For example, your preferred pickup time or where the car is parked at HQ.">
+              <textarea style={{ ...inputStyle, minHeight: 70 }} value={notes} onChange={e => setNotes(e.target.value)} />
+            </Field>
+          </Card>
+          <BackNext onBack={back} busy={busy} nextDisabled={!pkg || !date || !detailsOk} hint="Go back and check your details, package and day." nextLabel="Confirm booking" onNext={submit} />
+        </>
+      )}
+    </>
   )
 }
 

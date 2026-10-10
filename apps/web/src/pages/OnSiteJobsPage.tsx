@@ -428,6 +428,7 @@ export function OnSiteJobsPage() {
   const load = useCallback(async () => {
     if (!tenantId || !user) return
     let q = supabase.from('os_bookings').select(COLS).eq('tenant_id', tenantId).eq('service_date', date)
+      .eq('service_mode', 'van') // BB Care Day cars are handled from the Bookings page and the workshop
       .in('status', [...JOB_STATUSES, 'awaiting_deposit']).order('slot_start')
     if (branchId) q = q.eq('branch_id', branchId)
     // mechanics see their own jobs plus unassigned ones for their van

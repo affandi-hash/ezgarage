@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import {
   Loader2, X, Search, Phone, MessageCircle, MapPin, Copy, ExternalLink, AlertTriangle,
-  CalendarClock, Ban, UserX, UserCog, Check, Banknote,
+  CalendarClock, Ban, UserX, UserCog, Check, Banknote, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
@@ -15,8 +15,16 @@ import {
 
 // Ops desk for the ON-SITE vans: special requests, upcoming jobs, completed
 // jobs, the finance refund queue, and a searchable list of everything.
+// BB Staff Car Care Day bookings (service_mode 'bb_pickup') live here too: we
+// collect the car at BB HQ, service it at the Hub and return it the same day.
+// They have no slot, deposit or invoice, so those parts are hidden for them.
 
-type Row = Omit<OsBooking, 'customer_signature'> & { refund_proof_url: string | null }
+type Row = Omit<OsBooking, 'customer_signature'> & {
+  refund_proof_url: string | null
+  service_mode: 'van' | 'bb_pickup'
+  staff_id: string | null
+  hub_booking_id: string | null
+}
 
 const COLS = [
   'id', 'tenant_id', 'branch_id', 'booking_number', 'token', 'status', 'request_type', 'special_reason',
@@ -29,18 +37,33 @@ const COLS = [
   'confirmed_at', 'en_route_at', 'arrived_at', 'started_at', 'completed_at', 'cancelled_at', 'cancel_reason',
   'photos_before', 'photos_after', 'parts_used', 'health_check', 'tech_notes', 'customer_signed_at',
   'hub_quote_id', 'refund_due_at', 'refunded_at', 'refund_reference', 'refund_proof_url', 'created_at',
+  'service_mode', 'staff_id', 'hub_booking_id',
 ].join(',')
 
 interface Tech { id: string; full_name: string; role: string; branch_id: string | null }
 interface SlotRow { id: string; label: string; is_open: boolean; days: number[] }
 
-type TabKey = 'requests' | 'upcoming' | 'completed' | 'refunds' | 'all'
+type TabKey = 'requests' | 'upcoming' | 'bb' | 'completed' | 'refunds' | 'all'
 type ModalState =
   | { kind: 'approve' | 'decline' | 'cancel' | 'noshow' | 'reschedule' | 'assign' | 'refund'; b: Row }
   | null
 
 const UPCOMING: OsStatus[] = ['confirmed', 'awaiting_deposit', 'en_route', 'arrived', 'in_progress']
 const ALIVE: OsStatus[] = ['awaiting_deposit', 'requested', 'confirmed', 'en_route', 'arrived', 'in_progress', 'completed']
+// BB Care Day: statuses that use up one of the day's car places, and the next step for each.
+const BB_COUNTED: OsStatus[] = ['confirmed', 'en_route', 'arrived', 'in_progress', 'completed']
+const BB_NEXT: Partial<Record<OsStatus, { label: string; to: OsStatus }>> = {
+  confirmed: { label: 'Start collecting', to: 'en_route' },
+  en_route: { label: 'Car collected', to: 'arrived' },
+  arrived: { label: 'In service', to: 'in_progress' },
+  in_progress: { label: 'Returned to BB HQ', to: 'completed' },
+}
+const BB_STATUS_LABEL: Partial<Record<OsStatus, string>> = {
+  confirmed: 'Booked', en_route: 'Collecting', arrived: 'Car collected', in_progress: 'In service', completed: 'Returned',
+}
+const BB_COLOR = '#F15A22'
+const ENDED: OsStatus[] = ['cancelled', 'no_show', 'declined', 'expired']
+const isBB = (r: { service_mode?: string }) => r.service_mode === 'bb_pickup'
 const ACT_ROLES = ['super_admin', 'ops_manager', 'foreman', 'front_desk']
 const REFUND_ROLES = ['super_admin', 'ops_manager', 'finance']
 
@@ -119,7 +142,19 @@ function Chip({ color, children }: { color: string; children: React.ReactNode })
   )
 }
 
-const StatusChip = ({ s }: { s: OsStatus }) => <Chip color={OS_STATUS_COLOR[s]}>{OS_STATUS_LABEL[s]}</Chip>
+const StatusChip = ({ s, bb }: { s: OsStatus; bb?: boolean }) => <Chip color={OS_STATUS_COLOR[s]}>{(bb && BB_STATUS_LABEL[s]) || OS_STATUS_LABEL[s]}</Chip>
+
+function addDays(date: string, n: number) {
+  const d = new Date(date + 'T00:00:00')
+  d.setDate(d.getDate() + n)
+  return ymd(d)
+}
+
+// "Tuesday 14 Oct"
+function longDay(date: string) {
+  const d = new Date(date + 'T00:00:00')
+  return `${d.toLocaleDateString('en-GB', { weekday: 'long' })} ${d.getDate()} ${d.toLocaleDateString('en-GB', { month: 'short' })}`
+}
 
 function Modal({ title, onClose, children, drawer }: { title: string; onClose: () => void; children: React.ReactNode; drawer?: boolean }) {
   return (
@@ -480,18 +515,25 @@ function DetailDrawer({ b, techName, onClose }: { b: Row; techName: string | nul
   }, [b.id, b.customer_signed_at, b.hub_quote_id])
 
   const link = statusLink(b.token)
-  const balance = b.price_total != null && b.deposit_status === 'paid' ? b.price_total - b.deposit_amount : null
+  const bb = isBB(b)
+  const balance = !bb && b.price_total != null && b.deposit_status === 'paid' ? b.price_total - b.deposit_amount : null
   const timeline: [string, string | null][] = [
-    ['Booked', b.created_at], ['Confirmed', b.confirmed_at], ['En route', b.en_route_at], ['Arrived', b.arrived_at],
-    ['Started', b.started_at], ['Completed', b.completed_at], ['Cancelled', b.cancelled_at],
+    ['Booked', b.created_at], ['Confirmed', b.confirmed_at],
+    [bb ? 'Driver set off' : 'En route', b.en_route_at], [bb ? 'Car collected' : 'Arrived', b.arrived_at],
+    [bb ? 'In service' : 'Started', b.started_at], [bb ? 'Returned to BB HQ' : 'Completed', b.completed_at], ['Cancelled', b.cancelled_at],
     ['Refund due by', b.refund_due_at], ['Refunded', b.refunded_at],
   ]
 
   return (
     <Modal title={b.booking_number} onClose={onClose} drawer>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-        <StatusChip s={b.status} />
-        <Chip color={DEPOSIT_COLOR[b.deposit_status]}>{DEPOSIT_LABEL[b.deposit_status]}</Chip>
+        <StatusChip s={b.status} bb={bb} />
+        {bb ? (
+          <>
+            <Chip color={BB_COLOR}>BB Care Day</Chip>
+            {b.staff_id && <Chip color="#06B6D4">{b.staff_id}</Chip>}
+          </>
+        ) : <Chip color={DEPOSIT_COLOR[b.deposit_status]}>{DEPOSIT_LABEL[b.deposit_status]}</Chip>}
         {b.request_type === 'special' && <Chip color="#F59E0B">Special request</Chip>}
       </div>
 
@@ -504,7 +546,7 @@ function DetailDrawer({ b, techName, onClose }: { b: Row; techName: string | nul
         {b.customer_email && <p style={{ margin: '8px 0 0', color: '#A0A0A0', fontSize: 13 }}>{b.customer_email}</p>}
       </Section>
 
-      <Section title="Location">
+      <Section title={bb ? 'Pickup and return' : 'Location'}>
         <p style={{ margin: '0 0 8px', color: '#F0F0F0', fontSize: 13, lineHeight: 1.5 }}>{b.address ?? '-'}</p>
         {b.zone_name && <p style={{ margin: '0 0 8px', color: '#A0A0A0', fontSize: 12 }}>Zone: {b.zone_name}{b.postcode ? ` (${b.postcode})` : ''}</p>}
         {b.address && <a href={mapsUrl(b.address)} target="_blank" rel="noreferrer" style={{ ...btn(), textDecoration: 'none' }}><MapPin size={14} /> Open in Google Maps</a>}
@@ -515,19 +557,22 @@ function DetailDrawer({ b, techName, onClose }: { b: Row; techName: string | nul
         <KV k="Vehicle" v={`${b.vehicle_plate}${vehicleText(b) ? ` - ${vehicleText(b)}` : ''}`} />
         <KV k="Package" v={`${b.package_name ?? '-'}${b.grade_name ? ` (${b.grade_name})` : ''}`} />
         {b.tier && <KV k="Tier" v={b.tier === 'tier1' ? 'Tier 1' : 'Tier 2'} />}
-        <KV k="Date" v={`${fmtDate(b.service_date)}${b.slot_label ? ` - ${b.slot_label}` : ''}`} />
-        <KV k="Technician" v={techName ?? 'Unassigned'} />
+        {bb && b.staff_id && <KV k="Staff ID" v={b.staff_id} />}
+        <KV k="Date" v={bb ? `${fmtDate(b.service_date)} - Pickup day` : `${fmtDate(b.service_date)}${b.slot_label ? ` - ${b.slot_label}` : ''}`} />
+        {!bb && <KV k="Technician" v={techName ?? 'Unassigned'} />}
         <KV k="Customer reschedules" v={b.reschedule_count} />
         {b.special_reason && <KV k="Special reason" v={b.special_reason} />}
         {b.cancel_reason && <KV k="Reason" v={b.cancel_reason} />}
       </Section>
 
       <Section title="Price">
-        <KV k="Base" v={rm(b.price_base)} />
+        <KV k={bb ? 'Package price' : 'Base'} v={rm(b.price_base)} />
         {b.price_zone > 0 && <KV k="Zone surcharge" v={rm(b.price_zone)} />}
         {b.price_offhours > 0 && <KV k="Off-hours surcharge" v={rm(b.price_offhours)} />}
         <KV k="Total" v={rm(b.price_total)} strong />
-        <KV k="Deposit" v={`${rm(b.deposit_amount)} - ${DEPOSIT_LABEL[b.deposit_status]}`} />
+        {bb
+          ? <KV k="Payment" v="At return, on the workshop invoice" />
+          : <KV k="Deposit" v={`${rm(b.deposit_amount)} - ${DEPOSIT_LABEL[b.deposit_status]}`} />}
         {balance != null && <KV k="Balance after service" v={rm(balance)} strong />}
         {b.refund_reference && <KV k="Refund reference" v={b.refund_reference} />}
         {b.refund_proof_url && <KV k="Refund proof" v={/^https?:/.test(b.refund_proof_url) ? <a href={b.refund_proof_url} target="_blank" rel="noreferrer" style={{ color: '#F15A22' }}>Open</a> : b.refund_proof_url} />}
@@ -597,7 +642,7 @@ export function OnSiteBookingsPage() {
 
   const tabs: { key: TabKey; label: string }[] = role === 'finance'
     ? [{ key: 'refunds', label: 'Refunds due' }, { key: 'all', label: 'All' }]
-    : [{ key: 'requests', label: 'Requests' }, { key: 'upcoming', label: 'Upcoming' }, { key: 'completed', label: 'Completed' },
+    : [{ key: 'requests', label: 'Requests' }, { key: 'upcoming', label: 'Upcoming' }, { key: 'bb', label: 'BB Care Day' }, { key: 'completed', label: 'Completed' },
        { key: 'refunds', label: 'Refunds due' }, { key: 'all', label: 'All' }]
 
   const [tab, setTab] = useState<TabKey>(tabs[0].key)
@@ -610,6 +655,12 @@ export function OnSiteBookingsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'' | OsStatus>('')
   const [confirming, setConfirming] = useState<string | null>(null)
+  const [bbDate, setBbDate] = useState(ymd(new Date()))
+  const [bbCapacity, setBbCapacity] = useState<number | null>(null)
+  const [advancingId, setAdvancingId] = useState<string | null>(null)
+  const [bbCancelId, setBbCancelId] = useState<string | null>(null)
+  const [bbCancelReason, setBbCancelReason] = useState('')
+  const [bbCancelBusy, setBbCancelBusy] = useState(false)
 
   const load = useCallback(async () => {
     if (!tenantId) return
@@ -628,8 +679,11 @@ export function OnSiteBookingsPage() {
     supabase.from('users').select('id, full_name, role, branch_id').eq('tenant_id', tenantId)
       .in('role', ['mechanic', 'foreman']).eq('is_active', true)
       .then(({ data }) => setTechs((data as Tech[]) ?? []))
-    supabase.from('os_settings').select('refund_due_hours').eq('tenant_id', tenantId).maybeSingle()
-      .then(({ data }) => { if (data?.refund_due_hours != null) setRefundHours(data.refund_due_hours) })
+    supabase.from('os_settings').select('refund_due_hours, bb_capacity_per_day').eq('tenant_id', tenantId).maybeSingle()
+      .then(({ data }) => {
+        if (data?.refund_due_hours != null) setRefundHours(data.refund_due_hours)
+        if (data?.bb_capacity_per_day != null) setBbCapacity(data.bb_capacity_per_day)
+      })
   }, [tenantId])
 
   const techName = useCallback((id: string | null) => techs.find(t => t.id === id)?.full_name ?? null, [techs])
@@ -638,20 +692,24 @@ export function OnSiteBookingsPage() {
 
   const now = Date.now()
   const lists = useMemo(() => {
-    const requests = rows.filter(r => r.status === 'requested' && r.deposit_status === 'unpaid')
+    // BB Care Day bookings are never requests or refunds
+    const requests = rows.filter(r => !isBB(r) && r.status === 'requested' && r.deposit_status === 'unpaid')
       .sort((a, b) => byDateSlot(a, b))
     // a request that already paid its deposit (auto-confirm off) only needs confirming
-    const upcoming = rows.filter(r => UPCOMING.includes(r.status) || (r.status === 'requested' && r.deposit_status === 'paid'))
+    const upcoming = rows.filter(r => UPCOMING.includes(r.status) || (!isBB(r) && r.status === 'requested' && r.deposit_status === 'paid'))
       .sort(byDateSlot)
     const completed = rows.filter(r => r.status === 'completed')
       .sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''))
-    const refunds = rows.filter(r => r.deposit_status === 'refund_due')
+    const refunds = rows.filter(r => !isBB(r) && r.deposit_status === 'refund_due')
       .sort((a, b) => (a.refund_due_at ?? '').localeCompare(b.refund_due_at ?? ''))
-    const refunded = rows.filter(r => r.deposit_status === 'refunded')
+    const refunded = rows.filter(r => !isBB(r) && r.deposit_status === 'refunded')
       .sort((a, b) => (b.refunded_at ?? '').localeCompare(a.refunded_at ?? '')).slice(0, 15)
     const overdue = refunds.filter(r => r.refund_due_at && new Date(r.refund_due_at).getTime() < now)
-    return { requests, upcoming, completed, refunds, refunded, overdue }
-  }, [rows, now])
+    const bbDay = rows.filter(r => isBB(r) && r.service_date === bbDate)
+      .sort((a, b) => Number(ENDED.includes(a.status)) - Number(ENDED.includes(b.status)) || a.created_at.localeCompare(b.created_at))
+    const bbCount = bbDay.filter(r => BB_COUNTED.includes(r.status)).length
+    return { requests, upcoming, completed, refunds, refunded, overdue, bbDay, bbCount }
+  }, [rows, now, bbDate])
 
   const allList = useMemo(() => {
     const s = search.trim().toLowerCase()
@@ -660,13 +718,14 @@ export function OnSiteBookingsPage() {
       if (statusFilter && r.status !== statusFilter) return false
       if (!s) return true
       return r.booking_number.toLowerCase().includes(s) || r.customer_name.toLowerCase().includes(s)
+        || (r.staff_id ?? '').toLowerCase().includes(s)
         || r.vehicle_plate.toLowerCase().replace(/\s/g, '').includes(s.replace(/\s/g, ''))
         || (digits.length >= 3 && r.customer_phone.replace(/\D/g, '').includes(digits))
     })
   }, [rows, search, statusFilter])
 
   const counts: Record<TabKey, number> = {
-    requests: lists.requests.length, upcoming: lists.upcoming.length, completed: lists.completed.length,
+    requests: lists.requests.length, upcoming: lists.upcoming.length, bb: lists.bbCount, completed: lists.completed.length,
     refunds: lists.refunds.length, all: rows.length,
   }
 
@@ -679,10 +738,27 @@ export function OnSiteBookingsPage() {
     load()
   }
 
+  async function advanceBB(b: Row, to: OsStatus) {
+    setAdvancingId(b.id)
+    const { error } = await supabase.from('os_bookings').update({ status: to }).eq('id', b.id)
+    setAdvancingId(null)
+    if (error) return toast(error.message, 'error')
+    load()
+  }
+
+  async function cancelBB(b: Row) {
+    if (!bbCancelReason.trim()) return toast('Please enter a reason', 'error')
+    setBbCancelBusy(true)
+    const ok = await callRpc('os_staff_cancel', { p_booking: b.id, p_refund: false, p_reason: bbCancelReason.trim() })
+    setBbCancelBusy(false)
+    if (ok) { toast('Booking cancelled'); setBbCancelId(null); setBbCancelReason(''); load() }
+  }
+
   // One booking card, shared by every tab; `actions` differ per tab.
   function bookingCard(b: Row, actions?: React.ReactNode) {
+    const bb = isBB(b)
     return (
-      <div key={b.id} style={card}>
+      <div key={b.id} style={{ ...card, ...(ENDED.includes(b.status) ? { opacity: 0.6 } : {}) }}>
         <div onClick={() => setDetailId(b.id)} style={{ cursor: 'pointer' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
             <div>
@@ -690,17 +766,27 @@ export function OnSiteBookingsPage() {
               <p style={{ margin: '2px 0 0', color: '#F0F0F0', fontSize: 15, fontWeight: 600 }}>{b.customer_name}</p>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <StatusChip s={b.status} />
-              {b.deposit_status !== 'unpaid' && b.deposit_status !== 'none' && <Chip color={DEPOSIT_COLOR[b.deposit_status]}>{DEPOSIT_LABEL[b.deposit_status]}</Chip>}
+              {bb && <Chip color={BB_COLOR}>BB</Chip>}
+              {bb && b.staff_id && <Chip color="#06B6D4">{b.staff_id}</Chip>}
+              <StatusChip s={b.status} bb={bb} />
+              {!bb && b.deposit_status !== 'unpaid' && b.deposit_status !== 'none' && <Chip color={DEPOSIT_COLOR[b.deposit_status]}>{DEPOSIT_LABEL[b.deposit_status]}</Chip>}
             </div>
           </div>
           <p style={{ margin: '8px 0 0', color: '#A0A0A0', fontSize: 13 }}>
             {b.vehicle_plate}{vehicleText(b) ? ` - ${vehicleText(b)}` : ''} · {b.package_name ?? '-'}{b.grade_name ? ` (${b.grade_name})` : ''}
           </p>
           <p style={{ margin: '4px 0 0', color: '#A0A0A0', fontSize: 13 }}>
-            {b.service_date ? `${fmtDate(b.service_date)}${b.slot_label ? ` · ${b.slot_label}` : ''}` : 'No date yet'} · {rm(b.price_total)}
-            {b.technician_id && techName(b.technician_id) ? ` · ${techName(b.technician_id)}` : ''}
+            {b.service_date ? `${fmtDate(b.service_date)}${bb ? ' · Pickup day' : b.slot_label ? ` · ${b.slot_label}` : ''}` : 'No date yet'} · {rm(b.price_total)}
+            {!bb && b.technician_id && techName(b.technician_id) ? ` · ${techName(b.technician_id)}` : ''}
           </p>
+          {bb && (
+            <>
+              <p style={{ margin: '4px 0 0', fontSize: 13 }}>
+                <a href={`tel:${b.customer_phone}`} onClick={e => e.stopPropagation()} style={{ color: '#3B82F6', textDecoration: 'none' }}>{b.customer_phone}</a>
+              </p>
+              {b.access_notes && <p style={{ margin: '4px 0 0', color: '#F59E0B', fontSize: 13 }}>Notes: {b.access_notes}</p>}
+            </>
+          )}
           {b.status === 'requested' && b.deposit_status === 'unpaid' && (
             <>
               {b.special_reason && <p style={{ margin: '8px 0 0', color: '#F59E0B', fontSize: 13 }}>Reason: {b.special_reason}</p>}
@@ -709,11 +795,43 @@ export function OnSiteBookingsPage() {
           )}
         </div>
         {actions && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>{actions}</div>}
+        {bb && bbCancelId === b.id && (
+          <div style={{ marginTop: 12, background: '#161616', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10, padding: 12 }}>
+            <label style={lbl}>Why is {b.booking_number} being cancelled? (the customer is told)</label>
+            <input value={bbCancelReason} onChange={e => setBbCancelReason(e.target.value)} placeholder="e.g. Car not available" style={inp} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+              <button style={btn('danger', bbCancelBusy)} disabled={bbCancelBusy} onClick={() => cancelBB(b)}>
+                {bbCancelBusy && <Loader2 size={14} className="animate-spin" />} Yes, cancel booking
+              </button>
+              <button style={btn()} disabled={bbCancelBusy} onClick={() => { setBbCancelId(null); setBbCancelReason('') }}>Keep booking</button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
 
+  function bbActions(b: Row) {
+    if (!canAct) return null
+    const next = BB_NEXT[b.status]
+    const cancellable = ['confirmed', 'en_route', 'arrived'].includes(b.status)
+    const busy = advancingId === b.id
+    return (
+      <>
+        {next && (
+          <button style={btn('primary', busy)} disabled={busy} onClick={() => advanceBB(b, next.to)}>
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {next.label}
+          </button>
+        )}
+        {cancellable && bbCancelId !== b.id && (
+          <button style={btn('danger')} onClick={() => { setBbCancelId(b.id); setBbCancelReason('') }}><Ban size={14} /> Cancel booking</button>
+        )}
+      </>
+    )
+  }
+
   function upcomingActions(b: Row) {
+    if (isBB(b)) return bbActions(b)
     if (!canAct) return null
     const cancellable = ['awaiting_deposit', 'requested', 'confirmed', 'en_route', 'arrived'].includes(b.status)
     const noShowable = ['confirmed', 'en_route', 'arrived'].includes(b.status)
@@ -744,7 +862,7 @@ export function OnSiteBookingsPage() {
     <div style={{ padding: 16, maxWidth: 1000, margin: '0 auto' }}>
       <div style={{ marginBottom: 16 }}>
         <h1 style={{ color: '#F0F0F0', fontSize: 22, fontWeight: 800, margin: 0 }}>ON-SITE Bookings</h1>
-        <p style={{ color: '#A0A0A0', fontSize: 13, margin: '4px 0 0' }}>Requests, upcoming van jobs, and deposit refunds</p>
+        <p style={{ color: '#A0A0A0', fontSize: 13, margin: '4px 0 0' }}>Requests, upcoming van jobs, BB Care Day cars, and deposit refunds</p>
       </div>
 
       {lists.overdue.length > 0 && (
@@ -781,6 +899,21 @@ export function OnSiteBookingsPage() {
           ))}
 
           {tab === 'upcoming' && list(lists.upcoming, 'No upcoming bookings', upcomingActions)}
+
+          {tab === 'bb' && (
+            <>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                <button onClick={() => setBbDate(addDays(bbDate, -1))} aria-label="Previous day" style={{ ...btn(), padding: 0, width: 46 }}><ChevronLeft size={18} /></button>
+                <input type="date" value={bbDate} onChange={e => e.target.value && setBbDate(e.target.value)} style={{ ...inp, flex: 1, textAlign: 'center', fontWeight: 600, colorScheme: 'dark' }} />
+                <button onClick={() => setBbDate(addDays(bbDate, 1))} aria-label="Next day" style={{ ...btn(), padding: 0, width: 46 }}><ChevronRight size={18} /></button>
+                {bbDate !== ymd(new Date()) && <button onClick={() => setBbDate(ymd(new Date()))} style={btn('primary')}>Today</button>}
+              </div>
+              <h2 style={{ margin: '0 0 12px', color: '#F0F0F0', fontSize: 16, fontWeight: 700 }}>
+                {longDay(bbDate)}: {lists.bbCount}{bbCapacity != null ? ` of ${bbCapacity}` : ''} car{lists.bbCount === 1 && bbCapacity == null ? '' : 's'}
+              </h2>
+              {list(lists.bbDay, 'No BB cars booked for this day', bbActions)}
+            </>
+          )}
 
           {tab === 'completed' && list(lists.completed, 'No completed jobs yet')}
 

@@ -12,6 +12,7 @@ type Booking = {
   token: string; booking_number: string; customer_name: string; package_name: string | null; grade_name: string | null
   vehicle_plate: string; address: string | null; service_date: string | null; slot_label: string | null
   deposit_amount: number; price_total: number | null; refund_due_at: string | null; cancel_reason: string | null
+  service_mode: string; staff_id: string | null
 }
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
@@ -20,7 +21,31 @@ const when = (b: Booking) => (b.service_date ? new Date(b.service_date + 'T00:00
 const service = (b: Booking) => [b.package_name, b.grade_name].filter(Boolean).join(' · ')
 
 type Tpl = { subject: string; lines: string[]; cta?: string }
+
+// BB Staff Car Care Day: pickup and return, no deposit, payment at return
+const bbDate = (b: Booking) => (b.service_date ? new Date(b.service_date + 'T00:00:00+08:00').toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kuala_Lumpur' }) : 'to be confirmed')
+function bbTemplate(event: string, b: Booking): Tpl | null {
+  const detail = [`Booking: ${b.booking_number}`, `Staff ID: ${b.staff_id ?? ''}`, `Package: ${b.package_name ?? ''}`, `Car: ${b.vehicle_plate}`, `Day: ${bbDate(b)}`]
+  switch (event) {
+    case 'bb_booked':
+      return { subject: `BB Staff Car Care Day booked: ${b.booking_number}`, cta: 'View booking', lines: [`Hi ${b.customer_name}, you are booked in. We collect your car from BB HQ on the day, service and wash it at Motoverse Garage, and return it before the end of the day. You pay when your car is returned.`, ...detail] }
+    case 'rescheduled':
+      return { subject: `New day for ${b.booking_number}`, cta: 'View booking', lines: [`Hi ${b.customer_name}, your booking has a new day.`, ...detail] }
+    case 'en_route':
+      return { subject: `We are collecting your car (${b.booking_number})`, cta: 'View booking', lines: [`Hi ${b.customer_name}, our driver is on the way to collect your car from BB HQ.`, ...detail] }
+    case 'completed':
+      return { subject: `Your car is back: ${b.booking_number}`, cta: 'View booking', lines: [`Hi ${b.customer_name}, your car has been serviced, washed and returned to BB HQ. Payment is made at return. Thank you!`, ...detail] }
+    case 'cancelled':
+      return { subject: `Cancelled: ${b.booking_number}`, lines: [`Hi ${b.customer_name}, your BB Staff Car Care Day booking is cancelled. You are welcome to book another day.`] }
+    case 'no_show':
+      return { subject: `We could not collect your car (${b.booking_number})`, lines: [`Hi ${b.customer_name}, we could not collect your car on the day. You are welcome to book another day.`] }
+    default:
+      return null
+  }
+}
+
 function template(event: string, b: Booking): Tpl | null {
+  if (b.service_mode === 'bb_pickup') return bbTemplate(event, b)
   const link = `${APP_URL}/on-site/status/${b.token}`
   const detail = [`Booking: ${b.booking_number}`, `Service: ${service(b)}`, `Vehicle: ${b.vehicle_plate}`, `Where: ${b.address ?? ''}`, `When: ${when(b)}`]
   switch (event) {
@@ -66,7 +91,7 @@ function template(event: string, b: Booking): Tpl | null {
 function html(t: Tpl, b: Booking): string {
   const link = `${APP_URL}/on-site/status/${b.token}`
   return `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;color:#111">
-<h2 style="color:#F15A22;margin:0 0 12px">Motoverse ON-SITE</h2>
+<h2 style="color:#F15A22;margin:0 0 12px">${b.service_mode === 'bb_pickup' ? 'Motoverse BB Staff Car Care Day' : 'Motoverse ON-SITE'}</h2>
 ${t.lines.filter(Boolean).map(l => `<p style="margin:6px 0;line-height:1.5">${esc(l)}</p>`).join('')}
 ${t.cta ? `<p style="margin:20px 0"><a href="${link}" style="background:#F15A22;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">${esc(t.cta)}</a></p>` : ''}
 <p style="color:#888;font-size:12px">Or open: ${link}</p></div>`
@@ -89,7 +114,7 @@ Deno.serve(async () => {
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
   const { data: queue, error } = await supabase
     .from('os_notifications')
-    .select('id, event, channel, to_address, booking:os_bookings(token, booking_number, customer_name, package_name, grade_name, vehicle_plate, address, service_date, slot_label, deposit_amount, price_total, refund_due_at, cancel_reason)')
+    .select('id, event, channel, to_address, booking:os_bookings(token, booking_number, customer_name, package_name, grade_name, vehicle_plate, address, service_date, slot_label, deposit_amount, price_total, refund_due_at, cancel_reason, service_mode, staff_id)')
     .eq('status', 'queued').order('created_at').limit(25)
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 })
 

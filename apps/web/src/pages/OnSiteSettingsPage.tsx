@@ -10,13 +10,14 @@ import { CAR_MAKES, BIKE_MAKES, makeOptionsFor, modelOptionsFor } from '@/lib/ve
 // Settings for the ON-SITE van business. Every tab writes straight to the
 // os_* tables (RLS limits writes to super_admin / ops_manager of the tenant).
 
-type Tab = 'packages' | 'tiers' | 'slots' | 'zones' | 'rules'
+type Tab = 'packages' | 'tiers' | 'slots' | 'zones' | 'rules' | 'bb'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'packages', label: 'Packages & prices' },
   { id: 'tiers', label: 'Vehicle tiers' },
   { id: 'slots', label: 'Time slots' },
   { id: 'zones', label: 'Zones' },
   { id: 'rules', label: 'Rules & payments' },
+  { id: 'bb', label: 'BB Care Day' },
 ]
 
 // ── shared styles and small components ──────────────────────────────────
@@ -130,6 +131,7 @@ export function OnSiteSettingsPage() {
           {tab === 'slots' && <SlotsTab tenantId={tenantId} />}
           {tab === 'zones' && <ZonesTab tenantId={tenantId} />}
           {tab === 'rules' && <RulesTab tenantId={tenantId} />}
+          {tab === 'bb' && <BbTab tenantId={tenantId} />}
         </>
       )}
     </div>
@@ -164,7 +166,7 @@ function PackagesTab({ tenantId }: { tenantId: string }) {
 
   const load = useCallback(async () => {
     const [p, g, pr] = await Promise.all([
-      supabase.from('os_packages').select('id, name, description, services, duration_min, sort_order, is_active').eq('tenant_id', tenantId).order('sort_order'),
+      supabase.from('os_packages').select('id, name, description, services, duration_min, sort_order, is_active').eq('tenant_id', tenantId).eq('audience', 'public').order('sort_order'),
       supabase.from('os_oil_grades').select('id, package_id, name, sort_order, is_active').eq('tenant_id', tenantId).order('sort_order'),
       supabase.from('os_prices').select('id, package_id, grade_id, tier, price, effective_from').eq('tenant_id', tenantId).order('effective_from', { ascending: false }).limit(5000),
     ])
@@ -260,7 +262,7 @@ function PackageForm({ tenantId, pkg, nextSort, onSaved, onCancel }: { tenantId:
     setSaving(true)
     const { error } = pkg
       ? await supabase.from('os_packages').update(payload).eq('id', pkg.id).eq('tenant_id', tenantId)
-      : await supabase.from('os_packages').insert({ ...payload, tenant_id: tenantId, is_active: true })
+      : await supabase.from('os_packages').insert({ ...payload, tenant_id: tenantId, is_active: true, audience: 'public' })
     setSaving(false)
     if (error) { fail(error); return }
     toast(pkg ? 'Package updated' : 'Package added')
@@ -1009,6 +1011,285 @@ function RulesTab({ tenantId }: { tenantId: string }) {
       </div>
 
       <div><Btn onClick={save} disabled={saving}><Save size={15} /> {saving ? 'Saving...' : 'Save rules'}</Btn></div>
+    </div>
+  )
+}
+
+// ── 6. BB Care Day ──────────────────────────────────────────────────────
+// BrainyBunch staff pickup-and-return service: settings plus the BB packages
+// (audience 'bb_staff'), each priced with tier 'bb'.
+type BbForm = { bb_enabled: boolean; bb_capacity_per_day: string; bb_days: number[]; bb_hq_address: string; bb_pickup_note: string }
+const BB_DEFAULT: BbForm = { bb_enabled: true, bb_capacity_per_day: '8', bb_days: [1, 2, 3, 4, 5], bb_hq_address: '', bb_pickup_note: '' }
+
+interface BbPrice { id: string; package_id: string; price: number; effective_from: string }
+
+function BbTab({ tenantId }: { tenantId: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <BbSettingsCard tenantId={tenantId} />
+      <BbPackages tenantId={tenantId} />
+    </div>
+  )
+}
+
+function BbSettingsCard({ tenantId }: { tenantId: string }) {
+  const user = useAuthStore(s => s.user)
+  const [f, setF] = useState<BbForm>(BB_DEFAULT)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    const { data: s, error } = await supabase.from('os_settings').select('*').eq('tenant_id', tenantId).maybeSingle()
+    if (error) fail(error)
+    if (s) {
+      setF({
+        bb_enabled: s.bb_enabled !== false,
+        bb_capacity_per_day: String(s.bb_capacity_per_day ?? 8),
+        bb_days: ((s.bb_days as number[] | null) ?? [1, 2, 3, 4, 5]).map(Number).sort(),
+        bb_hq_address: s.bb_hq_address ?? '',
+        bb_pickup_note: s.bb_pickup_note ?? '',
+      })
+    }
+    setLoading(false)
+  }, [tenantId])
+
+  useEffect(() => { load() }, [load])
+
+  function toggleDay(n: number) {
+    setF(x => ({ ...x, bb_days: x.bb_days.includes(n) ? x.bb_days.filter(y => y !== n) : [...x.bb_days, n].sort() }))
+  }
+
+  async function save() {
+    const cap = parseInt0(f.bb_capacity_per_day, 1)
+    if (cap == null) { toast('Cars per day must be a whole number, at least 1', 'error'); return }
+    if (f.bb_days.length === 0) { toast('Choose at least one day we run', 'error'); return }
+    setSaving(true)
+    const { error } = await supabase.from('os_settings').upsert({
+      tenant_id: tenantId, bb_enabled: f.bb_enabled, bb_capacity_per_day: cap, bb_days: f.bb_days,
+      bb_hq_address: f.bb_hq_address.trim() || null, bb_pickup_note: f.bb_pickup_note.trim(),
+      updated_by: user?.id ?? null,
+    }, { onConflict: 'tenant_id' })
+    setSaving(false)
+    if (error) { fail(error); return }
+    toast('BB Care Day settings saved')
+  }
+
+  if (loading) return <Spinner />
+
+  return (
+    <div style={card}>
+      <h3 style={h3}>BB Staff Car Care Day</h3>
+      <p style={{ ...helper, margin: '0 0 14px' }}>BrainyBunch staff book a pickup and return service. We collect the car at BB HQ, service it at the Hub workshop, wash it and return it the same day.</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <Switch on={f.bb_enabled} onChange={v => setF(x => ({ ...x, bb_enabled: v }))} label="Accept BB staff bookings" />
+        <span style={{ fontSize: 13 }}>Accept BB staff bookings</span>
+      </div>
+      <div style={row}>
+        <Field label="Cars per day" grow={140}>
+          <input style={inp} inputMode="numeric" value={f.bb_capacity_per_day} onChange={e => setF(x => ({ ...x, bb_capacity_per_day: e.target.value }))} />
+        </Field>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <span style={{ color: C.mute, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Days we run</span>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+          {ISO_DAYS.map(day => {
+            const on = f.bb_days.includes(day.n)
+            return (
+              <button key={day.n} type="button" onClick={() => toggleDay(day.n)} aria-pressed={on}
+                style={{ background: on ? C.orange + '22' : C.s2, color: on ? C.orange : C.mute, border: `1px solid ${on ? C.orange : C.border}`, borderRadius: 8, fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer' }}>
+                {day.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <Field label="BB HQ address (shown to staff who book)" grow={300}>
+          <input style={inp} value={f.bb_hq_address} onChange={e => setF(x => ({ ...x, bb_hq_address: e.target.value }))} placeholder="Where we collect and return the cars" />
+        </Field>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <Field label="Pickup and return note shown to customers" grow={300}>
+          <textarea style={{ ...inp, minHeight: 70, resize: 'vertical' }} value={f.bb_pickup_note} onChange={e => setF(x => ({ ...x, bb_pickup_note: e.target.value }))} />
+        </Field>
+      </div>
+      <p style={helper}>Payment is not taken at booking. The customer pays at return, through the normal workshop invoice. Blackout dates and the booking window come from the other tabs.</p>
+      <div style={{ marginTop: 12 }}><Btn onClick={save} disabled={saving}><Save size={15} /> {saving ? 'Saving...' : 'Save BB settings'}</Btn></div>
+    </div>
+  )
+}
+
+function BbPackages({ tenantId }: { tenantId: string }) {
+  const user = useAuthStore(s => s.user)
+  const [pkgs, setPkgs] = useState<Pkg[]>([])
+  const [prices, setPrices] = useState<BbPrice[]>([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const today = ymd(new Date())
+
+  const load = useCallback(async () => {
+    const p = await supabase.from('os_packages').select('id, name, description, services, duration_min, sort_order, is_active').eq('tenant_id', tenantId).eq('audience', 'bb_staff').order('sort_order')
+    if (p.error) fail(p.error)
+    const list = (p.data as Pkg[]) ?? []
+    setPkgs(list)
+    if (list.length) {
+      const pr = await supabase.from('os_prices').select('id, package_id, price, effective_from').eq('tenant_id', tenantId).eq('tier', 'bb').in('package_id', list.map(x => x.id)).order('effective_from', { ascending: false })
+      if (pr.error) fail(pr.error)
+      setPrices(((pr.data as BbPrice[]) ?? []).map(x => ({ ...x, price: Number(x.price) })))
+    } else setPrices([])
+    setLoading(false)
+  }, [tenantId])
+
+  useEffect(() => { load() }, [load])
+
+  // Writes the BB price for today: a new row, or replaces today's row if one already exists.
+  async function writePrice(packageId: string, amount: number) {
+    const found = await supabase.from('os_prices').select('id').eq('tenant_id', tenantId).eq('package_id', packageId).eq('tier', 'bb').is('grade_id', null).eq('effective_from', today).maybeSingle()
+    if (found.error) return found.error
+    const { error } = found.data
+      ? await supabase.from('os_prices').update({ price: amount }).eq('id', found.data.id).eq('tenant_id', tenantId)
+      : await supabase.from('os_prices').insert({ tenant_id: tenantId, package_id: packageId, grade_id: null, tier: 'bb', price: amount, effective_from: today, created_by: user?.id ?? null })
+    return error
+  }
+
+  async function setActive(p: Pkg, is_active: boolean) {
+    const { error } = await supabase.from('os_packages').update({ is_active }).eq('id', p.id).eq('tenant_id', tenantId)
+    if (error) { fail(error); return }
+    toast(is_active ? `${p.name} is now active` : `${p.name} deactivated. It is hidden from staff`)
+    load()
+  }
+
+  if (loading) return <Spinner />
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ flex: '1 1 260px' }}>
+          <h3 style={{ ...h3, margin: 0 }}>BB packages and prices</h3>
+          <p style={{ ...helper, margin: '4px 0 0' }}>Packages are never deleted, only deactivated, so old bookings keep their name and price. A package needs a BB price to be offered.</p>
+        </div>
+        {!creating && <Btn onClick={() => setCreating(true)}><Plus size={15} /> Add BB package</Btn>}
+      </div>
+
+      {creating && (
+        <div style={card}>
+          <h3 style={h3}>New BB package</h3>
+          <BbPackageForm tenantId={tenantId} nextSort={Math.max(0, ...pkgs.map(p => p.sort_order)) + 1} writePrice={writePrice}
+            onCancel={() => setCreating(false)} onSaved={() => { setCreating(false); load() }} />
+        </div>
+      )}
+
+      {pkgs.length === 0 && !creating && <Empty>No BB packages yet. Add one so staff have something to book.</Empty>}
+
+      {pkgs.map(p => (
+        <BbPackageRow key={p.id} pkg={p} tenantId={tenantId} today={today} prices={prices.filter(x => x.package_id === p.id)}
+          writePrice={writePrice} setActive={setActive} reload={load} />
+      ))}
+    </div>
+  )
+}
+
+function BbPackageForm({ tenantId, pkg, nextSort, writePrice, onSaved, onCancel }: {
+  tenantId: string; pkg?: Pkg; nextSort?: number; writePrice?: (packageId: string, amount: number) => Promise<{ message: string } | null | undefined>
+  onSaved: () => void; onCancel: () => void
+}) {
+  const [name, setName] = useState(pkg?.name ?? '')
+  const [description, setDescription] = useState(pkg?.description ?? '')
+  const [price, setPrice] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    if (!name.trim()) { toast('Package name is required', 'error'); return }
+    const amount = pkg ? null : parseMoney(price)
+    if (!pkg && amount == null) { toast('Enter a valid BB price (0 or more)', 'error'); return }
+    setSaving(true)
+    if (pkg) {
+      const { error } = await supabase.from('os_packages').update({ name: name.trim(), description: description.trim() || null }).eq('id', pkg.id).eq('tenant_id', tenantId)
+      setSaving(false)
+      if (error) { fail(error); return }
+      toast('Package updated')
+      onSaved()
+      return
+    }
+    const { data, error } = await supabase.from('os_packages').insert({
+      tenant_id: tenantId, name: name.trim(), description: description.trim() || null, services: [],
+      duration_min: 60, sort_order: nextSort ?? 0, is_active: true, audience: 'bb_staff',
+    }).select('id').single()
+    if (error || !data) { setSaving(false); fail(error ?? { message: 'Could not add the package' }); return }
+    const priceErr = writePrice ? await writePrice(data.id, amount as number) : null
+    setSaving(false)
+    if (priceErr) { fail(priceErr); toast('The package was added but has no price yet. Set the price from its card.', 'error'); onSaved(); return }
+    toast('BB package added')
+    onSaved()
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={row}>
+        <Field label="Name" grow={220}><input style={inp} value={name} onChange={e => setName(e.target.value)} placeholder="Full service and wash" /></Field>
+        {!pkg && <Field label="BB price (RM)" grow={120}><input style={inp} inputMode="decimal" value={price} onChange={e => setPrice(e.target.value)} placeholder="199.00" /></Field>}
+      </div>
+      <Field label="Description" grow={300}><textarea style={{ ...inp, minHeight: 60, resize: 'vertical' }} value={description} onChange={e => setDescription(e.target.value)} /></Field>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Btn onClick={save} disabled={saving}><Save size={15} /> {saving ? 'Saving...' : 'Save package'}</Btn>
+        <Btn kind="ghost" onClick={onCancel}>Cancel</Btn>
+      </div>
+    </div>
+  )
+}
+
+function BbPackageRow({ pkg, tenantId, today, prices, writePrice, setActive, reload }: {
+  pkg: Pkg; tenantId: string; today: string; prices: BbPrice[]
+  writePrice: (packageId: string, amount: number) => Promise<{ message: string } | null | undefined>
+  setActive: (p: Pkg, v: boolean) => void; reload: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [price, setPrice] = useState('')
+  const [saving, setSaving] = useState(false)
+  const current = prices.filter(p => p.effective_from <= today).sort((a, b) => b.effective_from.localeCompare(a.effective_from))[0]
+  const upcoming = prices.filter(p => p.effective_from > today).sort((a, b) => a.effective_from.localeCompare(b.effective_from))[0]
+
+  async function savePrice() {
+    const amount = parseMoney(price)
+    if (amount == null) { toast('Enter a valid price (0 or more)', 'error'); return }
+    setSaving(true)
+    const error = await writePrice(pkg.id, amount)
+    setSaving(false)
+    if (error) { fail(error); return }
+    toast(`BB price set to ${rm(amount)} from today`)
+    setPrice('')
+    reload()
+  }
+
+  return (
+    <div style={{ ...card, opacity: pkg.is_active ? 1 : 0.75 }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 15, fontWeight: 700 }}>{pkg.name}</span>
+          <span style={{ display: 'block', fontSize: 12, color: C.mute, marginTop: 2 }}>
+            {pkg.description || 'No description'}
+          </span>
+        </div>
+        <span style={{ fontSize: 15, fontWeight: 700, color: current ? C.text : C.dim }}>{current ? rm(current.price) : 'No price'}</span>
+        <Badge color={pkg.is_active ? C.green : C.dim}>{pkg.is_active ? 'Active' : 'Inactive'}</Badge>
+        <Switch on={pkg.is_active} onChange={v => setActive(pkg, v)} label={`${pkg.name} active`} />
+      </div>
+      {upcoming && <div style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>{rm(upcoming.price)} from {fmtDay(upcoming.effective_from)}</div>}
+
+      {editing ? (
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
+          <BbPackageForm tenantId={tenantId} pkg={pkg} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); reload() }} />
+        </div>
+      ) : (
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={row}>
+            <Field label="Change BB price (RM)" grow={160}><input style={inp} inputMode="decimal" value={price} onChange={e => setPrice(e.target.value)} placeholder={current ? String(current.price) : '199.00'} /></Field>
+            <Btn onClick={savePrice} disabled={saving}><Save size={15} /> {saving ? 'Saving...' : 'Save price'}</Btn>
+            <Btn kind="ghost" onClick={() => setEditing(true)}><Pencil size={14} /> Edit name and description</Btn>
+          </div>
+          <p style={{ ...helper, margin: 0 }}>A new price applies from today. Existing bookings keep the price they were shown.</p>
+        </div>
+      )}
     </div>
   )
 }

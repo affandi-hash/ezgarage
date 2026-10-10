@@ -114,10 +114,13 @@ export const OS_ERRORS: Record<string, string> = {
   slot_not_found: 'That time is no longer available.',
   slot_taken: 'Sorry, someone just took that slot. Please pick another.',
   slot_closed: 'That time is not open for booking.',
-  date_blocked: 'The van is not working on that date.',
-  day_not_served: 'The van does not work on that day.',
-  outside_window: 'That date is outside the booking window.',
-  too_soon: 'That slot is too close to book online.',
+  date_blocked: 'We are not working on that date. Please pick another day.',
+  day_not_served: 'We do not work on that day. Please pick another day.',
+  outside_window: 'That date is outside the booking window. Please pick another day.',
+  too_soon: 'That time is too close to book online. Please pick another.',
+  invalid_staff_id: 'Enter your BB staff ID, like BB1234.',
+  day_full: 'That day is full. Please pick another day.',
+  date_required: 'Please pick a day.',
   too_late: 'It is too late to reschedule. You can still cancel, but the deposit is not refundable.',
   max_reschedules: 'This booking has reached the reschedule limit.',
   not_changeable: 'This booking can no longer be changed.',
@@ -132,6 +135,28 @@ export const OS_ERRORS: Record<string, string> = {
 
 export function osError(code: unknown): string {
   return OS_ERRORS[String(code)] ?? 'Something went wrong. Please try again.'
+}
+
+// BB Staff Car Care Day (pickup and return, migration 166).
+export interface BbDay { date: string; left: number; available: boolean }
+
+// What the customer sees for each BB status (the van labels above do not fit a pickup).
+export const BB_STATUS_LABEL: Partial<Record<OsStatus, string>> = {
+  confirmed: 'Booked',
+  en_route: 'Collecting',
+  arrived: 'Collected',
+  in_progress: 'In service',
+  completed: 'Returned',
+}
+
+// Staff ID is "BB" + 4 digits; case and spaces are ignored (the server normalises the same way).
+export const normStaffId = (s: string) => s.replace(/\s/g, '').toUpperCase()
+export const staffIdOk = (s: string) => /^BB[0-9]{4}$/.test(normStaffId(s))
+
+// "RM 199" for whole amounts, "RM 199.50" otherwise.
+export function rmShort(n: number | null | undefined): string {
+  if (n == null) return ''
+  return Number.isInteger(Number(n)) ? `RM ${Number(n).toLocaleString('en-MY')}` : rm(n)
 }
 
 export const rm = (n: number | null | undefined) =>

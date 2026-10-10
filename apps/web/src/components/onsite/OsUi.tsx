@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { osError } from '@/lib/onsite'
+import { osError, type BbDay } from '@/lib/onsite'
 
 // Shared look for the customer-facing ON-SITE pages (booking + status).
 export const C = {
@@ -55,6 +55,33 @@ export function Button({ children, onClick, disabled, busy, variant = 'primary',
 export function Notice({ tone = 'info', children }: { tone?: 'info' | 'warn' | 'error' | 'ok'; children: ReactNode }) {
   const col = tone === 'error' ? C.red : tone === 'warn' ? C.amber : tone === 'ok' ? C.green : '#3B82F6'
   return <div style={{ border: `1px solid ${col}55`, background: `${col}14`, color: C.text, borderRadius: 10, padding: '10px 12px', fontSize: 14, lineHeight: 1.5, marginBottom: 12 }}>{children}</div>
+}
+
+// Day buttons for the BB Staff Car Care Day (booking page and reschedule). Shows how many cars
+// are left; a full or closed day is disabled. `currentDate` is the booking's own day (not pickable).
+export function BbDayPicker({ days, value, onChange, currentDate }: { days: BbDay[]; value: string; onChange: (date: string) => void; currentDate?: string | null }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6 }}>
+      {days.map(d => {
+        const dt = new Date(d.date + 'T00:00:00')
+        const isCurrent = d.date === currentDate
+        const ok = d.available && !isCurrent
+        const sel = value === d.date
+        const sub = isCurrent ? 'Booked' : !d.available ? (d.left <= 0 ? 'Full' : 'Closed') : `${d.left} left`
+        const subColor = !ok ? '#777' : d.left <= 2 ? C.amber : C.muted
+        return (
+          <button key={d.date} type="button" disabled={!ok} aria-pressed={sel} onClick={() => onChange(d.date)}
+            style={{ minWidth: 72, padding: '10px 6px', borderRadius: 10, border: `1px solid ${sel ? C.orange : C.border}`, background: sel ? `${C.orange}22` : '#111',
+              color: ok ? C.text : '#555', opacity: ok ? 1 : 0.55, flexShrink: 0, cursor: ok ? 'pointer' : 'not-allowed' }}>
+            <div style={{ fontSize: 11 }}>{dt.toLocaleDateString('en-MY', { weekday: 'short' })}</div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>{dt.getDate()}</div>
+            <div style={{ fontSize: 11 }}>{dt.toLocaleDateString('en-MY', { month: 'short' })}</div>
+            <div style={{ fontSize: 11, marginTop: 4, fontWeight: 700, color: subColor }}>{sub}</div>
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 export const PAYMENT_METHODS = [
