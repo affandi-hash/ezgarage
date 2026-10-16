@@ -6,7 +6,7 @@ type Row = Record<string, unknown>
 interface Report {
   error?: string
   voided_invoices: Row[]; voided_receipts: Row[]; invoice_changes: Row[]; number_gaps: { series: string; missing: number[] }[]
-  jobs_without_invoice: Row[]; jobs_without_invoice_internal?: Row[]; payments_without_proof: Row[]; deletions: Row[]; pending_deletions: number
+  jobs_without_invoice: Row[]; jobs_without_invoice_internal?: Row[]; payment_mismatches?: Row[]; payments_without_proof: Row[]; deletions: Row[]; pending_deletions: number
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10)
@@ -73,6 +73,9 @@ export function IntegrityReportPage() {
           <Section title="Deleted records" hint="Everything removed from the system, with who did it and the reason."
             rows={rep.deletions} cols={[{ h: 'When', f: r => when(r.at) }, { h: 'What', f: r => `${String(r.table).replace(/_/g, ' ')}: ${r.label ?? ''}` },
               { h: 'How', f: r => String(r.kind).replace('_', ' ') }, { h: 'By', f: r => String(r.by ?? '-') }, { h: 'Approved by', f: r => String(r.approved_by ?? '-') }, { h: 'Reason', f: r => String(r.reason ?? '-') }]} />
+          <Section title="Payments that do not add up" hint="Invoices whose receipts do not match the amount marked paid, or add up to more than the invoice total. This checks every invoice, not just the dates above. Old invoices marked paid with no receipt at all are listed too."
+            rows={rep.payment_mismatches ?? []} cols={[{ h: 'Invoice', f: r => String(r.invoice_number ?? '-') }, { h: 'Customer', f: r => String(r.customer ?? '-') }, { h: 'Total', f: r => rm(r.total) },
+              { h: 'Marked paid', f: r => rm(r.amount_paid) }, { h: 'Receipts add up to', f: r => rm(r.receipts) }, { h: 'Difference', f: r => rm(r.diff) }, { h: 'What is wrong', f: r => String(r.issue ?? '-') }]} />
           <Section title="Voided invoices" hint="An invoice cancelled after it was issued. Check the reason makes sense."
             rows={rep.voided_invoices} cols={[{ h: 'When', f: r => when(r.at) }, { h: 'Invoice', f: r => String(r.invoice_number ?? '-') }, { h: 'Total', f: r => rm(r.total) },
               { h: 'Paid', f: r => rm(r.amount_paid) }, { h: 'By', f: by }, { h: 'Reason', f: r => String(r.reason ?? '-') }]} />
