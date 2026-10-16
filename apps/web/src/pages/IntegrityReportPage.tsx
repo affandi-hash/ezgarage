@@ -6,7 +6,7 @@ type Row = Record<string, unknown>
 interface Report {
   error?: string
   voided_invoices: Row[]; voided_receipts: Row[]; invoice_changes: Row[]; number_gaps: { series: string; missing: number[] }[]
-  jobs_without_invoice: Row[]; payments_without_proof: Row[]; deletions: Row[]; pending_deletions: number
+  jobs_without_invoice: Row[]; jobs_without_invoice_internal?: Row[]; payments_without_proof: Row[]; deletions: Row[]; pending_deletions: number
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10)
@@ -82,8 +82,12 @@ export function IntegrityReportPage() {
           <Section title="Issued invoices that were changed" hint="Total, discount or items changed after the invoice went out."
             rows={rep.invoice_changes} cols={[{ h: 'When', f: r => when(r.at) }, { h: 'Invoice', f: r => String(r.invoice_number ?? '-') }, { h: 'Total', f: r => `${rm(r.old_total)} → ${rm(r.new_total)}` },
               { h: 'Discount', f: r => `${rm(r.old_discount)} → ${rm(r.new_discount)}` }, { h: 'Paid', f: r => rm(r.amount_paid) }, { h: 'By', f: by }]} />
-          <Section title="Jobs handed back with no invoice" hint="A car that is ready or delivered but has no invoice. The most common way a job goes unrecorded."
-            rows={rep.jobs_without_invoice} cols={[{ h: 'Job', f: r => String(r.job_number ?? '-') }, { h: 'Status', f: r => String(r.status).replace('_', ' ') }, { h: 'Since', f: r => when(r.at) }, { h: 'Opened by', f: r => String(r.created_by ?? '-') }]} />
+          <Section title="Jobs handed back with no invoice (outside customers)" hint="A car that is ready or delivered but has no invoice. The most common way a job goes unrecorded."
+            rows={rep.jobs_without_invoice} cols={[{ h: 'Job', f: r => String(r.job_number ?? '-') }, { h: 'Customer', f: r => String(r.customer ?? '-') }, { h: 'Plate', f: r => String(r.plate ?? '-') },
+              { h: 'Status', f: r => String(r.status).replace('_', ' ') }, { h: 'Since', f: r => when(r.at) }, { h: 'Opened by', f: r => String(r.created_by ?? '-') }]} />
+          <Section title="Jobs with no invoice (internal fleet)" hint="Customers or vehicles whose invoices are flagged internal fleet, such as the Brainy Bunch group and Motoverse itself. Often intended, but confirm each is billed internally."
+            rows={rep.jobs_without_invoice_internal ?? []} cols={[{ h: 'Job', f: r => String(r.job_number ?? '-') }, { h: 'Customer', f: r => String(r.customer ?? '-') }, { h: 'Plate', f: r => String(r.plate ?? '-') },
+              { h: 'Status', f: r => String(r.status).replace('_', ' ') }, { h: 'Since', f: r => when(r.at) }, { h: 'Opened by', f: r => String(r.created_by ?? '-') }]} />
           <Section title="Payments with no proof" hint="Cash, transfer or QR payments recorded without a receipt photo or gateway reference."
             rows={rep.payments_without_proof} cols={[{ h: 'When', f: r => when(r.at) }, { h: 'Invoice', f: r => String(r.invoice_number ?? '-') }, { h: 'Amount', f: r => rm(r.amount) },
               { h: 'Method', f: r => String(r.method ?? '-').replace('_', ' ') }, { h: 'Recorded by', f: by }]} />
