@@ -27,6 +27,7 @@ import {
   Globe2,
   Building2,
   ShieldCheck,
+  ShieldAlert,
   Megaphone,
   Building,
   Target,
@@ -109,6 +110,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/pnl', label: 'P&L by Branch', icon: BarChart3, roles: ['super_admin', 'ops_manager', 'finance'] },
       { to: '/weekly-report', label: 'Weekly Report', icon: FileBarChart, roles: ['super_admin', 'ops_manager', 'finance'] },
       { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['super_admin', 'ops_manager', 'finance', 'foreman'] },
+      { to: '/integrity', label: 'Integrity Report', icon: ShieldAlert, roles: ['super_admin', 'ops_manager', 'finance'] },
     ],
   },
   {
@@ -136,6 +138,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'System',
     items: [
+      { to: '/approvals', label: 'Approvals', icon: ShieldCheck, roles: ['super_admin', 'ops_manager'] },
       { to: '/users', label: 'Users', icon: UserCog, roles: ['super_admin', 'ops_manager'] },
       { to: '/settings', label: 'Settings', icon: Settings, roles: ['super_admin', 'ops_manager'] },
       { to: '/audit', label: 'Audit Log', icon: FileSearch, roles: ['super_admin', 'ops_manager'] },
@@ -165,11 +168,12 @@ interface ContentProps {
   showCollapseToggle?: boolean
   pendingProofCount: number
   onsitePendingCount: number
+  pendingApprovalCount: number
 }
 
 function SidebarContent({
   collapsed, setCollapsed, logoutHover, setLogoutHover,
-  branchLogoUrl, visibleGroups, signOut, onNavClick, showCollapseToggle = true, pendingProofCount, onsitePendingCount,
+  branchLogoUrl, visibleGroups, signOut, onNavClick, showCollapseToggle = true, pendingProofCount, onsitePendingCount, pendingApprovalCount,
 }: ContentProps) {
   return (
     <>
@@ -233,6 +237,9 @@ function SidebarContent({
                         {!collapsed && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, flex: 1 }}>{item.label}</span>}
                         {!collapsed && item.to === '/payment-verifications' && pendingProofCount > 0 && (
                           <span style={{ background: '#F15A22', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>{pendingProofCount}</span>
+                        )}
+                        {!collapsed && item.to === '/approvals' && pendingApprovalCount > 0 && (
+                          <span title={`${pendingApprovalCount} deletion request(s) waiting`} style={{ background: '#F15A22', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>{pendingApprovalCount}</span>
                         )}
                         {item.to === '/onsite-bookings' && onsitePendingCount > 0 && (
                           collapsed ? (
@@ -339,6 +346,26 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
     }
   }, [canSeeOnsite])
 
+  // Deletion requests waiting for a super admin
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0)
+  const canSeeApprovals = user?.role === 'super_admin' || user?.role === 'ops_manager'
+  useEffect(() => {
+    if (!canSeeApprovals) { setPendingApprovalCount(0); return }
+    let cancelled = false
+    async function refresh() {
+      try {
+        const { count, error } = await supabase.from('deletion_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+        if (!cancelled && !error) setPendingApprovalCount(count ?? 0)
+      } catch {
+        // ignore: the badge is only a hint
+      }
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 60_000)
+    window.addEventListener('focus', refresh)
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener('focus', refresh) }
+  }, [canSeeApprovals])
+
   if (!user) return null
 
   const visibleGroups = NAV_GROUPS
@@ -347,7 +374,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
 
   const contentProps: ContentProps = {
     collapsed, setCollapsed, logoutHover, setLogoutHover,
-    branchLogoUrl, visibleGroups, signOut, pendingProofCount, onsitePendingCount,
+    branchLogoUrl, visibleGroups, signOut, pendingProofCount, onsitePendingCount, pendingApprovalCount,
   }
 
   // Mobile: slide-in drawer with backdrop

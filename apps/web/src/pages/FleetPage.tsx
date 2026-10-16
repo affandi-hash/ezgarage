@@ -3,6 +3,7 @@ import { Car, Truck, MapPin, AlertTriangle, Wrench, Plus, X, Fuel, FlagOff, Tras
 import { DatePickerInput } from '@/components/ui/DateTimePickers';
 import { toast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
+import { deleteWithApproval } from '@/lib/deletion';
 import { useAuthStore } from '@/store/authStore';
 import { logAudit } from '@/lib/audit';
 import { formatName, formatPlate, formatTitleCase } from '@/lib/formatters';
@@ -354,13 +355,8 @@ function VehiclesTab({ branchFilter, isSuperAdmin }: { branchFilter: string | nu
   }
 
   async function handleDelete(id: string) {
-    if (!window.confirm('Delete this vehicle?')) return;
-    const { error } = await supabase.from('fleet_vehicles').delete().eq('id', id);
-    if (!error) {
-      setVehicles(prev => prev.filter(v => v.id !== id));
-    } else {
-      toast(error.message, 'error');
-    }
+    const outcome = await deleteWithApproval({ table: 'fleet_vehicles', id, label: 'this vehicle' });
+    if (outcome === 'deleted') setVehicles(prev => prev.filter(v => v.id !== id));
   }
 
   useEffect(() => { load(); }, [branchFilter]);
@@ -1576,10 +1572,8 @@ function DocumentVaultTab({ branchFilter, isSuperAdmin }: { branchFilter: string
   }
 
   async function handleDelete(doc: FleetDoc) {
-    if (!confirm(`Delete ${doc.document_type}?`)) return;
-    await supabase.from('fleet_documents').delete().eq('id', doc.id);
-    setDocs(d => d.filter(x => x.id !== doc.id));
-    toast('Deleted', 'success');
+    const outcome = await deleteWithApproval({ table: 'fleet_documents', id: doc.id, label: doc.document_type || 'this document' });
+    if (outcome === 'deleted') setDocs(d => d.filter(x => x.id !== doc.id));
   }
 
   function expiryStatus(expiry: string | null): { color: string; label: string } {

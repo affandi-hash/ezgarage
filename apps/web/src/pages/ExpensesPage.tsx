@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { deleteWithApproval } from '@/lib/deletion'
 import { useAuthStore } from '@/store/authStore'
 import { scopedBranchId, canSeeAllBranches } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
@@ -633,10 +634,8 @@ export function ExpensesPage() {
   })
 
   async function deleteExpense(exp: Expense) {
-    if (!confirm(`Delete "${exp.description}"?`)) return
-    await supabase.from('expenses').delete().eq('id', exp.id)
-    toast('Expense deleted')
-    load()
+    const outcome = await deleteWithApproval({ table: 'expenses', id: exp.id, label: `"${exp.description}"` })
+    if (outcome === 'deleted') load()
   }
 
   // Duplicates every item of the active tab (OPEX or CAPEX) from the month

@@ -4,6 +4,7 @@ import { useAuthStore } from '@/store/authStore'
 import { scopedBranchId, canSeeAllBranches } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
 import { toast } from '@/components/ui/Toast'
+import { deleteWithApproval } from '@/lib/deletion'
 import { Plus, X, Loader2, Search, Pencil, Trash2, CheckCircle2, RotateCcw, MessageSquareWarning } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -248,13 +249,10 @@ export function ComplaintsPage() {
   }
 
   async function remove(c: Complaint) {
-    if (!window.confirm('Delete this complaint? This cannot be undone.')) return
     setBusyId(c.id)
-    const { error: err } = await supabase.from('job_complaints').delete().eq('id', c.id)
+    const outcome = await deleteWithApproval({ table: 'job_complaints', id: c.id, label: 'this complaint' })
     setBusyId(null)
-    if (err) { toast(err.message, 'error'); return }
-    toast('Complaint deleted', 'success')
-    load()
+    if (outcome === 'deleted') load()
   }
 
   const chip = (label: string, value: string | number, color = '#F0F0F0') => (

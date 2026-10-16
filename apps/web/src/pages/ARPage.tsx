@@ -245,12 +245,10 @@ function SummaryCard({ label, value, icon: Icon, color }: { label: string; value
 
 function DetailPanel({
   invoice,
-  tenantId,
   onClose,
   onRefresh,
 }: {
   invoice: ARInvoice
-  tenantId: string
   onClose: () => void
   onRefresh: () => void
 }) {
@@ -321,34 +319,40 @@ function DetailPanel({
     if (!amt || amt <= 0) { toast('Enter a valid amount', 'error'); return }
     if (amt > invoice.balance_due + 0.001) { toast('Amount exceeds balance', 'error'); return }
     setSaving(true)
-    const { data: inserted, error } = await supabase.from('receipts').insert({
-      tenant_id: tenantId,
-      branch_id: invoice.branch_id,
-      invoice_id: invoice.id,
-      amount: amt,
-      payment_method: form.payment_method,
-      payment_date: form.payment_date,
-      reference_number: form.reference_number || null,
-      notes: form.notes || null,
-    }).select('id').single()
-    if (error) { setSaving(false); toast(error.message, 'error'); return }
+    // The receipt and the invoice balance change together in one database function (it also keeps the audit trail).
+    const { data: result, error } = await supabase.rpc('record_payment', {
+      p_invoice_id: invoice.id,
+      p_amount: amt,
+      p_payment_method: form.payment_method,
+      p_payment_date: form.payment_date,
+      p_reference: form.reference_number || null,
+    })
+    if (error || result?.error) {
+      setSaving(false)
+      const messages: Record<string, string> = {
+        forbidden: 'You do not have permission to record payments for this invoice',
+        invoice_not_found: 'Invoice not found',
+        invalid_amount: 'Enter a valid amount',
+        amount_exceeds_balance: 'Amount exceeds balance',
+      }
+      toast(messages[result?.error as string] ?? error?.message ?? 'Failed to record payment', 'error')
+      return
+    }
+    const receiptId = result?.receipt_id as string | undefined
 
-    if (proofFile && inserted) {
+    if (receiptId && form.notes) {
+      await supabase.from('receipts').update({ notes: form.notes }).eq('id', receiptId)
+    }
+    if (proofFile && receiptId) {
       const ext = proofFile.name.split('.').pop()
-      const path = `${inserted.id}/${Date.now()}.${ext}`
+      const path = `${receiptId}/${Date.now()}.${ext}`
       const { error: uploadErr } = await supabase.storage.from('payment-proofs').upload(path, proofFile, { contentType: proofFile.type, upsert: false })
       if (uploadErr) {
         toast(`Payment recorded, but proof upload failed: ${uploadErr.message}`, 'error')
       } else {
-        await supabase.from('receipts').update({ proof_url: path }).eq('id', inserted.id)
+        await supabase.from('receipts').update({ proof_url: path }).eq('id', receiptId)
       }
     }
-
-    // update invoice amount_paid (balance_due is a generated column — do not write to it)
-    const newPaid = invoice.amount_paid + amt
-    const newBalance = Math.max(0, invoice.total_amount - newPaid)
-    const newStatus = newBalance <= 0 ? 'paid' : invoice.status
-    await supabase.from('invoices').update({ amount_paid: newPaid, status: newStatus }).eq('id', invoice.id)
 
     setSaving(false)
     toast('Payment recorded')
@@ -748,7 +752,6 @@ export function ARPage() {
       {selected && (
         <DetailPanel
           invoice={selected}
-          tenantId={tenantId}
           onClose={() => setSelected(null)}
           onRefresh={() => { load(); setSelected(null) }}
         />

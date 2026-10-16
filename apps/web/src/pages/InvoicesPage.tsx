@@ -443,10 +443,10 @@ export function InvoicesPage() {
   const [jobsLoading, setJobsLoading] = useState(false)
 
   // Payment
-  const [payment, setPayment] = useState({ payment_method: 'cash', amount_paid: 0, payment_date: todayStr(), payment_reference: '' })
+  const [payment, setPayment] = useState({ payment_method: 'cash', amount_paid: 0, payment_date: todayStr(), payment_reference: '', notes: '' })
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [proofFileError, setProofFileError] = useState<string | null>(null)
-  const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; payment_method: string; payment_date: string; proof_url: string | null; proof_bucket: string | null; voided_at: string | null; void_reason: string | null; gateway_ref: string | null; reference_number: string | null }[]>([])
+  const [paymentHistory, setPaymentHistory] = useState<{ id: string; amount: number; payment_method: string; payment_date: string; proof_url: string | null; proof_bucket: string | null; voided_at: string | null; void_reason: string | null; gateway_ref: string | null; reference_number: string | null; notes: string | null }[]>([])
   const [paymentFailures, setPaymentFailures] = useState<{ id: string; event: string; failure_code: string | null; failure_reason: string | null; created_at: string }[]>([])
   const [viewingProofId, setViewingProofId] = useState<string | null>(null)
   const [voidingId, setVoidingId] = useState<string | null>(null)
@@ -461,7 +461,7 @@ export function InvoicesPage() {
   }
 
   async function loadPaymentHistory(invoiceId: string) {
-    const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url, proof_bucket, voided_at, void_reason, gateway_ref, reference_number').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
+    const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url, proof_bucket, voided_at, void_reason, gateway_ref, reference_number, notes').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
     setPaymentHistory(data ?? [])
   }
 
@@ -817,6 +817,11 @@ export function InvoicesPage() {
         throw new Error(messages[result.error] ?? 'Failed to record payment')
       }
 
+      if (payment.notes.trim() && result?.receipt_id) {
+        const { error: notesErr } = await supabase.from('receipts').update({ notes: payment.notes.trim() }).eq('id', result.receipt_id)
+        if (notesErr) toast.error(`Payment recorded, but the note was not saved: ${notesErr.message}`)
+      }
+
       if (proofFile && result?.receipt_id) {
         const ext = proofFile.name.split('.').pop()
         const path = `${result.receipt_id}/${Date.now()}.${ext}`
@@ -844,9 +849,22 @@ export function InvoicesPage() {
 
   async function voidInvoice() {
     if (!editInvoice) return
-    if (!window.confirm('Void this invoice? This cannot be undone.')) return
+    const reason = window.prompt('Reason for voiding this invoice (required). This cannot be undone:')
+    if (reason === null) return
+    if (!reason.trim()) { toast.error('A reason is required to void an invoice'); return }
     setSaving(true)
-    await supabase.from('invoices').update({ status: 'void', updated_at: new Date().toISOString() }).eq('id', editInvoice.id)
+    const { data: res, error: voidErr } = await supabase.rpc('void_invoice', { p_invoice: editInvoice.id, p_reason: reason.trim() })
+    if (voidErr || res?.error) {
+      const messages: Record<string, string> = {
+        forbidden: 'You do not have permission to void this invoice',
+        has_payments: 'This invoice has payments. Void the payment first (or ask an operations manager).',
+        already_void: 'This invoice is already void',
+        reason_required: 'A reason is required to void an invoice',
+      }
+      toast.error(messages[res?.error as string] ?? voidErr?.message ?? 'Failed to void invoice')
+      setSaving(false)
+      return
+    }
     await loadInvoices()
     const { data } = await supabase.from('invoices').select('*').eq('id', editInvoice.id).single()
     if (data) setSelected(data as Invoice)
@@ -1227,7 +1245,7 @@ export function InvoicesPage() {
                         if (data && typeof data === 'object') next = data as PlanNext
                       }
                       setPlanNext(next)
-                      setPayment({ payment_method: 'cash', amount_paid: next ? Math.min(fullBalance, Number(next.pay_now)) : fullBalance, payment_date: todayStr(), payment_reference: '' })
+                      setPayment({ payment_method: 'cash', amount_paid: next ? Math.min(fullBalance, Number(next.pay_now)) : fullBalance, payment_date: todayStr(), payment_reference: '', notes: '' })
                       setProofFile(null)
                       loadPaymentHistory(editInvoice.id)
                       loadPaymentFailures(editInvoice.id)
@@ -1810,6 +1828,11 @@ export function InvoicesPage() {
                 )}
                 {proofFileError && <p style={{ color: '#F15A22', fontSize: 11, margin: '4px 0 0' }}>{proofFileError}</p>}
               </div>
+              <div>
+                <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Notes</label>
+                <textarea rows={2} maxLength={500} placeholder="Optional, e.g. paid by the owner's wife, transfer from company account" style={{ ...inputStyle, resize: 'vertical' as const, fontFamily: 'inherit' }}
+                  value={payment.notes} onChange={e => setPayment({ ...payment, notes: e.target.value })} />
+              </div>
               <div style={{ background: C.bg, borderRadius: 6, padding: 10, fontSize: 14 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span style={{ color: C.text2 }}>Invoice Total</span>
@@ -1858,6 +1881,7 @@ export function InvoicesPage() {
                             )}
                           </div>
                         </div>
+                        {r.notes && <span style={{ color: C.text2, fontSize: 11 }}>Note: {r.notes}</span>}
                         {r.voided_at && (
                           <span style={{ color: '#EF4444', fontSize: 11 }}>VOIDED{r.void_reason ? ` — ${r.void_reason}` : ''}</span>
                         )}

@@ -5,6 +5,9 @@ import { useAuthStore } from '@/store/authStore'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ToastContainer } from '@/components/ui/Toast'
+import { DeletionPrompt } from '@/components/ui/DeletionPrompt'
+import { ApprovalsPage } from '@/pages/ApprovalsPage'
+import { IntegrityReportPage } from '@/pages/IntegrityReportPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { CustomersPage } from '@/pages/CustomersPage'
@@ -320,6 +323,24 @@ export default function App() {
             }
           />
 
+          {/* Approvals and integrity */}
+          <Route
+            path="/approvals"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <ApprovalsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/integrity"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager','finance']}>
+                <IntegrityReportPage />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Quotations */}
           <Route
             path="/quotations"
@@ -543,6 +564,7 @@ export default function App() {
       </Routes>
 
       <ToastContainer />
+      <DeletionPrompt />
     </BrowserRouter>
   )
 }

@@ -20,6 +20,7 @@ import {
   Building2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { deleteWithApproval } from '@/lib/deletion'
 import { useAuthStore } from '@/store/authStore'
 import { formatName, formatPhone, formatEmail, formatIC, formatPlate, formatTitleCase } from '@/lib/formatters'
 import { JOB_STATUS_LABELS, JOB_STATUS_COLORS } from '@/types'
@@ -655,19 +656,16 @@ function EditVehiclePanel({
     setDeleting(true)
     setPanelError(null)
 
-    const { error } = await supabase.from('vehicles').delete().eq('id', vehicle.id)
+    const outcome = await deleteWithApproval({
+      table: 'vehicles', id: vehicle.id, label: vehicle.plate_number ? `vehicle ${vehicle.plate_number}` : 'this vehicle',
+      inUseMessage: 'Cannot delete: this vehicle has linked jobs. Remove or reassign them first.',
+    })
 
     setDeleting(false)
 
-    if (error) {
-      if (error.code === '23503') {
-        setPanelError(
-          'Cannot delete: this vehicle has linked jobs. Remove or reassign them first.',
-        )
-      } else {
-        setPanelError(error.message)
-      }
+    if (outcome !== 'deleted') {
       setConfirmDelete(false)
+      if (outcome === 'requested') onClose()
     } else {
       onSuccess()
       onClose()
@@ -758,7 +756,7 @@ function EditVehiclePanel({
             {!confirmDelete ? (
               <button
                 type="button"
-                onClick={() => setConfirmDelete(true)}
+                onClick={handleDelete}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

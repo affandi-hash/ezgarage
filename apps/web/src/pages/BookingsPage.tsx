@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { formatName, formatPhone, formatPlate, formatTitleCase } from '@/lib/formatters'
 import { toast } from '@/components/ui/Toast'
+import { deleteWithApproval } from '@/lib/deletion'
 import { DatePickerInput, TimePickerInput } from '@/components/ui/DateTimePickers'
 import type { Booking, BookingStatus, ServiceType, ArrivalMode } from '@/types'
 
@@ -336,9 +337,7 @@ setMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
                 label: 'Delete Booking',
                 action: () => {
                   setOpen(false)
-                  if (window.confirm('Permanently delete this booking? This cannot be undone.')) {
-                    onDelete(booking.id)
-                  }
+                  onDelete(booking.id)
                 },
                 color: '#FCA5A5',
                 show: booking.status === 'cancelled' || booking.status === 'no_show',
@@ -1147,13 +1146,8 @@ export function BookingsPage() {
   }
 
   const deleteBooking = async (id: string) => {
-    const { error: err } = await supabase.from('bookings').delete().eq('id', id)
-    if (!err) {
-      setBookings((prev) => prev.filter((b) => b.id !== id))
-      toast('Booking deleted')
-    } else {
-      toast(err.message, 'error')
-    }
+    const outcome = await deleteWithApproval({ table: 'bookings', id, label: 'this booking', inUseMessage: 'This booking is linked to other records, so it cannot be deleted.' })
+    if (outcome === 'deleted') setBookings((prev) => prev.filter((b) => b.id !== id))
   }
 
   // Filter logic

@@ -5,6 +5,7 @@ import {
   Trash2, Printer,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { deleteWithApproval } from '@/lib/deletion'
 import { useAuthStore } from '@/store/authStore'
 import { scopedBranchId } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
@@ -772,9 +773,8 @@ export function QuotationsPage() {
   }
 
   async function deleteQuote(id: string) {
-    await supabase.from('quotations').delete().eq('id', id)
-    toast.success('Quotation deleted')
-    fetchQuotes()
+    const outcome = await deleteWithApproval({ table: 'quotations', id, label: 'this quotation' })
+    if (outcome === 'deleted') fetchQuotes()
   }
 
 

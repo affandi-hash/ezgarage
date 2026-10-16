@@ -20,6 +20,7 @@ import {
   ArrowRightLeft,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { deleteWithApproval } from '@/lib/deletion'
 import { useAuthStore } from '@/store/authStore'
 import { formatName, formatPhone, formatEmail, formatTitleCase, formatSKU } from '@/lib/formatters'
 import { toast } from '@/components/ui/Toast'
@@ -1205,16 +1206,15 @@ function StockPurchasesTab({ tenantId, branchId }: { tenantId: string; branchId:
 
   async function handleDeletePurchase(part: PartRequest) {
     const warning = part.status === 'received'
-      ? 'This purchase was already received — deleting it will NOT reduce the stock quantity already added. Delete the record anyway?'
-      : 'Delete this stock purchase record? This cannot be undone.'
-    if (!confirm(warning)) return
+      ? 'This purchase was already received. Deleting it will NOT reduce the stock quantity already added.'
+      : undefined
     setActionLoading(part.id)
     try {
-      if (part.invoice_url) await supabase.storage.from('supplier-invoices').remove([part.invoice_url])
-      const { error: dbErr } = await supabase.from('parts_requests').delete().eq('id', part.id)
-      if (dbErr) throw dbErr
-      toast('Stock purchase deleted')
-      await loadParts()
+      const outcome = await deleteWithApproval({ table: 'parts_requests', id: part.id, label: 'this stock purchase', warning })
+      if (outcome === 'deleted') {
+        if (part.invoice_url) await supabase.storage.from('supplier-invoices').remove([part.invoice_url])
+        await loadParts()
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Delete failed', 'error')
     } finally {

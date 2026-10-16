@@ -18,6 +18,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { deleteWithApproval } from '@/lib/deletion'
 import { useAuthStore } from '@/store/authStore'
 import { logAudit } from '@/lib/audit'
 import { formatName, formatPhone, formatEmail, formatIC, formatPlate, formatTitleCase } from '@/lib/formatters'
@@ -330,16 +331,14 @@ function OverviewTab({
   const [error, setError] = useState<string | null>(null)
 
   async function handleDeleteCustomer() {
-    if (!window.confirm('Delete this customer? This cannot be undone.')) return
     setDeleting(true)
     setError(null)
-    const { error: err } = await supabase.from('customers').delete().eq('id', customer.id)
+    const outcome = await deleteWithApproval({
+      table: 'customers', id: customer.id, label: customer.full_name || 'this customer',
+      inUseMessage: 'Cannot delete - customer has existing records. Remove their vehicles and jobs first.',
+    })
     setDeleting(false)
-    if (err) {
-      setError('Cannot delete - customer has existing records. Remove their vehicles and jobs first.')
-      return
-    }
-    onDelete()
+    if (outcome === 'deleted') onDelete()
   }
   const [form, setForm] = useState<EditForm>({
     full_name: customer.full_name,
@@ -655,16 +654,11 @@ function VehiclesTab({ customerId, branchId }: { customerId: string; branchId: s
   const [deletingVehicleId, setDeletingVehicleId] = useState<string | null>(null)
 
   async function handleDeleteVehicle(vehicleId: string) {
-    if (!window.confirm('Delete this vehicle?')) return
     setDeletingVehicleId(vehicleId)
     setError(null)
-    const { error: err } = await supabase.from('vehicles').delete().eq('id', vehicleId)
+    const outcome = await deleteWithApproval({ table: 'vehicles', id: vehicleId, label: 'this vehicle', inUseMessage: 'Cannot delete - vehicle has existing jobs.' })
     setDeletingVehicleId(null)
-    if (err) {
-      setError('Cannot delete - vehicle has existing jobs.')
-      return
-    }
-    setVehicles(vs => vs.filter(v => v.id !== vehicleId))
+    if (outcome === 'deleted') setVehicles(vs => vs.filter(v => v.id !== vehicleId))
   }
   const [addForm, setAddForm] = useState({
     plate_number: '',
