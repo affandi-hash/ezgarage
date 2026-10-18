@@ -1733,11 +1733,14 @@ export function FinancePage() {
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
   async function handleNewInvoiceSave(form: NewInvoiceForm, file?: File) {
+    // a bill always belongs to a branch: the one picked at the top, otherwise the user's own
+    const billBranch = branchId || user?.branch_id || ''
+    if (!billBranch) throw new Error('Choose a branch at the top of the page before saving a supplier bill')
     setNewSaving(true)
     try {
       const { data: inserted, error: insErr } = await supabase.from('supplier_invoices').insert({
         tenant_id: tenantId,
-        branch_id: branchId || null,
+        branch_id: billBranch,
         supplier_id: form.supplier_id,
         invoice_number: form.invoice_number.trim() || null,
         invoice_date: form.invoice_date,
