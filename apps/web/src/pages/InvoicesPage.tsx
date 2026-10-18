@@ -553,6 +553,24 @@ export function InvoicesPage() {
     return () => { cancelled = true }
   }, [statusFilter, invoices, user])
 
+  // The list only holds the newest 50 invoices, so a search also asks the database for older matches
+  // (invoice number, customer or plate) and shows them with the loaded ones.
+  const [searchHits, setSearchHits] = useState<Invoice[]>([])
+  useEffect(() => {
+    const term = searchTerm.trim().replace(/[,()%*\\]/g, ' ').trim()
+    if (term.length < 2) { setSearchHits([]); return }
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      let q = supabase.from('invoices').select('*')
+        .or(`invoice_number.ilike.%${term}%,customer_name.ilike.%${term}%,vehicle_plate.ilike.%${term}%`)
+        .order('created_at', { ascending: false }).limit(100)
+      if (!canSeeAllBranches(user?.role) && user?.branch_id) q = q.eq('branch_id', user.branch_id)
+      const { data } = await q
+      if (!cancelled && data) setSearchHits(data as Invoice[])
+    }, 300)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [searchTerm, user])
+
   async function loadMoreInvoices() {
     if (loadingMore) return
     setLoadingMore(true)
@@ -945,8 +963,12 @@ export function InvoicesPage() {
     : statusFilter === 'unpaid'
     ? [...invoices, ...unpaidAll.filter(u => !invoices.some(i => i.id === u.id))].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
     : invoices
-  const filtered = listSource.filter(inv => {
-    const matchSearch = !searchTerm || inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) || (inv.customer_name ?? '').toLowerCase().includes(searchTerm.toLowerCase())
+  const listWithHits = statusFilter === 'plans' || searchHits.length === 0
+    ? listSource
+    : [...listSource, ...searchHits.filter(h => !listSource.some(i => i.id === h.id))].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+  const filtered = listWithHits.filter(inv => {
+    const term = searchTerm.toLowerCase()
+    const matchSearch = !searchTerm || inv.invoice_number.toLowerCase().includes(term) || (inv.customer_name ?? '').toLowerCase().includes(term) || (inv.vehicle_plate ?? '').toLowerCase().includes(term)
     // Unpaid = issued to the customer and not yet settled (sent or overdue); drafts and voids are not owed
     const matchStatus = statusFilter === 'all' || statusFilter === 'plans' || (statusFilter === 'unpaid' ? ['sent', 'overdue'].includes(inv.status) : inv.status === statusFilter)
     const matchInternal = !internalFilter || inv.is_internal_fleet
@@ -991,7 +1013,7 @@ export function InvoicesPage() {
               </div>
               <div style={{ position: 'relative', marginBottom: 12 }}>
                 <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.text2 }} />
-                <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="Search invoice # or customer..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="Search invoice #, customer or plate..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
