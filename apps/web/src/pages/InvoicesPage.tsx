@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { controlsOn } from '@/lib/deletion'
 import { attachReceiptProof, canManageProof, proofMissing, proofRequired, uploadPaymentProof, discardPaymentProof, PAYMENT_ERRORS } from '@/lib/paymentProof'
 import { useAuthStore } from '@/store/authStore'
 import { canSeeAllBranches } from '@/lib/branchScope'
@@ -859,6 +860,17 @@ export function InvoicesPage() {
 
   async function voidInvoice() {
     if (!editInvoice) return
+    if (!controlsOn()) {
+      // stricter rules switched off for this company: the earlier way (confirm, then void)
+      if (!window.confirm('Void this invoice? This cannot be undone.')) return
+      setSaving(true)
+      await supabase.from('invoices').update({ status: 'void', updated_at: new Date().toISOString() }).eq('id', editInvoice.id)
+      await loadInvoices()
+      const { data: fresh } = await supabase.from('invoices').select('*').eq('id', editInvoice.id).single()
+      if (fresh) setSelected(fresh as Invoice)
+      setSaving(false)
+      return
+    }
     const reason = window.prompt('Reason for voiding this invoice (required). This cannot be undone:')
     if (reason === null) return
     if (!reason.trim()) { toast.error('A reason is required to void an invoice'); return }

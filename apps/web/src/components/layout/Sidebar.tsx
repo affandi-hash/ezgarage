@@ -292,7 +292,7 @@ function SidebarContent({
 }
 
 export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; onMobileClose?: () => void }) {
-  const { user, signOut } = useAuthStore()
+  const { user, signOut, tenant } = useAuthStore()
   const [collapsed, setCollapsed] = useState(false)
   const [logoutHover, setLogoutHover] = useState(false)
   const [branchLogoUrl, setBranchLogoUrl] = useState<string | null>(null)
@@ -369,7 +369,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
   if (!user) return null
 
   const visibleGroups = NAV_GROUPS
-    .map(group => ({ ...group, items: group.items.filter(item => item.requirePlatformAdmin ? user.is_platform_admin : item.roles.includes(user.role)) }))
+    .map(group => ({ ...group, items: group.items.filter(item => item.requirePlatformAdmin ? user.is_platform_admin : item.roles.includes(user.role) && !(item.to === '/approvals' && tenant?.tight_controls === false)) }))
     .filter(group => group.items.length > 0)
 
   const contentProps: ContentProps = {

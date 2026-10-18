@@ -3,7 +3,7 @@ import { Wrench, RefreshCw, Plus, X, ChevronDown, Search, MessageCircle, Camera,
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
-import { deleteWithApproval } from '@/lib/deletion'
+import { deleteWithApproval, deletesDirectly } from '@/lib/deletion'
 import { logAudit } from '@/lib/audit'
 import { formatPlate } from '@/lib/formatters'
 import { PhotoUploader, QuickPhotoUpload } from '@/components/ui/PhotoUploader'
@@ -862,7 +862,7 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
 
     // Only a super admin deletes straight away; for everyone else this sends a request they approve.
     // Log before deleting — record_id would point at nothing afterward.
-    if (user?.role === 'super_admin') {
+    if (deletesDirectly()) {
       logAudit({
         action: 'delete', module: 'Job', record_id: job.id, record_type: 'job',
         details: { job_number: job.job_number, plate: job.vehicles?.plate_number ?? null, customer: job.customer_name ?? null, status: job.status, reason: deleteReason.trim() },
@@ -1179,7 +1179,7 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
                 <button onClick={() => { setShowDeleteConfirm(false); setDeleteReason(''); setDeleteBlockedReason(null) }} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid #2A2A2A', background: 'transparent', color: '#A0A0A0', fontSize: 13, cursor: 'pointer' }}>Back</button>
                 {!deleteBlockedReason && (
                   <button onClick={handleDeleteJob} disabled={!deleteReason.trim() || deleting} style={{ flex: 2, padding: '8px 0', borderRadius: 6, border: 'none', background: '#DC2626', color: '#fff', fontSize: 13, fontWeight: 700, cursor: (!deleteReason.trim() || deleting) ? 'not-allowed' : 'pointer', opacity: (!deleteReason.trim() || deleting) ? 0.6 : 1 }}>
-                    {deleting ? 'Working…' : user?.role === 'super_admin' ? 'Permanently Delete' : 'Send for Approval'}
+                    {deleting ? 'Working…' : deletesDirectly() ? 'Permanently Delete' : 'Send for Approval'}
                   </button>
                 )}
               </div>

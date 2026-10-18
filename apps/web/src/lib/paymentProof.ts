@@ -1,9 +1,11 @@
 import { supabase } from '@/lib/supabase'
+import { useAuthStore } from '@/store/authStore'
 
 // Payments that must come with proof: a photo or PDF (cash handover, bank slip, QR or transfer screenshot).
 // Card and the online gateway methods have their own record and are left out. The database enforces the same list.
 const NEEDS_PROOF = ['cash', 'bank_transfer', 'online_transfer', 'qr', 'duitnow', 'cheque', 'other']
-export const proofRequired = (method: string | null | undefined) => NEEDS_PROOF.includes(method ?? '')
+// (a company with the stricter rules switched off is not required to attach proof)
+export const proofRequired = (method: string | null | undefined) => useAuthStore.getState().tenant?.tight_controls !== false && NEEDS_PROOF.includes(method ?? '')
 
 export function proofMissing(r: { payment_method: string | null; proof_url: string | null; gateway_ref?: string | null; voided_at?: string | null }): boolean {
   return !r.proof_url && !r.voided_at && !r.gateway_ref && NEEDS_PROOF.includes(r.payment_method ?? '')

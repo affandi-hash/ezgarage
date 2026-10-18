@@ -5,6 +5,10 @@ import { toast } from '@/components/ui/Toast'
 // Deleting important records needs a super admin's approval. Super admins delete directly (a copy is kept
 // in the deleted-records log); everyone else sends a request with a reason that a super admin approves or rejects.
 
+// Companies with the stricter rules switched off (tenants.tight_controls = false) delete directly, as before.
+export const controlsOn = () => useAuthStore.getState().tenant?.tight_controls !== false
+export const deletesDirectly = () => useAuthStore.getState().user?.role === 'super_admin' || !controlsOn()
+
 export type DeleteOutcome = 'deleted' | 'requested' | 'cancelled' | 'failed'
 
 export interface DeletionAsk { label: string; needsApproval: boolean; warning?: string }
@@ -30,8 +34,7 @@ export async function deleteWithApproval(opts: {
   inUseMessage?: string        // shown when other records still depend on it
   reason?: string              // when the screen already asked for a reason and confirmed, skip the prompt
 }): Promise<DeleteOutcome> {
-  const role = useAuthStore.getState().user?.role
-  const direct = role === 'super_admin'
+  const direct = deletesDirectly()
   if (!asker) { toast('Deletion is not available right now. Reload the page.', 'error'); return 'failed' }
   const answer = opts.reason
     ? { ok: true, reason: opts.reason }

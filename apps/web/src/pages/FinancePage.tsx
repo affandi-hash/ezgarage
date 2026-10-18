@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { controlsOn } from '@/lib/deletion'
 import { scopedBranchId } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
 import { EzAccPanel } from '@/components/finance/EzAccPanel'
@@ -1735,12 +1736,12 @@ export function FinancePage() {
   async function handleNewInvoiceSave(form: NewInvoiceForm, file?: File) {
     // a bill always belongs to a branch: the one picked at the top, otherwise the user's own
     const billBranch = branchId || user?.branch_id || ''
-    if (!billBranch) throw new Error('Choose a branch at the top of the page before saving a supplier bill')
+    if (!billBranch && controlsOn()) throw new Error('Choose a branch at the top of the page before saving a supplier bill')
     setNewSaving(true)
     try {
       const { data: inserted, error: insErr } = await supabase.from('supplier_invoices').insert({
         tenant_id: tenantId,
-        branch_id: billBranch,
+        branch_id: billBranch || null,
         supplier_id: form.supplier_id,
         invoice_number: form.invoice_number.trim() || null,
         invoice_date: form.invoice_date,

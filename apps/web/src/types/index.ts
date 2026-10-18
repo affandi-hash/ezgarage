@@ -52,6 +52,8 @@ export interface UserProfile {
 
 export interface Tenant {
   id: string
+  // false = the stricter rules (deletion approval, proof for cash/transfers, branch on supplier bills) are switched off for this company
+  tight_controls?: boolean
   name: string
   slug: string
   email: string
