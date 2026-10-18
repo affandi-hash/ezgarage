@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { attachReceiptProof, canManageProof, proofMissing } from '@/lib/paymentProof'
+import { attachReceiptProof, canManageProof, proofMissing, proofRequired, uploadPaymentProof, discardPaymentProof, PAYMENT_ERRORS } from '@/lib/paymentProof'
 import { useAuthStore } from '@/store/authStore'
 import { canSeeAllBranches } from '@/lib/branchScope'
 import { FileText, Plus, X, Printer, CreditCard, Check, ChevronRight, Search, Send, Ban, Wrench, Paperclip, Loader2, Tag } from 'lucide-react'
@@ -811,10 +811,17 @@ export function InvoicesPage() {
     if (!payment.amount_paid || payment.amount_paid <= 0) { toast.error('Enter a valid amount'); return }
     const outstanding = editInvoice.total_amount - editInvoice.amount_paid
     if (payment.amount_paid > outstanding + 0.001) { toast.error('Amount exceeds balance'); return }
+    if (proofRequired(payment.payment_method) && !proofFile) { toast.error(PAYMENT_ERRORS.proof_required); return }
     setSaving(true)
+    let proofPath: string | undefined
     try {
-      // Receipt insert + invoice update happen atomically in one RPC —
-      // doing them as two separate client calls let a silently-0-rows
+      if (proofFile) {
+        const up = await uploadPaymentProof(editInvoice.id, proofFile)
+        if (up.error) throw new Error(up.error)
+        proofPath = up.path
+      }
+      // Receipt insert + invoice update + proof happen atomically in one RPC —
+      // doing them as separate client calls let a silently-0-rows
       // invoice UPDATE (RLS just filters it out, no error) leave a receipt
       // recorded with the invoice never actually marked paid.
       const { data: result, error: rpcErr } = await supabase.rpc('record_payment', {
@@ -823,32 +830,17 @@ export function InvoicesPage() {
         p_payment_method: payment.payment_method,
         p_payment_date: payment.payment_date,
         p_reference: payment.payment_reference || null,
+        p_proof_path: proofPath ?? null,
       })
-      if (rpcErr) throw rpcErr
-      if (result?.error) {
-        const messages: Record<string, string> = {
-          forbidden: 'You do not have permission to record payments for this invoice',
-          invoice_not_found: 'Invoice not found',
-          invalid_amount: 'Enter a valid amount',
-          amount_exceeds_balance: 'Amount exceeds balance',
-        }
-        throw new Error(messages[result.error] ?? 'Failed to record payment')
+      if (rpcErr || result?.error) {
+        if (proofPath) await discardPaymentProof(proofPath)
+        if (rpcErr) throw rpcErr
+        throw new Error(PAYMENT_ERRORS[result.error as string] ?? 'Failed to record payment')
       }
 
       if (payment.notes.trim() && result?.receipt_id) {
         const { error: notesErr } = await supabase.from('receipts').update({ notes: payment.notes.trim() }).eq('id', result.receipt_id)
         if (notesErr) toast.error(`Payment recorded, but the note was not saved: ${notesErr.message}`)
-      }
-
-      if (proofFile && result?.receipt_id) {
-        const ext = proofFile.name.split('.').pop()
-        const path = `${result.receipt_id}/${Date.now()}.${ext}`
-        const { error: uploadErr } = await supabase.storage.from('payment-proofs').upload(path, proofFile, { contentType: proofFile.type, upsert: false })
-        if (uploadErr) {
-          toast.error(`Payment recorded, but proof upload failed: ${uploadErr.message}`)
-        } else {
-          await supabase.from('receipts').update({ proof_url: path }).eq('id', result.receipt_id)
-        }
       }
 
       await loadInvoices()
@@ -1832,7 +1824,7 @@ export function InvoicesPage() {
                 <input style={inputStyle} value={payment.payment_reference} onChange={e => setPayment({ ...payment, payment_reference: e.target.value })} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Proof of Payment</label>
+                <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>Proof of Payment{proofRequired(payment.payment_method) ? <span style={{ color: '#F15A22' }}> * required for {payment.payment_method.replace('_', ' ')}</span> : ' (optional)'}</label>
                 {proofFile ? (
                   <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

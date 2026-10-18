@@ -1,8 +1,9 @@
 import { supabase } from '@/lib/supabase'
 
-// Payments that must come with a bank slip or receipt screenshot. Cash, card
-// and the online gateway methods (which have their own record) are left out.
-const NEEDS_PROOF = ['bank_transfer', 'qr', 'duitnow', 'cheque', 'online', 'other']
+// Payments that must come with proof: a photo or PDF (cash handover, bank slip, QR or transfer screenshot).
+// Card and the online gateway methods have their own record and are left out. The database enforces the same list.
+const NEEDS_PROOF = ['cash', 'bank_transfer', 'online_transfer', 'qr', 'duitnow', 'cheque', 'other']
+export const proofRequired = (method: string | null | undefined) => NEEDS_PROOF.includes(method ?? '')
 
 export function proofMissing(r: { payment_method: string | null; proof_url: string | null; gateway_ref?: string | null; voided_at?: string | null }): boolean {
   return !r.proof_url && !r.voided_at && !r.gateway_ref && NEEDS_PROOF.includes(r.payment_method ?? '')
@@ -36,4 +37,27 @@ export async function attachReceiptProof(receiptId: string, file: File, referenc
     return { ok: false, error: msgs[data?.error] ?? error?.message ?? 'Could not attach the proof' }
   }
   return { ok: true, replaced: !!data?.replaced }
+}
+
+// Recording a payment: the file goes up first (into the invoice's folder), then record_payment attaches it to the new
+// receipt in the same step. If the payment then fails, the file is removed again.
+export async function uploadPaymentProof(invoiceId: string, file: File): Promise<{ path?: string; error?: string }> {
+  const bad = proofFileError(file)
+  if (bad) return { error: bad }
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+  const path = `${invoiceId}/${Date.now()}.${ext}`
+  const { error } = await supabase.storage.from('payment-proofs').upload(path, file, { contentType: file.type, upsert: false })
+  if (error) return { error: `Upload failed: ${error.message}` }
+  return { path }
+}
+export async function discardPaymentProof(path: string) {
+  await supabase.storage.from('payment-proofs').remove([path])
+}
+export const PAYMENT_ERRORS: Record<string, string> = {
+  forbidden: 'You do not have permission to record payments for this invoice',
+  invoice_not_found: 'Invoice not found',
+  invalid_amount: 'Enter a valid amount',
+  amount_exceeds_balance: 'Amount exceeds balance',
+  proof_required: 'Attach proof of payment (photo or PDF) for cash and transfer payments',
+  bad_proof: 'The proof file could not be attached. Please upload it again',
 }

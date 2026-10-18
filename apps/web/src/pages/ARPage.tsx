@@ -4,6 +4,7 @@ import { useAuthStore } from '@/store/authStore'
 import { scopedBranchId } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
 import { toast } from '@/components/ui/Toast'
+import { proofRequired, uploadPaymentProof, discardPaymentProof, PAYMENT_ERRORS } from '@/lib/paymentProof'
 import {
   Search, AlertCircle, AlertTriangle, DollarSign,
   FileText, X, Loader2, CheckCircle, Plus, Paperclip, ArrowUp, ArrowDown, ArrowUpDown
@@ -318,40 +319,33 @@ function DetailPanel({
     const amt = parseFloat(form.amount)
     if (!amt || amt <= 0) { toast('Enter a valid amount', 'error'); return }
     if (amt > invoice.balance_due + 0.001) { toast('Amount exceeds balance', 'error'); return }
+    if (proofRequired(form.payment_method) && !proofFile) { toast(PAYMENT_ERRORS.proof_required, 'error'); return }
     setSaving(true)
-    // The receipt and the invoice balance change together in one database function (it also keeps the audit trail).
+    let proofPath: string | undefined
+    if (proofFile) {
+      const up = await uploadPaymentProof(invoice.id, proofFile)
+      if (up.error) { setSaving(false); toast(up.error, 'error'); return }
+      proofPath = up.path
+    }
+    // The receipt, the invoice balance and the proof change together in one database function (it also keeps the audit trail).
     const { data: result, error } = await supabase.rpc('record_payment', {
       p_invoice_id: invoice.id,
       p_amount: amt,
       p_payment_method: form.payment_method,
       p_payment_date: form.payment_date,
       p_reference: form.reference_number || null,
+      p_proof_path: proofPath ?? null,
     })
     if (error || result?.error) {
       setSaving(false)
-      const messages: Record<string, string> = {
-        forbidden: 'You do not have permission to record payments for this invoice',
-        invoice_not_found: 'Invoice not found',
-        invalid_amount: 'Enter a valid amount',
-        amount_exceeds_balance: 'Amount exceeds balance',
-      }
-      toast(messages[result?.error as string] ?? error?.message ?? 'Failed to record payment', 'error')
+      if (proofPath) await discardPaymentProof(proofPath)
+      toast(PAYMENT_ERRORS[result?.error as string] ?? error?.message ?? 'Failed to record payment', 'error')
       return
     }
     const receiptId = result?.receipt_id as string | undefined
 
     if (receiptId && form.notes) {
       await supabase.from('receipts').update({ notes: form.notes }).eq('id', receiptId)
-    }
-    if (proofFile && receiptId) {
-      const ext = proofFile.name.split('.').pop()
-      const path = `${receiptId}/${Date.now()}.${ext}`
-      const { error: uploadErr } = await supabase.storage.from('payment-proofs').upload(path, proofFile, { contentType: proofFile.type, upsert: false })
-      if (uploadErr) {
-        toast(`Payment recorded, but proof upload failed: ${uploadErr.message}`, 'error')
-      } else {
-        await supabase.from('receipts').update({ proof_url: path }).eq('id', receiptId)
-      }
     }
 
     setSaving(false)
@@ -458,7 +452,7 @@ function DetailPanel({
                 <input value={form.reference_number} onChange={e => setForm(f => ({ ...f, reference_number: e.target.value }))} placeholder="optional" style={inputStyle} />
               </div>
               <div>
-                <label style={{ fontSize: 11, color: '#A0A0A0', display: 'block', marginBottom: 4 }}>Proof of Payment</label>
+                <label style={{ fontSize: 11, color: '#A0A0A0', display: 'block', marginBottom: 4 }}>Proof of Payment{proofRequired(form.payment_method) ? <span style={{ color: '#F15A22' }}> * required</span> : ' (optional)'}</label>
                 {proofFile ? (
                   <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#F0F0F0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
