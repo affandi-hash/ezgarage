@@ -17,6 +17,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { controlsOn } from '@/lib/deletion'
+import { canUseMoneyPowers } from '@/lib/money'
 import { scopedBranchId } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
 import { EzAccPanel } from '@/components/finance/EzAccPanel'
@@ -1549,7 +1550,7 @@ export function FinancePage() {
   const userId: string = user?.id ?? ''
   const branchId: string = scopedBranchId(user, selectedBranchId) ?? ''
   const canPrioritize = ['ops_manager', 'foreman', 'super_admin'].includes(user?.role ?? '')
-  const canRecordPayment = ['ops_manager', 'super_admin'].includes(user?.role ?? '')
+  const canRecordPayment = canUseMoneyPowers(['ops_manager', 'super_admin'])
 
   // Data
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([])

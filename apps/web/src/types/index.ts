@@ -48,12 +48,16 @@ export interface UserProfile {
   // Gates EZWerkFlo-wide admin tooling (Platform Settings) only; grants no
   // access to any tenant's operational data.
   is_platform_admin: boolean
+  // the person trusted with the money powers (voiding payments, changing issued invoices ...); set by a super admin
+  is_branch_admin?: boolean
 }
 
 export interface Tenant {
   id: string
   // false = the stricter rules (deletion approval, proof for cash/transfers, branch on supplier bills) are switched off for this company
   tight_controls?: boolean
+  // true = the money powers also need a session that passed the authenticator-app code
+  require_mfa?: boolean
   name: string
   slug: string
   email: string

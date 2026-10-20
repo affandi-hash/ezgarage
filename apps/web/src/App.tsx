@@ -8,6 +8,7 @@ import { ToastContainer } from '@/components/ui/Toast'
 import { DeletionPrompt } from '@/components/ui/DeletionPrompt'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
 import { IntegrityReportPage } from '@/pages/IntegrityReportPage'
+import { SecurityPage } from '@/pages/SecurityPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { CustomersPage } from '@/pages/CustomersPage'
@@ -70,7 +71,7 @@ export default function App() {
       if (session?.user) {
         const { data: profile } = await supabase
           .from('users')
-          .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password, is_platform_admin')
+          .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password, is_platform_admin, is_branch_admin')
           .eq('id', session.user.id)
           .single()
         setUser(profile ?? null)
@@ -99,7 +100,7 @@ export default function App() {
       } else if (event === 'SIGNED_IN' && session?.user) {
         const { data: profile } = await supabase
           .from('users')
-          .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password, is_platform_admin')
+          .select('id, full_name, email, role, branch_id, approval_status, is_active, tenant_id, must_change_password, is_platform_admin, is_branch_admin')
           .eq('id', session.user.id)
           .single()
         setUser(profile ?? null)
@@ -319,6 +320,16 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
                 <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Security (authenticator code) */}
+          <Route
+            path="/security"
+            element={
+              <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
+                <SecurityPage />
               </ProtectedRoute>
             }
           />

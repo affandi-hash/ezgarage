@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { controlsOn } from '@/lib/deletion'
+import { canUseMoneyPowers, MONEY_ERRORS } from '@/lib/money'
 import { attachReceiptProof, canManageProof, proofMissing, proofRequired, uploadPaymentProof, discardPaymentProof, PAYMENT_ERRORS } from '@/lib/paymentProof'
 import { useAuthStore } from '@/store/authStore'
 import { canSeeAllBranches } from '@/lib/branchScope'
@@ -451,7 +452,7 @@ export function InvoicesPage() {
   const [paymentFailures, setPaymentFailures] = useState<{ id: string; event: string; failure_code: string | null; failure_reason: string | null; created_at: string }[]>([])
   const [viewingProofId, setViewingProofId] = useState<string | null>(null)
   const [voidingId, setVoidingId] = useState<string | null>(null)
-  const canVoidPayments = ['super_admin', 'ops_manager', 'foreman'].includes(user?.role ?? '')
+  const canVoidPayments = canUseMoneyPowers(['super_admin', 'ops_manager', 'foreman'])
 
   function handleProofFileChange(file: File | null) {
     setProofFileError(null)
@@ -477,7 +478,7 @@ export function InvoicesPage() {
     setVoidingId(receiptId)
     const { data, error } = await supabase.rpc('void_receipt', { p_receipt_id: receiptId, p_reason: reason || null })
     setVoidingId(null)
-    if (error || data?.error) { toast.error(data?.error === 'forbidden' ? 'You do not have permission to void payments' : 'Failed to void payment'); return }
+    if (error || data?.error) { toast.error(MONEY_ERRORS[data?.error as string] ?? 'Failed to void payment'); return }
     toast.success('Payment voided')
     if (editInvoice) {
       await loadPaymentHistory(editInvoice.id)
@@ -879,7 +880,9 @@ export function InvoicesPage() {
     if (voidErr || res?.error) {
       const messages: Record<string, string> = {
         forbidden: 'You do not have permission to void this invoice',
-        has_payments: 'This invoice has payments. Void the payment first (or ask an operations manager).',
+        branch_admin_only: MONEY_ERRORS.branch_admin_only,
+        mfa_required: MONEY_ERRORS.mfa_required,
+        has_payments: 'This invoice has payments. Only the Branch Admin can void it, or void the payment first.',
         already_void: 'This invoice is already void',
         reason_required: 'A reason is required to void an invoice',
       }

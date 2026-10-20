@@ -29,6 +29,7 @@ interface UserRecord {
   approval_status: ApprovalStatus;
   avatar_url: string | null;
   created_at: string;
+  is_branch_admin?: boolean;
 }
 
 interface Branch {
@@ -620,6 +621,20 @@ export function UsersPage() {
     });
   };
 
+  // Branch Admin: the person trusted with the money powers. Only a super admin can change it, never for themselves.
+  const handleBranchAdmin = async () => {
+    if (!selectedUser || !isSuperAdmin || selectedUser.id === currentUser?.id) return;
+    const turnOn = !selectedUser.is_branch_admin;
+    const msg = turnOn
+      ? `Make ${selectedUser.full_name} a Branch Admin? They will be able to void payments, change issued invoices, add proof to payments and record supplier payments.`
+      : `Remove Branch Admin from ${selectedUser.full_name}? They will lose those powers.`;
+    if (!window.confirm(msg)) return;
+    const { error } = await supabase.from('users').update({ is_branch_admin: turnOn }).eq('id', selectedUser.id);
+    if (error) { setSaveError(error.message); return; }
+    setUsers((prev) => prev.map((u) => (u.id === selectedUser.id ? { ...u, is_branch_admin: turnOn } : u)));
+    logAudit({ action: turnOn ? 'Branch Admin Assigned' : 'Branch Admin Removed', module: 'User', record_type: 'user', record_id: selectedUser.id, details: { target_user: selectedUser.full_name, target_email: selectedUser.email }, branch_id: currentUser?.branch_id, user_id: currentUser?.id, tenant_id: currentUser?.tenant_id });
+  };
+
   const handleDeactivate = async () => {
     if (!selectedUser) return;
     await supabase.from('users').update({ is_active: false, approval_status: 'rejected' }).eq('id', selectedUser.id);
@@ -1001,6 +1016,18 @@ export function UsersPage() {
                   />
                 </div>
               ))}
+
+              {isSuperAdmin && selectedUser.id !== currentUser?.id && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: '#161616', border: '1px solid #2A2A2A', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: '#F0F0F0', fontWeight: 600 }}>Branch Admin {selectedUser.is_branch_admin ? <span style={{ color: '#22C55E', fontSize: 11, marginLeft: 6 }}>ON</span> : <span style={{ color: '#6A6A6A', fontSize: 11, marginLeft: 6 }}>off</span>}</div>
+                    <div style={{ fontSize: 11, color: '#A0A0A0', marginTop: 2 }}>Trusted with the money powers: void payments, change issued invoices, add proof, record supplier payments.</div>
+                  </div>
+                  <button onClick={handleBranchAdmin} style={{ background: selectedUser.is_branch_admin ? '#1E1E1E' : '#F15A22', color: '#fff', border: '1px solid #2A2A2A', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+                    {selectedUser.is_branch_admin ? 'Remove' : 'Make Branch Admin'}
+                  </button>
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: 16 }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>

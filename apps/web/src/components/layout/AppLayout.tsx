@@ -4,6 +4,7 @@ import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { useAuthStore } from '@/store/authStore'
 import { canSeeAllBranches } from '@/lib/branchScope'
+import { MfaGate } from '@/components/auth/MfaGate'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
@@ -28,6 +29,7 @@ export function AppLayout() {
   useEffect(() => { if (!isMobile) setMobileNavOpen(false) }, [isMobile])
 
   return (
+    <MfaGate>
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', backgroundColor: '#0E0E0E' }}>
       <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
@@ -43,5 +45,6 @@ export function AppLayout() {
         </main>
       </div>
     </div>
+    </MfaGate>
   )
 }

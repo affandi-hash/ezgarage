@@ -4,6 +4,7 @@ import { useAuthStore } from '@/store/authStore'
 import { scopedBranchId } from '@/lib/branchScope'
 import { useOutletContext } from 'react-router-dom'
 import { toast } from '@/components/ui/Toast'
+import { canUseMoneyPowers, MONEY_ERRORS } from '@/lib/money'
 import { proofRequired, uploadPaymentProof, discardPaymentProof, PAYMENT_ERRORS } from '@/lib/paymentProof'
 import {
   Search, AlertCircle, AlertTriangle, DollarSign,
@@ -268,8 +269,7 @@ function DetailPanel({
   const [proofFileError, setProofFileError] = useState<string | null>(null)
   const [viewingProofId, setViewingProofId] = useState<string | null>(null)
   const [voidingId, setVoidingId] = useState<string | null>(null)
-  const { user } = useAuthStore()
-  const canVoidPayments = ['super_admin', 'ops_manager', 'foreman'].includes(user?.role ?? '')
+  const canVoidPayments = canUseMoneyPowers(['super_admin', 'ops_manager', 'foreman'])
 
   function handleProofFileChange(file: File | null) {
     setProofFileError(null)
@@ -306,7 +306,7 @@ function DetailPanel({
     setVoidingId(receiptId)
     const { data, error } = await supabase.rpc('void_receipt', { p_receipt_id: receiptId, p_reason: reason || null })
     setVoidingId(null)
-    if (error || data?.error) { toast(data?.error === 'forbidden' ? 'You do not have permission to void payments' : 'Failed to void payment', 'error'); return }
+    if (error || data?.error) { toast(MONEY_ERRORS[data?.error as string] ?? 'Failed to void payment', 'error'); return }
     toast('Payment voided')
     loadReceipts()
     onRefresh()

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
+import { canUseMoneyPowers, MONEY_ERRORS } from '@/lib/money'
 
 // Payments that must come with proof: a photo or PDF (cash handover, bank slip, QR or transfer screenshot).
 // Card and the online gateway methods have their own record and are left out. The database enforces the same list.
@@ -11,8 +12,8 @@ export function proofMissing(r: { payment_method: string | null; proof_url: stri
   return !r.proof_url && !r.voided_at && !r.gateway_ref && NEEDS_PROOF.includes(r.payment_method ?? '')
 }
 
-// Adding or replacing proof after the payment is limited to ops managers.
-export const canManageProof = (role?: string | null) => role === 'ops_manager' || role === 'super_admin'
+// Adding or replacing proof after the payment is a money power: the Branch Admin (or super admin) only.
+export const canManageProof = (_role?: string | null) => canUseMoneyPowers(['ops_manager', 'super_admin'])
 
 export const PROOF_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
 export const PROOF_MAX_BYTES = 10 * 1024 * 1024
@@ -35,7 +36,7 @@ export async function attachReceiptProof(receiptId: string, file: File, referenc
   const { data, error } = await supabase.rpc('set_receipt_proof', { p_receipt_id: receiptId, p_path: path, p_reference: reference ?? null })
   if (error || data?.error) {
     await supabase.storage.from('payment-proofs').remove([path])
-    const msgs: Record<string, string> = { forbidden: 'Only an ops manager can add or replace proof', voided: 'This payment was voided', not_found: 'Payment not found', bad_path: 'Could not attach the file' }
+    const msgs: Record<string, string> = { forbidden: 'Only the Branch Admin can add or replace proof', branch_admin_only: MONEY_ERRORS.branch_admin_only, mfa_required: MONEY_ERRORS.mfa_required, voided: 'This payment was voided', not_found: 'Payment not found', bad_path: 'Could not attach the file' }
     return { ok: false, error: msgs[data?.error] ?? error?.message ?? 'Could not attach the proof' }
   }
   return { ok: true, replaced: !!data?.replaced }

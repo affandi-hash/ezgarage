@@ -28,6 +28,7 @@ import {
   Building2,
   ShieldCheck,
   ShieldAlert,
+  Lock,
   Megaphone,
   Building,
   Target,
@@ -139,6 +140,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'System',
     items: [
       { to: '/approvals', label: 'Approvals', icon: ShieldCheck, roles: ['super_admin', 'ops_manager'] },
+      { to: '/security', label: 'Security', icon: Lock, roles: ['super_admin', 'ops_manager'] },
       { to: '/users', label: 'Users', icon: UserCog, roles: ['super_admin', 'ops_manager'] },
       { to: '/settings', label: 'Settings', icon: Settings, roles: ['super_admin', 'ops_manager'] },
       { to: '/audit', label: 'Audit Log', icon: FileSearch, roles: ['super_admin', 'ops_manager'] },
