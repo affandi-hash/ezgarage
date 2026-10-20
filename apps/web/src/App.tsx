@@ -9,6 +9,7 @@ import { DeletionPrompt } from '@/components/ui/DeletionPrompt'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
 import { IntegrityReportPage } from '@/pages/IntegrityReportPage'
 import { SecurityPage } from '@/pages/SecurityPage'
+import { UsersGate } from '@/components/auth/UsersGate'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { CustomersPage } from '@/pages/CustomersPage'
@@ -309,7 +310,7 @@ export default function App() {
             path="/users"
             element={
               <ProtectedRoute allowedRoles={['super_admin','ops_manager']}>
-                <UsersPage />
+                <UsersGate><UsersPage /></UsersGate>
               </ProtectedRoute>
             }
           />

@@ -27,14 +27,35 @@ Deno.serve(async (req) => {
     const { data: { user: caller } } = await anonClient.auth.getUser()
     if (!caller) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
 
-    const { data: callerProfile } = await anonClient.from('users').select('role, tenant_id, is_platform_admin').eq('id', caller.id).single()
+    const { data: callerProfile } = await anonClient.from('users').select('role, tenant_id, is_platform_admin, is_branch_admin').eq('id', caller.id).single()
     if (!callerProfile || !(['super_admin', 'ops_manager'].includes(callerProfile.role) || callerProfile.is_platform_admin)) {
       return new Response(JSON.stringify({ error: 'Insufficient permissions' }), { status: 403, headers: corsHeaders })
+    }
+    // Who may create accounts: a super admin always. For a company with the stricter rules on, the Branch Admin (with the
+    // authenticator step when required). For a company with the rules off (MAC), its ops managers as before.
+    // Nobody but a super admin can create a super admin.
+    const isSuper = callerProfile.role === 'super_admin' || !!callerProfile.is_platform_admin
+    if (!isSuper) {
+      const adminForCheck = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+      const { data: tn } = await adminForCheck.from('tenants').select('tight_controls, require_mfa').eq('id', callerProfile.tenant_id).single()
+      const strict = tn?.tight_controls !== false
+      if (strict && !callerProfile.is_branch_admin) {
+        return new Response(JSON.stringify({ error: 'Only the Branch Admin can add accounts' }), { status: 403, headers: corsHeaders })
+      }
+      if (strict && tn?.require_mfa) {
+        let aal = 'aal1'
+        try { const p = authHeader.replace('Bearer ', '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'); aal = JSON.parse(atob(p)).aal ?? 'aal1' } catch { /* not a JWT */ }
+        if (aal !== 'aal2') return new Response(JSON.stringify({ error: 'Enter your authenticator code first (Security page)' }), { status: 403, headers: corsHeaders })
+      }
     }
 
     const { email, full_name, role, branch_id, phone, temp_password, staff_profile_id } = await req.json()
     if (!email?.trim() || !full_name?.trim() || !role || !temp_password || temp_password.length < 6) {
       return new Response(JSON.stringify({ error: 'email, full_name, role, and temp_password (min 6 chars) are required' }), { status: 400, headers: corsHeaders })
+    }
+
+    if (!isSuper && role === 'super_admin') {
+      return new Response(JSON.stringify({ error: 'Only a super admin can create a super admin' }), { status: 403, headers: corsHeaders })
     }
 
     const adminClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
@@ -101,6 +122,12 @@ Deno.serve(async (req) => {
         .eq('id', staff_profile_id)
       if (linkErr) console.error('Failed to link staff_profile to new user:', linkErr.message)
     }
+
+    const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null
+    await adminClient.from('audit_logs').insert({
+      action: 'account_created', module: 'users', record_id: created.user.id, record_type: 'user', tenant_id: callerProfile.tenant_id, user_id: caller.id, ip_address: ip,
+      details: { target: full_name.trim(), target_email: email.trim().toLowerCase(), role, client: { ip, device: (req.headers.get('user-agent') ?? '').slice(0, 160) } },
+    })
 
     return new Response(JSON.stringify({ success: true, user_id: created.user.id }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (e) {

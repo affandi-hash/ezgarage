@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
+import { canManageUsers } from '@/lib/money'
 import {
   LayoutDashboard,
   Kanban,
@@ -371,7 +372,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
   if (!user) return null
 
   const visibleGroups = NAV_GROUPS
-    .map(group => ({ ...group, items: group.items.filter(item => item.requirePlatformAdmin ? user.is_platform_admin : item.roles.includes(user.role) && !(item.to === '/approvals' && tenant?.tight_controls === false)) }))
+    .map(group => ({ ...group, items: group.items.filter(item => item.requirePlatformAdmin ? user.is_platform_admin : item.roles.includes(user.role) && !(item.to === '/approvals' && tenant?.tight_controls === false) && !(item.to === '/users' && !canManageUsers())) }))
     .filter(group => group.items.length > 0)
 
   const contentProps: ContentProps = {

@@ -16,3 +16,12 @@ export const MONEY_ERRORS: Record<string, string> = {
   mfa_required: 'Enter your authenticator code first (Security page), then try again.',
   forbidden: 'You do not have permission to do this.',
 }
+
+// Managing accounts (the Users module): a super admin or the Branch Admin. A company with the stricter rules off (MAC)
+// keeps its ops managers there as before. The database and the invite service enforce the same.
+export function canManageUsers(): boolean {
+  const { user, tenant } = useAuthStore.getState()
+  if (!user) return false
+  if (user.role === 'super_admin' || user.is_platform_admin || user.is_branch_admin) return true
+  return tenant?.tight_controls === false && user.role === 'ops_manager'
+}
