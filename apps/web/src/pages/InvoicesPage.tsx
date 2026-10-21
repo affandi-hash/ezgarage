@@ -594,9 +594,16 @@ export function InvoicesPage() {
       .select('*, customers(full_name, phone, email), vehicles(plate_number, make, model, year, vehicle_type, is_internal_fleet)')
       .eq('status', 'ready')
     if (!canSeeAllBranches(user?.role) && user?.branch_id) q = q.eq('branch_id', user.branch_id)
-    const { data, error } = await q
-    console.log('[loadJobs] data:', data, 'error:', error, 'user branch:', user?.branch_id, 'role:', user?.role)
-    setJobs((data as Job[]) ?? [])
+    const { data } = await q
+    const list = (data as Job[]) ?? []
+    // a job that already has an invoice (for example the draft opened from its booking) is not offered again:
+    // open that invoice from the list instead, so one job never ends up with two
+    let taken = new Set<string>()
+    if (list.length > 0) {
+      const { data: existing } = await supabase.from('invoices').select('job_id').in('job_id', list.map(j => j.id)).neq('status', 'void')
+      taken = new Set((existing ?? []).map((i: { job_id: string | null }) => i.job_id ?? ''))
+    }
+    setJobs(list.filter(j => !taken.has(j.id)))
     setJobsLoading(false)
   }, [user])
 
@@ -1334,7 +1341,7 @@ export function InvoicesPage() {
                     <div style={{ textAlign: 'center', color: C.text2, padding: 40 }}>Loading jobs…</div>
                   ) : filteredJobs.length === 0 ? (
                     <div style={{ textAlign: 'center', color: C.text2, padding: 40, fontSize: 14 }}>
-                      No eligible jobs found. {jobSearch ? 'Try clearing the search.' : ''}
+                      No eligible jobs found. {jobSearch ? 'Try clearing the search. ' : ''}Jobs that already have an invoice are not listed. Open their draft from the invoice list.
                     </div>
                   ) : filteredJobs.map(job => (
                     <div key={job.id} onClick={async () => {
