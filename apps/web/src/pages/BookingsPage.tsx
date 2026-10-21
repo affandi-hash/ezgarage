@@ -1315,7 +1315,7 @@ export function BookingsPage() {
             <button onClick={fetchBookings} style={{ marginTop: 12, padding: '8px 20px', borderRadius: 8, border: '1px solid #2A2A2A', backgroundColor: 'transparent', color: '#A0A0A0', cursor: 'pointer' }}>Retry</button>
           </div>
         ) : (
-          <div style={{ backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ backgroundColor: '#161616', border: '1px solid #2A2A2A', borderRadius: 10, overflow: 'hidden', minWidth: 1020 }}>
             {/* Table header */}
             <div
               style={{
@@ -1326,8 +1326,8 @@ export function BookingsPage() {
                 backgroundColor: '#1E1E1E',
               }}
             >
-              {['Booking #', 'Customer', 'Vehicle', 'Date & Time', 'Service', 'Source', 'Mode', 'Status', ''].map((h) => (
-                <span key={h} style={{ color: '#A0A0A0', fontSize: 11, fontWeight: 700, letterSpacing: '0.05em' }}>{h.toUpperCase()}</span>
+              {['Booking #', 'Customer', 'Vehicle', 'Date & Time', 'Service', 'Source', 'Mode', 'Status', ''].map((h, i, all) => (
+                <span key={h + i} style={{ color: '#A0A0A0', fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', ...(i === all.length - 1 ? { position: 'sticky' as const, right: 0, backgroundColor: '#1E1E1E' } : {}) }}>{h.toUpperCase()}</span>
               ))}
             </div>
 
@@ -1424,7 +1424,8 @@ export function BookingsPage() {
                       )}
                     </div>
 
-                    {/* Actions */}
+                    {/* Actions: pinned to the right edge so it can always be tapped on a phone */}
+                    <div style={{ position: 'sticky', right: 0, backgroundColor: '#161616', display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch' }}>
                     <ActionsMenu
                       booking={booking}
                       converted={convertedBookingIds.has(booking.id)}
@@ -1435,6 +1436,7 @@ export function BookingsPage() {
                       onNoShow={(id) => updateBookingStatus(id, 'no_show')}
                       onDelete={deleteBooking}
                     />
+                    </div>
                   </div>
                 )
               })
