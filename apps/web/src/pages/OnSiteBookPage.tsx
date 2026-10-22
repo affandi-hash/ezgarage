@@ -243,7 +243,8 @@ export function OnSiteBookPage() {
 
   return (
     <Page>
-      <img src="/brand/onsite-logo.png" alt="Motoverse ON-SITE, Mobile Oil Change Expert" style={{ display: 'block', width: '100%', maxWidth: 260, height: 'auto', margin: '0 auto 10px' }} />
+      <img src="/brand/onsite-logo.png" alt="Motoverse ON-SITE, Mobile Oil Change Expert" style={{ display: 'block', width: '100%', maxWidth: 260, height: 'auto', margin: '0 auto 8px' }} />
+      <div style={{ color: C.orange, fontWeight: 800, fontSize: 13, letterSpacing: '0.14em', textTransform: 'uppercase', textAlign: 'center', marginBottom: 10 }}>Mobile Oil Change Expert</div>
       <p style={{ color: C.muted, margin: '0 0 18px', fontSize: 14, textAlign: 'center' }}>We come to you. Engine and gearbox lube at your home or office.</p>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
