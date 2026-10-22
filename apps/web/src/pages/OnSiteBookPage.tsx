@@ -154,8 +154,6 @@ export function OnSiteBookPage() {
 
   const bb = cfg.bb ?? null
   if (bb && flow === null) {
-    const prices = bb.packages.map(p => p.price).filter((n): n is number => n != null)
-    const from = prices.length ? Math.min(...prices) : null
     return (
       <Page>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
@@ -168,7 +166,6 @@ export function OnSiteBookPage() {
         </ChoiceCard>
         <ChoiceCard title="BB Staff Car Care Day" logo="/brand/bb-care-day-logo.png" onClick={() => setFlow('bb')}>
           For BrainyBunch staff. We collect your car at BB HQ, service and wash it, and return it before the end of the day.
-          {from != null && <span style={{ display: 'block', marginTop: 6, color: C.orange, fontWeight: 700 }}>From {rmShort(from)}. Pay when your car is returned.</span>}
         </ChoiceCard>
         <ContactLine number={contact} />
       </Page>
