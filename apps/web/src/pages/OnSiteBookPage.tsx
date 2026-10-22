@@ -163,10 +163,10 @@ export function OnSiteBookPage() {
           <div style={{ fontWeight: 800, fontSize: 20 }}>Motoverse ON-SITE</div>
         </div>
         <p style={{ color: C.muted, margin: '0 0 18px', fontSize: 14 }}>How would you like to book?</p>
-        <ChoiceCard title="Service at my location (van)" onClick={() => setFlow('van')}>
+        <ChoiceCard title="Service at my location (van)" logo="/brand/onsite-logo.png" tagline="Mobile Oil Change Expert" onClick={() => setFlow('van')}>
           We come to you. Engine and gearbox lube at your home or office.
         </ChoiceCard>
-        <ChoiceCard title="BB Staff Car Care Day" onClick={() => setFlow('bb')}>
+        <ChoiceCard title="BB Staff Car Care Day" logo="/brand/bb-care-day-logo.png" onClick={() => setFlow('bb')}>
           For BrainyBunch staff. We collect your car at BB HQ, service and wash it, and return it before the end of the day.
           {from != null && <span style={{ display: 'block', marginTop: 6, color: C.orange, fontWeight: 700 }}>From {rmShort(from)}. Pay when your car is returned.</span>}
         </ChoiceCard>
@@ -370,11 +370,14 @@ export function OnSiteBookPage() {
   )
 }
 
-function ChoiceCard({ title, children, onClick }: { title: string; children: ReactNode; onClick: () => void }) {
+function ChoiceCard({ title, logo, tagline, children, onClick }: { title: string; logo?: string; tagline?: string; children: ReactNode; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick}
-      style={{ display: 'block', width: '100%', textAlign: 'left', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, marginBottom: 12, color: C.text, cursor: 'pointer' }}>
-      <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{title}</div>
+    <button type="button" aria-label={title} onClick={onClick}
+      style={{ display: 'block', width: '100%', textAlign: logo ? 'center' : 'left', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, marginBottom: 12, color: C.text, cursor: 'pointer', fontFamily: 'inherit' }}>
+      {logo
+        ? <img src={logo} alt={title} style={{ display: 'block', margin: '0 auto 10px', width: '100%', maxWidth: tagline ? 300 : 230, height: 'auto' }} />
+        : <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{title}</div>}
+      {tagline && <div style={{ color: C.orange, fontWeight: 800, fontSize: 13, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>{tagline}</div>}
       <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.5 }}>{children}</div>
     </button>
   )
