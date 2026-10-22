@@ -375,7 +375,7 @@ function ChoiceCard({ title, logo, tagline, children, onClick }: { title: string
     <button type="button" aria-label={title} onClick={onClick}
       style={{ display: 'block', width: '100%', textAlign: logo ? 'center' : 'left', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, marginBottom: 12, color: C.text, cursor: 'pointer', fontFamily: 'inherit' }}>
       {logo
-        ? <img src={logo} alt={title} style={{ display: 'block', margin: '0 auto 10px', width: '100%', maxWidth: tagline ? 300 : 230, height: 'auto' }} />
+        ? <img src={logo} alt={title} style={{ display: 'block', margin: '0 auto 10px', width: '100%', maxWidth: 300, height: 'auto' }} />
         : <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{title}</div>}
       {tagline && <div style={{ color: C.orange, fontWeight: 800, fontSize: 13, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>{tagline}</div>}
       <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.5 }}>{children}</div>
