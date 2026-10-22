@@ -243,11 +243,8 @@ export function OnSiteBookPage() {
 
   return (
     <Page>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-        <Truck color={C.orange} />
-        <div style={{ fontWeight: 800, fontSize: 20 }}>Motoverse ON-SITE</div>
-      </div>
-      <p style={{ color: C.muted, margin: '0 0 18px', fontSize: 14 }}>We come to you. Engine and gearbox lube at your home or office.</p>
+      <img src="/brand/onsite-logo.png" alt="Motoverse ON-SITE, Mobile Oil Change Expert" style={{ display: 'block', width: '100%', maxWidth: 260, height: 'auto', margin: '0 auto 10px' }} />
+      <p style={{ color: C.muted, margin: '0 0 18px', fontSize: 14, textAlign: 'center' }}>We come to you. Engine and gearbox lube at your home or office.</p>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
         {STEPS.map((s, i) => (
