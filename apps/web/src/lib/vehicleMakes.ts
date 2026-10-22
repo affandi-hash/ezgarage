@@ -41,6 +41,12 @@ export const CAR_MAKES: Record<string, string[]> = {
   'Isuzu': ['D-Max', 'MU-X'],
   'MINI': ['Cooper', 'Countryman'],
   'Volvo': ['XC40', 'XC60', 'XC90', 'S60'],
+  'Chery': ['Tiggo 7 Pro', 'Tiggo 8 Pro', 'Arrizo 5'],
+  'Haval': ['H6', 'Jolion'],
+  'Geely': ['Coolray', 'Emgrand', 'Okavango', 'Starray'],
+  'MG': ['3', '5', 'ZS', 'HS'],
+  'Jaecoo': ['J7'],
+  'Omoda': ['Omoda 5'],
 }
 
 export function makeOptionsFor(type: 'car' | 'bike'): string[] {
