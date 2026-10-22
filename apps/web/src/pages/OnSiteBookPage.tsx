@@ -216,11 +216,8 @@ export function OnSiteBookPage() {
   if (bb && flow === null) {
     return (
       <Page>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <Truck color={C.orange} />
-          <div style={{ fontWeight: 800, fontSize: 20 }}>Motoverse ON-SITE</div>
-        </div>
-        <p style={{ color: C.muted, margin: '0 0 18px', fontSize: 14 }}>How would you like to book?</p>
+        <img src="/brand/onsite-logo.png" alt="Motoverse ON-SITE" style={{ display: 'block', width: '100%', maxWidth: 190, height: 'auto', margin: '0 auto 8px' }} />
+        <p style={{ color: C.muted, margin: '0 0 18px', fontSize: 14, textAlign: 'center' }}>How would you like to book?</p>
         <ChoiceCard title="Service at my location (van)" logo="/brand/onsite-logo.png" tagline="Mobile Oil Change Expert" onClick={() => setFlow('van')}>
           We come to you. Engine and gearbox lube at your home or office.
         </ChoiceCard>
