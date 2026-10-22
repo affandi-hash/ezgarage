@@ -18,6 +18,7 @@ interface Booking {
   booking_number: string; status: OsStatus; request_type: string
   customer_name: string; vehicle_plate: string; vehicle: string
   package_name: string | null; grade_name: string | null; address: string | null
+  addons?: { id: string; name: string; price: number; plus_parts?: boolean }[]; est_duration_min?: number | null
   service_date: string | null; slot_label: string | null
   price_total: number | null; deposit_amount: number; deposit_status: string
   amount_paid: number; balance_due: number | null; invoice_id: string | null
@@ -247,6 +248,8 @@ export function OnSiteStatusPage() {
       <Card style={{ marginBottom: 12 }}>
         <Row k="Vehicle" v={`${b.vehicle} · ${b.vehicle_plate}`} />
         <Row k="Service" v={`${b.package_name ?? ''}${b.grade_name ? ` (${b.grade_name})` : ''}`} />
+        {(b.addons?.length ?? 0) > 0 && <Row k="Extras" v={b.addons!.map(a => a.name).join(', ')} />}
+        {b.est_duration_min ? <Row k="Estimated time" v={`about ${b.est_duration_min} min`} /> : null}
         <Row k="Where" v={b.address ?? ''} />
         <Row k="When" v={b.service_date ? `${fmtDate(b.service_date)}${b.slot_label ? `, ${b.slot_label}` : ''}` : 'To be confirmed'} />
         {b.access_notes && <Row k="Your note" v={b.access_notes} />}

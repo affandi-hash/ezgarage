@@ -8,7 +8,11 @@ export type OsStatus =
 export type OsDepositStatus = 'unpaid' | 'paid' | 'refund_due' | 'refunded' | 'forfeited' | 'none'
 export type OsTier = 'tier1' | 'tier2'
 
+export interface OsAddonLine { id: string; name: string; price: number; price_from?: boolean; plus_parts?: boolean; duration_min?: number; duration_max?: number }
 export interface OsBooking {
+  addons?: OsAddonLine[]
+  price_addons?: number
+  est_duration_min?: number | null
   id: string
   tenant_id: string
   branch_id: string
@@ -109,6 +113,9 @@ export const OS_ERRORS: Record<string, string> = {
   unknown_vehicle: 'We do not have this vehicle in our list yet.',
   hub_only: 'This vehicle is serviced at our workshop, not by the van.',
   package_unavailable: 'This package is not available for your vehicle yet.',
+  addon_required: 'Please choose at least one service.',
+  addon_unavailable: 'One of the extras you chose is not available for this service. Please review your choices.',
+  too_long: 'That job needs more time than one visit window. Please send it as a request and we will arrange a time.',
   outside_zone: 'We do not cover this postcode yet.',
   slot_required: 'Please choose a date and time.',
   slot_not_found: 'That time is no longer available.',
@@ -212,3 +219,10 @@ export const ISO_DAYS = [
   { n: 1, label: 'Mon' }, { n: 2, label: 'Tue' }, { n: 3, label: 'Wed' }, { n: 4, label: 'Thu' },
   { n: 5, label: 'Fri' }, { n: 6, label: 'Sat' }, { n: 7, label: 'Sun' },
 ]
+
+// Readable name for a vehicle price level.
+export const TIER_LABEL: Record<string, string> = {
+  tier1: 'Tier 1 (local, Japanese, Korean)', tier2: 'Tier 2 (continental)', bike: 'Motorcycle',
+  harley_sportster: 'Harley-Davidson Sportster', harley_softail: 'Harley-Davidson Softail / Touring', bb: 'BB staff', hub_only: 'Workshop only',
+}
+export const addonLabel = (a: OsAddonLine) => `${a.name}${a.plus_parts ? ' (+ parts)' : ''}`

@@ -9,7 +9,7 @@ import { useAuthStore } from '@/store/authStore'
 import { scopedBranchId } from '@/lib/branchScope'
 import { toast } from '@/components/ui/Toast'
 import {
-  OS_STATUS_LABEL, OS_STATUS_COLOR, osError, rm, fmtDate, ymd,
+  OS_STATUS_LABEL, OS_STATUS_COLOR, osError, rm, fmtDate, ymd, TIER_LABEL, addonLabel,
   type OsBooking, type OsStatus, type OsDepositStatus,
 } from '@/lib/onsite'
 
@@ -33,6 +33,7 @@ const COLS = [
   'package_id', 'package_name', 'grade_id', 'grade_name', 'address', 'postcode', 'zone_name', 'access_notes',
   'slot_id', 'slot_label', 'service_date', 'slot_start', 'slot_end',
   'price_base', 'price_zone', 'price_offhours', 'price_total', 'deposit_amount', 'invoice_id', 'deposit_status',
+  'addons', 'price_addons', 'est_duration_min',
   'hold_expires_at', 'reschedule_count', 'technician_id',
   'confirmed_at', 'en_route_at', 'arrived_at', 'started_at', 'completed_at', 'cancelled_at', 'cancel_reason',
   'photos_before', 'photos_after', 'parts_used', 'health_check', 'tech_notes', 'customer_signed_at',
@@ -556,7 +557,9 @@ function DetailDrawer({ b, techName, onClose }: { b: Row; techName: string | nul
       <Section title="Service">
         <KV k="Vehicle" v={`${b.vehicle_plate}${vehicleText(b) ? ` - ${vehicleText(b)}` : ''}`} />
         <KV k="Package" v={`${b.package_name ?? '-'}${b.grade_name ? ` (${b.grade_name})` : ''}`} />
-        {b.tier && <KV k="Tier" v={b.tier === 'tier1' ? 'Tier 1' : 'Tier 2'} />}
+        {(b.addons?.length ?? 0) > 0 && <KV k="Extras" v={b.addons!.map(addonLabel).join(', ')} />}
+        {b.est_duration_min ? <KV k="Estimated time" v={`about ${b.est_duration_min} min`} /> : null}
+        {b.tier && <KV k="Price level" v={TIER_LABEL[b.tier] ?? b.tier} />}
         {bb && b.staff_id && <KV k="Staff ID" v={b.staff_id} />}
         <KV k="Date" v={bb ? `${fmtDate(b.service_date)} - Pickup day` : `${fmtDate(b.service_date)}${b.slot_label ? ` - ${b.slot_label}` : ''}`} />
         {!bb && <KV k="Technician" v={techName ?? 'Unassigned'} />}
@@ -567,6 +570,7 @@ function DetailDrawer({ b, techName, onClose }: { b: Row; techName: string | nul
 
       <Section title="Price">
         <KV k={bb ? 'Package price' : 'Base'} v={rm(b.price_base)} />
+        {(b.price_addons ?? 0) > 0 && <KV k="Add-ons" v={rm(b.price_addons)} />}
         {b.price_zone > 0 && <KV k="Zone surcharge" v={rm(b.price_zone)} />}
         {b.price_offhours > 0 && <KV k="Off-hours surcharge" v={rm(b.price_offhours)} />}
         <KV k="Total" v={rm(b.price_total)} strong />

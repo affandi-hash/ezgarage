@@ -6,19 +6,28 @@ import { makeOptionsFor, modelOptionsFor, OTHER } from '@/lib/vehicleMakes'
 import { clearDraft, draftStr, fmtDate, loadDraft, normStaffId, osError, rm, rmShort, saveDraft, staffIdOk, type BbDay } from '@/lib/onsite'
 import { BbDayPicker, Button, C, Card, ContactLine, Field, inputStyle, Notice, Page, PAYMENT_METHODS, startPayment, usePageMeta, usePublicContact } from '@/components/onsite/OsUi'
 
-interface Pkg { id: string; name: string; description: string | null; duration_min: number; grades: { id: string; name: string }[]; tiers: string[] }
+interface Pkg {
+  id: string; name: string; description: string | null; duration_min: number; grades: { id: string; name: string }[]; tiers: string[]
+  includes?: string[]; bonus?: string[]; price_note?: string | null; price_from?: boolean; requires_addon?: boolean; prices?: Record<string, number>
+}
+interface Addon { id: string; name: string; description: string | null; vehicle_type: 'car' | 'bike'; duration_min: number; duration_max: number; price: number; price_from: boolean; plus_parts: boolean; not_with: string[] }
 interface BbPkg { id: string; name: string; description: string | null; price: number | null }
 interface BbConfig { packages: BbPkg[]; capacity_per_day: number; hq_address: string | null; pickup_note: string | null; window_days: number }
 interface Config {
   error?: string
   tenant_name: string
-  settings: { deposit_pct: number; cancel_cutoff_hours: number; refund_due_hours: number; max_reschedules: number; hold_minutes: number }
+  settings: { deposit_pct: number; cancel_cutoff_hours: number; refund_due_hours: number; max_reschedules: number; hold_minutes: number; max_job_min?: number | null }
   packages: Pkg[]
+  addons?: Addon[]
   zones: { name: string; surcharge: number }[]
   makes: { type: string; make: string; model: string | null; tier: string }[]
   bb?: BbConfig | null
 }
-interface Quote { error: string | null; tier: string | null; base: number | null; zone_name: string | null; zone_surcharge: number; total: number | null; deposit: number | null }
+interface QuoteAddon { id: string; name: string; price: number; price_from: boolean; plus_parts: boolean; duration_min: number; duration_max: number }
+interface Quote {
+  error: string | null; tier: string | null; base: number | null; zone_name: string | null; zone_surcharge: number; total: number | null; deposit: number | null
+  addons?: QuoteAddon[]; addons_total?: number; est_duration_min?: number; max_job_min?: number | null; estimate?: boolean
+}
 interface Day { date: string; slots: { slot_id: string; label: string; available: boolean }[] }
 
 const STEPS = ['Vehicle', 'Package', 'Address', 'Time', 'Confirm']
@@ -50,6 +59,7 @@ export function OnSiteBookPage() {
   const [plate, setPlate] = useState(draftStr(draft, 'plate'))
   const [pkgId, setPkgId] = useState('')
   const [gradeId, setGradeId] = useState('')
+  const [addonIds, setAddonIds] = useState<string[]>([])
   const [address, setAddress] = useState(draftStr(draft, 'address'))
   const [postcode, setPostcode] = useState(draftStr(draft, 'postcode'))
   const [access, setAccess] = useState(draftStr(draft, 'access'))
@@ -90,7 +100,21 @@ export function OnSiteBookPage() {
   }, [cfg, makeValue, modelValue, vType])
 
   const pkg = cfg?.packages.find(p => p.id === pkgId)
-  const offered = useMemo(() => (cfg?.packages ?? []).filter(p => !tier || tier === 'hub_only' ? true : p.tiers.includes(tier)), [cfg, tier])
+  // extras for this vehicle type, minus the ones this package already includes
+  const addonOptions = useMemo(() => (cfg?.addons ?? []).filter(a => a.vehicle_type === vType && !a.not_with.includes(pkgId)), [cfg, vType, pkgId])
+  const chosenAddons = addonOptions.filter(a => addonIds.includes(a.id))
+  const baseForTier = pkg && tier ? pkg.prices?.[tier] ?? null : null
+  const estMin = (pkg?.duration_min ?? 0) + chosenAddons.reduce((m, a) => m + a.duration_max, 0)
+  const estTotal = baseForTier == null ? null : baseForTier + chosenAddons.reduce((m, a) => m + a.price, 0)
+  const estFlag = !!pkg?.price_from || !!pkg?.price_note || chosenAddons.some(a => a.price_from || a.plus_parts)
+  const maxJob = cfg?.settings.max_job_min ?? null
+  const tooLong = maxJob != null && estMin > maxJob
+  useEffect(() => { setAddonIds([]) }, [pkgId, vType])
+  // a known price level shows the packages priced for it; an unknown make still sees only its own kind of vehicle's packages
+  const offered = useMemo(() => {
+    const family = vType === 'bike' ? ['bike', 'harley_sportster', 'harley_softail'] : ['tier1', 'tier2']
+    return (cfg?.packages ?? []).filter(p => !tier || tier === 'hub_only' ? p.tiers.some(t => family.includes(t)) : p.tiers.includes(tier))
+  }, [cfg, tier, vType])
   // one package on offer: choose it for the customer (they were left staring at a greyed Continue)
   useEffect(() => {
     if (flow === 'bb' || step !== 1 || pkgId || offered.length !== 1) return
@@ -109,7 +133,7 @@ export function OnSiteBookPage() {
     setBusy(true); setErr('')
     const { data, error } = await supabase.rpc('os_quote', {
       p_tenant_slug: slug, p_type: vType, p_make: makeValue, p_model: modelValue,
-      p_package: pkgId, p_grade: gradeId || null, p_postcode: postcode,
+      p_package: pkgId, p_grade: gradeId || null, p_postcode: postcode, p_addons: addonIds,
     })
     setBusy(false)
     if (error || !data) { setErr('Could not check your address. Please try again.'); return }
@@ -118,6 +142,10 @@ export function OnSiteBookPage() {
     if (q.error === 'outside_zone') { setRequestMode({ reason: `Waitlist: outside zone (postcode ${postcode})` }); return }
     if (q.error === 'unknown_vehicle' || q.error === 'package_unavailable') { setRequestMode({ reason: q.error === 'unknown_vehicle' ? 'Vehicle not in list' : 'No price set for this vehicle tier' }); return }
     if (q.error) { setErr(osError(q.error)); return }
+    // a job longer than one visit window is sent as a request; the team confirms the time and price
+    if (q.est_duration_min != null && q.max_job_min != null && q.est_duration_min > q.max_job_min) {
+      setRequestMode({ reason: `Long job: about ${q.est_duration_min} minutes` }); return
+    }
     setRequestMode(null)
     const { data: slots } = await supabase.rpc('os_available_slots', { p_tenant_slug: slug })
     setDays((slots as Day[]) ?? [])
@@ -134,7 +162,7 @@ export function OnSiteBookPage() {
     const { data, error } = await supabase.rpc('os_create_booking', {
       p_tenant_slug: slug, p_name: name, p_phone: phone, p_email: email, p_type: vType, p_make: makeValue, p_model: modelValue, p_plate: plate,
       p_package: pkgId, p_grade: gradeId || null, p_address: address, p_postcode: postcode, p_access_notes: access || null,
-      p_slot: special ? null : slotId, p_date: special ? null : date, p_special_reason: reason,
+      p_slot: special ? null : slotId, p_date: special ? null : date, p_special_reason: reason, p_addons: addonIds,
     })
     if (error || !data) return reset('Something went wrong. Please try again.')
     if (data.error) {
@@ -242,8 +270,21 @@ export function OnSiteBookPage() {
                 </span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 800, fontSize: 17 }}>{p.name}</div>
-                  {p.description && <div style={{ color: C.muted, fontSize: 14, margin: '4px 0' }}>{p.description}</div>}
-                  <div style={{ color: C.muted, fontSize: 13 }}>About {p.duration_min} minutes at your location</div>
+                  {p.description && <div style={{ color: C.muted, fontSize: 14, margin: '4px 0', whiteSpace: 'pre-line' }}>{p.description}</div>}
+                  {(p.includes?.length ?? 0) > 0 && (
+                    <ul style={{ margin: '6px 0', padding: 0, listStyle: 'none', fontSize: 14 }}>
+                      {p.includes!.map(i => <li key={i} style={{ display: 'flex', gap: 8, color: C.text, lineHeight: 1.5 }}><span style={{ color: C.green }}>✓</span><span>{i}</span></li>)}
+                      {(p.bonus ?? []).map(i => <li key={i} style={{ display: 'flex', gap: 8, color: C.orange, fontWeight: 700, lineHeight: 1.5 }}><span>★</span><span>{i}</span></li>)}
+                    </ul>
+                  )}
+                  {(p.includes?.length ?? 0) === 0 && (p.bonus?.length ?? 0) > 0 && (p.bonus ?? []).map(i => <div key={i} style={{ color: C.orange, fontWeight: 700, fontSize: 14 }}>★ {i}</div>)}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'baseline', marginTop: 4 }}>
+                    {p.requires_addon
+                      ? <span style={{ color: C.text, fontWeight: 700, fontSize: 15 }}>Pay only for what you choose</span>
+                      : tier && p.prices?.[tier] != null && <span style={{ color: C.orange, fontWeight: 800, fontSize: 17 }}>{p.price_from ? 'From ' : ''}{rmShort(p.prices[tier])}</span>}
+                    {p.duration_min > 0 && <span style={{ color: C.muted, fontSize: 13 }}>About {p.duration_min} minutes at your location</span>}
+                  </div>
+                  {p.price_note && <div style={{ color: C.muted, fontSize: 12, marginTop: 4, lineHeight: 1.4 }}>{p.price_note}</div>}
                 </div>
               </div>
               {pkgId === p.id && p.grades.length > 0 && (
@@ -256,9 +297,40 @@ export function OnSiteBookPage() {
                   </Field>
                 </div>
               )}
+              {pkgId === p.id && addonOptions.length > 0 && (
+                <div style={{ marginTop: 14, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+                  <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 2 }}>{p.requires_addon ? 'Choose your services' : 'Add extras'}</div>
+                  <div style={{ color: C.muted, fontSize: 12, marginBottom: 8 }}>{p.requires_addon ? 'Tick one or more.' : 'Optional. Tick any you would like done in the same visit.'}</div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {addonOptions.map(a => {
+                      const on = addonIds.includes(a.id)
+                      return (
+                        <label key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${on ? C.orange : C.border}`, background: on ? 'rgba(241,90,34,0.08)' : 'transparent' }}>
+                          <input type="checkbox" checked={on} onChange={() => setAddonIds(ids => on ? ids.filter(x => x !== a.id) : [...ids, a.id])} style={{ marginTop: 3 }} />
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>{a.name}</span>
+                            <span style={{ display: 'block', color: C.muted, fontSize: 12 }}>
+                              +{a.duration_max > a.duration_min ? `${a.duration_min} to ${a.duration_max}` : a.duration_min} min{a.plus_parts ? ', parts or product extra' : ''}
+                            </span>
+                          </span>
+                          <span style={{ color: C.orange, fontWeight: 800, fontSize: 14, whiteSpace: 'nowrap' }}>{a.price_from ? 'From ' : ''}{rmShort(a.price)}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {pkgId === p.id && (estMin > 0 || estTotal != null) && (
+                <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: '#101010', border: `1px solid ${C.border}`, fontSize: 14 }}>
+                  {estMin > 0 && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: C.muted }}>Estimated service time</span><b>about {estMin} min</b></div>}
+                  {estTotal != null && (chosenAddons.length > 0 || p.price_from) && <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}><span style={{ color: C.muted }}>{estFlag ? 'Estimated price' : 'Price'}</span><b>{p.price_from ? 'From ' : ''}{rmShort(estTotal)}</b></div>}
+                  {estFlag && <div style={{ color: C.muted, fontSize: 12, marginTop: 6 }}>The final price is confirmed on site. Parts and products are extra where shown.</div>}
+                  {tooLong && <div style={{ color: C.amber, fontSize: 13, marginTop: 8, lineHeight: 1.4 }}>This will take longer than one visit window. You can continue: we will send your request to the team, who confirm a suitable time and price.</div>}
+                </div>
+              )}
             </Card>
           ))}
-          <BackNext onBack={back} nextDisabled={!pkg || (pkg.grades.length > 0 && !gradeId)} hint={!pkg ? 'Tap a service above to choose it.' : 'Choose an oil grade to continue.'} onNext={() => { setErr(''); setStep(2) }} />
+          <BackNext onBack={back} nextDisabled={!pkg || (pkg.grades.length > 0 && !gradeId) || (!!pkg.requires_addon && addonIds.length === 0)} hint={!pkg ? 'Tap a service above to choose it.' : pkg.requires_addon && addonIds.length === 0 ? 'Tick at least one service to continue.' : 'Choose an oil grade to continue.'} onNext={() => { setErr(''); setStep(2) }} />
         </>
       )}
 
@@ -338,6 +410,8 @@ export function OnSiteBookPage() {
             <div style={{ fontWeight: 700, marginBottom: 8 }}>Your booking</div>
             <Row k="Vehicle" v={`${makeValue} ${modelValue} · ${plate.toUpperCase()}`} />
             <Row k="Service" v={`${pkg?.name}${gradeId ? ` (${pkg?.grades.find(g => g.id === gradeId)?.name})` : ''}`} />
+            {chosenAddons.length > 0 && <Row k="Extras" v={chosenAddons.map(a => a.name).join(', ')} />}
+            {quote.est_duration_min ? <Row k="Estimated time" v={`about ${quote.est_duration_min} min`} /> : null}
             <Row k="Where" v={address} />
             <Row k="When" v={`${fmtDate(date)}, ${selectedDay?.slots.find(s => s.slot_id === slotId)?.label}`} />
             <div style={{ borderTop: `1px solid ${C.border}`, margin: '10px 0' }} />
@@ -632,9 +706,11 @@ function PriceLines({ quote, pkgName, gradeName, depositPct, compact }: { quote:
   return (
     <div>
       {!compact && <div style={{ color: C.muted, fontSize: 12, textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>Your price</div>}
-      {!compact && <Row k={`${pkgName ?? ''}${gradeName ? ` (${gradeName})` : ''}`} v={rm(quote.base)} />}
+      {!compact && (quote.base ?? 0) > 0 && <Row k={`${pkgName ?? ''}${gradeName ? ` (${gradeName})` : ''}`} v={rm(quote.base)} />}
+      {(quote.addons ?? []).map(a => <Row key={a.id} k={`${a.name}${a.plus_parts ? ' (+ parts)' : ''}`} v={`${a.price_from ? 'from ' : ''}${rm(a.price)}`} />)}
       {quote.zone_surcharge > 0 && <Row k={`Travel (${quote.zone_name})`} v={rm(quote.zone_surcharge)} />}
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 18, marginTop: 6 }}><span>Total</span><span>{rm(quote.total)}</span></div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 18, marginTop: 6 }}><span>{quote.estimate ? 'Estimated total' : 'Total'}</span><span>{rm(quote.total)}</span></div>
+      {quote.estimate && <div style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>The final price is confirmed on site. Parts and products are extra where shown.</div>}
       <div style={{ display: 'flex', justifyContent: 'space-between', color: C.orange, fontWeight: 700, marginTop: 4 }}><span>Deposit today ({depositPct}%)</span><span>{rm(quote.deposit)}</span></div>
     </div>
   )
@@ -662,7 +738,9 @@ function RequestForm(p: {
       <p style={{ color: C.muted, fontSize: 14, marginTop: 0, lineHeight: 1.5 }}>
         {outside
           ? 'Leave your details and we will tell you when the van starts coming to you.'
-          : 'Our team will review this and reply with a price and time. You pay a deposit only after we approve.'}
+          : p.reason.startsWith('Long job')
+            ? 'This job takes longer than one visit window, so our team will confirm a suitable time and the price. You pay a deposit only after we approve.'
+            : 'Our team will review this and reply with a price and time. You pay a deposit only after we approve.'}
       </p>
       <Field label="Anything we should know? (optional)"><textarea style={{ ...inputStyle, minHeight: 70 }} placeholder={outside ? '' : 'Preferred date and time, number of cars, etc.'} value={p.note} onChange={e => p.setNote(e.target.value)} /></Field>
       <Field label="Your name"><input style={inputStyle} value={p.name} onChange={e => p.setName(e.target.value)} /></Field>

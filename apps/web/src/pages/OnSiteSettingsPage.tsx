@@ -10,9 +10,10 @@ import { CAR_MAKES, BIKE_MAKES, makeOptionsFor, modelOptionsFor } from '@/lib/ve
 // Settings for the ON-SITE van business. Every tab writes straight to the
 // os_* tables (RLS limits writes to super_admin / ops_manager of the tenant).
 
-type Tab = 'packages' | 'tiers' | 'slots' | 'zones' | 'rules' | 'bb'
+type Tab = 'packages' | 'addons' | 'tiers' | 'slots' | 'zones' | 'rules' | 'bb'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'packages', label: 'Packages & prices' },
+  { id: 'addons', label: 'Add-ons' },
   { id: 'tiers', label: 'Vehicle tiers' },
   { id: 'slots', label: 'Time slots' },
   { id: 'zones', label: 'Zones' },
@@ -127,6 +128,7 @@ export function OnSiteSettingsPage() {
       {!tenantId ? <Spinner /> : (
         <>
           {tab === 'packages' && <PackagesTab tenantId={tenantId} />}
+          {tab === 'addons' && <AddonsTab tenantId={tenantId} />}
           {tab === 'tiers' && <VehicleTiersTab tenantId={tenantId} />}
           {tab === 'slots' && <SlotsTab tenantId={tenantId} />}
           {tab === 'zones' && <ZonesTab tenantId={tenantId} />}
@@ -139,11 +141,15 @@ export function OnSiteSettingsPage() {
 }
 
 // ── 1. packages & prices ────────────────────────────────────────────────
-type TierKey = 'tier1' | 'tier2'
-const TIER_LABEL: Record<string, string> = { tier1: 'Tier 1', tier2: 'Tier 2', hub_only: 'Hub only' }
-const TIER_COLOR: Record<string, string> = { tier1: C.green, tier2: C.blue, hub_only: C.dim }
+type TierKey = 'tier1' | 'tier2' | 'bike' | 'harley_sportster' | 'harley_softail'
+const ALL_TIERS: TierKey[] = ['tier1', 'tier2', 'bike', 'harley_sportster', 'harley_softail']
+const TIER_LABEL: Record<string, string> = { tier1: 'Tier 1', tier2: 'Tier 2', bike: 'Motorcycle', harley_sportster: 'Harley Sportster', harley_softail: 'Harley Softail / Touring', hub_only: 'Hub only' }
+const TIER_COLOR: Record<string, string> = { tier1: C.green, tier2: C.blue, bike: C.amber, harley_sportster: C.orange, harley_softail: C.orange, hub_only: C.dim }
 
-interface Pkg { id: string; name: string; description: string | null; services: string[]; duration_min: number; sort_order: number; is_active: boolean }
+interface Pkg {
+  id: string; name: string; description: string | null; services: string[]; duration_min: number; sort_order: number; is_active: boolean
+  includes: string[]; bonus: string[]; price_note: string | null; price_from: boolean; requires_addon: boolean
+}
 interface Grade { id: string; package_id: string; name: string; sort_order: number; is_active: boolean }
 interface Price { id: string; package_id: string; grade_id: string | null; tier: TierKey; price: number; effective_from: string }
 
@@ -166,7 +172,7 @@ function PackagesTab({ tenantId }: { tenantId: string }) {
 
   const load = useCallback(async () => {
     const [p, g, pr] = await Promise.all([
-      supabase.from('os_packages').select('id, name, description, services, duration_min, sort_order, is_active').eq('tenant_id', tenantId).eq('audience', 'public').order('sort_order'),
+      supabase.from('os_packages').select('id, name, description, services, duration_min, sort_order, is_active, includes, bonus, price_note, price_from, requires_addon').eq('tenant_id', tenantId).eq('audience', 'public').order('sort_order'),
       supabase.from('os_oil_grades').select('id, package_id, name, sort_order, is_active').eq('tenant_id', tenantId).order('sort_order'),
       supabase.from('os_prices').select('id, package_id, grade_id, tier, price, effective_from').eq('tenant_id', tenantId).order('effective_from', { ascending: false }).limit(5000),
     ])
@@ -209,10 +215,10 @@ function PackagesTab({ tenantId }: { tenantId: string }) {
       {pkgs.map(p => {
         const open = openId === p.id
         const pPrices = prices.filter(x => x.package_id === p.id)
-        const summary = (['tier1', 'tier2'] as TierKey[]).map(t => {
+        const summary = ALL_TIERS.map(t => {
           const cur = priceFor(pPrices, null, t, today).current
-          return `${TIER_LABEL[t]} ${cur ? rm(cur.price) : '-'}`
-        }).join('  ·  ')
+          return cur ? `${TIER_LABEL[t]} ${p.price_from ? 'from ' : ''}${rm(cur.price)}` : null
+        }).filter(Boolean).join('  ·  ') || 'No price set'
         return (
           <div key={p.id} style={{ ...card, opacity: p.is_active ? 1 : 0.75 }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -244,13 +250,18 @@ function PackageForm({ tenantId, pkg, nextSort, onSaved, onCancel }: { tenantId:
   const [services, setServices] = useState((pkg?.services ?? []).join(', '))
   const [duration, setDuration] = useState(String(pkg?.duration_min ?? 60))
   const [sort, setSort] = useState(String(pkg?.sort_order ?? nextSort ?? 0))
+  const [includes, setIncludes] = useState((pkg?.includes ?? []).join('\n'))
+  const [bonus, setBonus] = useState((pkg?.bonus ?? []).join('\n'))
+  const [priceNote, setPriceNote] = useState(pkg?.price_note ?? '')
+  const [priceFrom, setPriceFrom] = useState(pkg?.price_from ?? false)
+  const [requiresAddon, setRequiresAddon] = useState(pkg?.requires_addon ?? false)
   const [saving, setSaving] = useState(false)
 
   async function save() {
-    const dur = parseInt0(duration, 1)
+    const dur = parseInt0(duration, 0)
     const so = parseInt0(sort, 0)
     if (!name.trim()) { toast('Package name is required', 'error'); return }
-    if (dur == null) { toast('Duration must be a whole number of minutes, at least 1', 'error'); return }
+    if (dur == null) { toast('Duration must be a whole number of minutes, 0 or more', 'error'); return }
     if (so == null) { toast('Sort order must be a whole number, 0 or more', 'error'); return }
     const payload = {
       name: name.trim(),
@@ -258,6 +269,11 @@ function PackageForm({ tenantId, pkg, nextSort, onSaved, onCancel }: { tenantId:
       services: services.split(/[,\s]+/).map(s => s.trim()).filter(Boolean),
       duration_min: dur,
       sort_order: so,
+      includes: includes.split('\n').map(x => x.trim()).filter(Boolean),
+      bonus: bonus.split('\n').map(x => x.trim()).filter(Boolean),
+      price_note: priceNote.trim() || null,
+      price_from: priceFrom,
+      requires_addon: requiresAddon,
     }
     setSaving(true)
     const { error } = pkg
@@ -277,6 +293,15 @@ function PackageForm({ tenantId, pkg, nextSort, onSaved, onCancel }: { tenantId:
         <Field label="Sort order" grow={90}><input style={inp} inputMode="numeric" value={sort} onChange={e => setSort(e.target.value)} /></Field>
       </div>
       <Field label="Description" grow={300}><textarea style={{ ...inp, minHeight: 60, resize: 'vertical' }} value={description} onChange={e => setDescription(e.target.value)} /></Field>
+      <div style={row}>
+        <Field label="What is included (one per line, shown with a tick)" grow={260}><textarea style={{ ...inp, minHeight: 80, resize: 'vertical' }} value={includes} onChange={e => setIncludes(e.target.value)} placeholder={'Engine oil\nOil filter'} /></Field>
+        <Field label="Free extras (one per line, shown with a star)" grow={200}><textarea style={{ ...inp, minHeight: 80, resize: 'vertical' }} value={bonus} onChange={e => setBonus(e.target.value)} placeholder="Free bike wash" /></Field>
+      </div>
+      <Field label="Price note (shown under the price)" grow={300}><input style={inp} value={priceNote} onChange={e => setPriceNote(e.target.value)} placeholder="Parts are charged separately" /></Field>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 13 }}>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={priceFrom} onChange={e => setPriceFrom(e.target.checked)} /> Show the price as "From"</label>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={requiresAddon} onChange={e => setRequiresAddon(e.target.checked)} /> Customer must choose add-ons (for "Others")</label>
+      </div>
       <Field label="Services (codes, comma separated)" grow={300}><input style={inp} value={services} onChange={e => setServices(e.target.value)} placeholder="engine_lube, gearbox_lube" /></Field>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Btn onClick={save} disabled={saving}><Save size={15} /> {saving ? 'Saving...' : 'Save package'}</Btn>
@@ -351,7 +376,7 @@ function PackageDetail({ pkg, tenantId, today, grades, prices, reload }: { pkg: 
               <div style={{ flex: '1 1 120px', fontSize: 13, fontWeight: 600, alignSelf: 'center', color: g && !g.is_active ? C.dim : C.text }}>
                 {g ? g.name : 'Any grade'}{g && !g.is_active ? ' (inactive)' : ''}
               </div>
-              {(['tier1', 'tier2'] as TierKey[]).map(t => {
+              {ALL_TIERS.map(t => {
                 const { current, upcoming } = priceFor(prices, g?.id ?? null, t, today)
                 return (
                   <button key={t} type="button" onClick={() => pick(g?.id ?? '', t)}
@@ -374,7 +399,7 @@ function PackageDetail({ pkg, tenantId, today, grades, prices, reload }: { pkg: 
         <div style={row}>
           <Field label="Tier" grow={110}>
             <select style={inp} value={tier} onChange={e => setTier(e.target.value as TierKey)}>
-              <option value="tier1">Tier 1</option><option value="tier2">Tier 2</option>
+              {ALL_TIERS.map(t => <option key={t} value={t}>{TIER_LABEL[t]}</option>)}
             </select>
           </Field>
           <Field label="Grade" grow={150}>
@@ -476,8 +501,161 @@ function GradeRow({ grade, tenantId, reload }: { grade: Grade; tenantId: string;
   )
 }
 
+// ── 1b. add-ons ──────────────────────────────────────────────────────────
+interface AddonRow {
+  id: string; name: string; description: string | null; vehicle_type: 'car' | 'bike'; duration_min: number; duration_max: number | null
+  price: number; price_from: boolean; plus_parts: boolean; not_with_packages: string[]; sort_order: number; is_active: boolean
+}
+
+function AddonsTab({ tenantId }: { tenantId: string }) {
+  const [rows, setRows] = useState<AddonRow[]>([])
+  const [pkgs, setPkgs] = useState<{ id: string; name: string }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState<AddonRow | 'new' | null>(null)
+
+  const load = useCallback(async () => {
+    const [a, p] = await Promise.all([
+      supabase.from('os_addons').select('id, name, description, vehicle_type, duration_min, duration_max, price, price_from, plus_parts, not_with_packages, sort_order, is_active').eq('tenant_id', tenantId).order('vehicle_type').order('sort_order').order('name'),
+      supabase.from('os_packages').select('id, name').eq('tenant_id', tenantId).eq('audience', 'public').order('sort_order'),
+    ])
+    const err = a.error ?? p.error
+    if (err) fail(err)
+    setRows(((a.data as AddonRow[]) ?? []).map(x => ({ ...x, price: Number(x.price) })))
+    setPkgs((p.data as { id: string; name: string }[]) ?? [])
+    setLoading(false)
+  }, [tenantId])
+  useEffect(() => { load() }, [load])
+
+  async function setActive(a: AddonRow, is_active: boolean) {
+    const { error } = await supabase.from('os_addons').update({ is_active }).eq('id', a.id).eq('tenant_id', tenantId)
+    if (error) { fail(error); return }
+    toast(is_active ? `${a.name} is now offered` : `${a.name} is hidden from customers`)
+    load()
+  }
+
+  if (loading) return <Spinner />
+  const groups: { key: 'car' | 'bike'; title: string }[] = [{ key: 'car', title: 'Car add-ons' }, { key: 'bike', title: 'Bike add-ons' }]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <p style={{ ...helper, margin: 0, flex: '1 1 260px' }}>
+          Extras a customer can tick while booking. Car add-ons only appear for cars and bike add-ons only for motorcycles. The "Others" package lists them all as services.
+          Add-ons are never deleted, only hidden, so old bookings keep their names and prices.
+        </p>
+        {!editing && <Btn onClick={() => setEditing('new')}><Plus size={15} /> Add add-on</Btn>}
+      </div>
+
+      {editing && (
+        <div style={card}>
+          <h3 style={h3}>{editing === 'new' ? 'New add-on' : `Edit ${editing.name}`}</h3>
+          <AddonForm tenantId={tenantId} addon={editing === 'new' ? undefined : editing} pkgs={pkgs} nextSort={Math.max(0, ...rows.map(r => r.sort_order)) + 1}
+            onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />
+        </div>
+      )}
+
+      {rows.length === 0 && !editing && <Empty>No add-ons yet.</Empty>}
+
+      {groups.map(g => {
+        const list = rows.filter(r => r.vehicle_type === g.key)
+        if (list.length === 0) return null
+        return (
+          <div key={g.key} style={card}>
+            <h3 style={h3}>{g.title}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {list.map(a => (
+                <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 10px', borderRadius: 8, background: C.s2, opacity: a.is_active ? 1 : 0.6 }}>
+                  <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{a.name}</div>
+                    <div style={{ fontSize: 12, color: C.mute }}>
+                      +{a.duration_max && a.duration_max > a.duration_min ? `${a.duration_min} to ${a.duration_max}` : a.duration_min} min · {a.price_from ? 'from ' : ''}{rm(a.price)}{a.plus_parts ? ' + parts' : ''}
+                      {a.not_with_packages.length > 0 ? ` · not with ${a.not_with_packages.map(id => pkgs.find(p => p.id === id)?.name ?? '?').join(', ')}` : ''}
+                    </div>
+                  </div>
+                  <Btn kind="ghost" onClick={() => setEditing(a)}>Edit</Btn>
+                  <Badge color={a.is_active ? C.green : C.dim}>{a.is_active ? 'On' : 'Hidden'}</Badge>
+                  <Switch on={a.is_active} onChange={v => setActive(a, v)} label={`${a.name} offered`} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function AddonForm({ tenantId, addon, pkgs, nextSort, onSaved, onCancel }: {
+  tenantId: string; addon?: AddonRow; pkgs: { id: string; name: string }[]; nextSort: number; onSaved: () => void; onCancel: () => void
+}) {
+  const [name, setName] = useState(addon?.name ?? '')
+  const [vehicleType, setVehicleType] = useState<'car' | 'bike'>(addon?.vehicle_type ?? 'car')
+  const [price, setPrice] = useState(addon ? String(addon.price) : '')
+  const [dMin, setDMin] = useState(String(addon?.duration_min ?? 10))
+  const [dMax, setDMax] = useState(addon?.duration_max ? String(addon.duration_max) : '')
+  const [priceFrom, setPriceFrom] = useState(addon?.price_from ?? false)
+  const [plusParts, setPlusParts] = useState(addon?.plus_parts ?? false)
+  const [notWith, setNotWith] = useState<string[]>(addon?.not_with_packages ?? [])
+  const [sort, setSort] = useState(String(addon?.sort_order ?? nextSort))
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    const amount = Number(price)
+    const lo = parseInt0(dMin, 0)
+    const hi = dMax.trim() === '' ? null : parseInt0(dMax, 0)
+    const so = parseInt0(sort, 0)
+    if (!name.trim()) { toast('Name is required', 'error'); return }
+    if (price.trim() === '' || !Number.isFinite(amount) || amount < 0) { toast('Enter a price of 0 or more', 'error'); return }
+    if (lo == null) { toast('Time must be a whole number of minutes', 'error'); return }
+    if (hi != null && hi < lo) { toast('The longest time cannot be shorter than the shortest', 'error'); return }
+    if (so == null) { toast('Sort order must be a whole number, 0 or more', 'error'); return }
+    const payload = { name: name.trim(), vehicle_type: vehicleType, price: amount, duration_min: lo, duration_max: hi, price_from: priceFrom, plus_parts: plusParts, not_with_packages: notWith, sort_order: so }
+    setSaving(true)
+    const { error } = addon
+      ? await supabase.from('os_addons').update(payload).eq('id', addon.id).eq('tenant_id', tenantId)
+      : await supabase.from('os_addons').insert({ ...payload, tenant_id: tenantId, is_active: true })
+    setSaving(false)
+    if (error) { fail(error); return }
+    toast(addon ? 'Add-on updated. Open bookings keep the price they were shown.' : 'Add-on added')
+    onSaved()
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={row}>
+        <Field label="Name" grow={220}><input style={inp} value={name} onChange={e => setName(e.target.value)} placeholder="Cabin Filter Replacement" /></Field>
+        <Field label="For" grow={110}>
+          <select style={inp} value={vehicleType} onChange={e => setVehicleType(e.target.value as 'car' | 'bike')}><option value="car">Cars</option><option value="bike">Motorcycles</option></select>
+        </Field>
+        <Field label="Price (RM)" grow={100}><input style={inp} inputMode="decimal" value={price} onChange={e => setPrice(e.target.value)} /></Field>
+        <Field label="Time (min)" grow={90}><input style={inp} inputMode="numeric" value={dMin} onChange={e => setDMin(e.target.value)} /></Field>
+        <Field label="Longest time (optional)" grow={130}><input style={inp} inputMode="numeric" value={dMax} onChange={e => setDMax(e.target.value)} placeholder="for a range" /></Field>
+        <Field label="Sort order" grow={90}><input style={inp} inputMode="numeric" value={sort} onChange={e => setSort(e.target.value)} /></Field>
+      </div>
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 13 }}>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={priceFrom} onChange={e => setPriceFrom(e.target.checked)} /> Show the price as "From"</label>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={plusParts} onChange={e => setPlusParts(e.target.checked)} /> The part or product is charged on top</label>
+      </div>
+      <div>
+        <div style={{ fontSize: 12, color: C.mute, fontWeight: 600, marginBottom: 6 }}>Do not offer with these packages (they already include it)</div>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13 }}>
+          {pkgs.map(p => (
+            <label key={p.id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="checkbox" checked={notWith.includes(p.id)} onChange={e => setNotWith(ids => e.target.checked ? [...ids, p.id] : ids.filter(x => x !== p.id))} /> {p.name}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Btn onClick={save} disabled={saving}><Save size={15} /> {saving ? 'Saving...' : 'Save add-on'}</Btn>
+        <Btn kind="ghost" onClick={onCancel}>Cancel</Btn>
+      </div>
+    </div>
+  )
+}
+
 // ── 2. vehicle tiers ────────────────────────────────────────────────────
-type RuleTier = 'tier1' | 'tier2' | 'hub_only'
+type RuleTier = TierKey | 'hub_only'
 interface Rule { id: string; vehicle_type: 'car' | 'bike'; make: string; model: string | null; tier: RuleTier }
 
 function VehicleTiersTab({ tenantId }: { tenantId: string }) {
@@ -575,7 +753,7 @@ function VehicleTiersTab({ tenantId }: { tenantId: string }) {
           </Field>
           <Field label="Tier" grow={130}>
             <select style={inp} value={tier} onChange={e => setTier(e.target.value as RuleTier)}>
-              <option value="tier1">Tier 1</option><option value="tier2">Tier 2</option><option value="hub_only">Hub only</option>
+              {ALL_TIERS.map(t => <option key={t} value={t}>{TIER_LABEL[t]}</option>)}<option value="hub_only">Hub only</option>
             </select>
           </Field>
         </div>

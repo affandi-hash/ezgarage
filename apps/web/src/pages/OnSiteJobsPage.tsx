@@ -9,7 +9,7 @@ import { useAuthStore } from '@/store/authStore'
 import { scopedBranchId } from '@/lib/branchScope'
 import { toast } from '@/components/ui/Toast'
 import {
-  OS_STATUS_LABEL, OS_STATUS_COLOR, osError, rm, fmtDate, ymd,
+  OS_STATUS_LABEL, OS_STATUS_COLOR, osError, rm, fmtDate, ymd, addonLabel,
   type OsBooking, type OsStatus,
 } from '@/lib/onsite'
 
@@ -24,7 +24,7 @@ const COLS = [
   'id', 'tenant_id', 'branch_id', 'booking_number', 'token', 'status', 'customer_name', 'customer_phone',
   'vehicle_make', 'vehicle_model', 'vehicle_plate', 'tier', 'package_name', 'grade_name', 'address', 'access_notes',
   'slot_label', 'service_date', 'slot_start', 'slot_end', 'price_total', 'deposit_amount', 'deposit_status',
-  'technician_id', 'photos_before', 'photos_after', 'parts_used', 'health_check', 'tech_notes', 'hub_quote_id',
+  'technician_id', 'photos_before', 'photos_after', 'parts_used', 'health_check', 'tech_notes', 'hub_quote_id', 'addons', 'est_duration_min',
 ].join(',')
 
 const JOB_STATUSES: OsStatus[] = ['confirmed', 'en_route', 'arrived', 'in_progress', 'completed']
@@ -569,6 +569,8 @@ export function OnSiteJobsPage() {
                     <p style={{ margin: '4px 0 0', color: '#A0A0A0', fontSize: 13 }}>
                       {b.package_name ?? '-'}{b.grade_name ? ` (${b.grade_name})` : ''}
                     </p>
+                    {(b.addons?.length ?? 0) > 0 && <p style={{ margin: '4px 0 0', color: '#F0F0F0', fontSize: 13 }}>Extras: {b.addons!.map(addonLabel).join(', ')}</p>}
+                    {b.est_duration_min ? <p style={{ margin: '4px 0 0', color: '#A0A0A0', fontSize: 12 }}>Estimated time: about {b.est_duration_min} min</p> : null}
                     {b.address && <p style={{ margin: '8px 0 0', color: '#F0F0F0', fontSize: 13, lineHeight: 1.5 }}>{b.address}</p>}
                     {b.access_notes && <p style={{ margin: '6px 0 0', color: '#F59E0B', fontSize: 13 }}>Access: {b.access_notes}</p>}
                     <p style={{ margin: '8px 0 0', color: '#A0A0A0', fontSize: 13 }}>
