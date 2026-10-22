@@ -75,6 +75,10 @@ export function OnSiteBookPage() {
   const [requestMode, setRequestMode] = useState<null | { reason: string }>(null)
   const [requestNote, setRequestNote] = useState(draftStr(draft, 'requestNote'))
   const draftDone = useRef(false)
+  // returning customer: only a first name and masked plates come back, so the customer taps their vehicle and retypes the plate
+  const [lookupBusy, setLookupBusy] = useState(false)
+  const [lookup, setLookup] = useState<null | { found: boolean; firstName: string | null; vehicles: { type: 'car' | 'bike'; make: string; model: string; plate_hint: string }[]; error?: string }>(null)
+  const [pickedHint, setPickedHint] = useState('')
 
   // keep what the customer typed (never the payment method) so a refresh does not lose it
   useEffect(() => {
@@ -127,6 +131,33 @@ export function OnSiteBookPage() {
   const phoneOk = mobileOk(phone)
   const phoneHint = phone.trim() !== '' && !phoneOk ? 'Enter a Malaysian mobile number, e.g. 012 345 6789.' : undefined
   const vehicleOk = !!makeValue && !!modelValue && plate.trim().length >= 2
+
+  async function lookupReturning() {
+    setLookupBusy(true); setErr('')
+    const { data, error } = await supabase.rpc('os_lookup_returning', { p_tenant_slug: slug, p_phone: phone })
+    setLookupBusy(false)
+    if (error || !data) { setLookup({ found: false, firstName: null, vehicles: [], error: 'Could not check right now. You can carry on and fill in your vehicle.' }); return }
+    if (data.error === 'too_many') { setLookup({ found: false, firstName: null, vehicles: [], error: 'Too many checks from this number. Please carry on and fill in your vehicle.' }); return }
+    if (data.error) { setLookup({ found: false, firstName: null, vehicles: [], error: 'Enter a valid mobile number, e.g. 012 345 6789.' }); return }
+    setLookup({ found: !!data.found, firstName: data.first_name ?? null, vehicles: data.vehicles ?? [] })
+  }
+
+  // fill the vehicle fields from a saved vehicle; the plate is retyped because only a masked version is shown
+  function pickVehicle(v: { type: 'car' | 'bike'; make: string; model: string; plate_hint: string }) {
+    const t: 'car' | 'bike' = v.type === 'bike' ? 'bike' : 'car'
+    const lc = (x: string) => x.trim().toLowerCase()
+    const makes = makeOptionsFor(t)
+    const mk = makes.find(m => lc(m) === lc(v.make)) ?? makes.find(m => lc(v.make).startsWith(lc(m) + ' '))
+    setVType(t)
+    if (mk) {
+      setMake(mk); setMakeOther('')
+      const md = modelOptionsFor(t, mk).find(m => lc(m) === lc(v.model))
+      if (md) { setModel(md); setModelOther('') } else { setModel(OTHER); setModelOther(v.model) }
+    } else {
+      setMake(OTHER); setMakeOther(v.make); setModel(OTHER); setModelOther(v.model)
+    }
+    setPlate(''); setPickedHint(v.plate_hint)
+  }
 
   function reset(msg = '') { setErr(msg); setBusy(false) }
 
@@ -231,6 +262,30 @@ export function OnSiteBookPage() {
 
       {step === 0 && (
         <Card>
+          <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: '#101010', border: `1px solid ${C.border}` }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Booked with us before?</div>
+            <div style={{ color: C.muted, fontSize: 13, marginBottom: 8 }}>Enter your mobile number and we will find your vehicle.</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input style={{ ...inputStyle, flex: 1 }} inputMode="tel" placeholder="e.g. 012 345 6789" value={phone} onChange={e => { setPhone(e.target.value); setLookup(null) }} />
+              <button disabled={!phoneOk || lookupBusy} onClick={lookupReturning}
+                style={{ padding: '0 16px', borderRadius: 10, border: 'none', background: phoneOk ? C.orange : '#333', color: '#fff', fontWeight: 700, fontSize: 14, opacity: lookupBusy ? 0.6 : 1 }}>{lookupBusy ? 'Checking…' : 'Check'}</button>
+            </div>
+            {lookup?.error && <div style={{ color: C.amber, fontSize: 13, marginTop: 8 }}>{lookup.error}</div>}
+            {lookup && !lookup.error && !lookup.found && <div style={{ color: C.muted, fontSize: 13, marginTop: 8 }}>Welcome! Fill in your vehicle below.</div>}
+            {lookup?.found && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 14, marginBottom: 6 }}>Welcome back{lookup.firstName ? `, ${lookup.firstName}` : ''}! {lookup.vehicles.length > 0 ? 'Tap your vehicle:' : 'Fill in your vehicle below.'}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {lookup.vehicles.map(v => (
+                    <button key={v.plate_hint + v.model} onClick={() => pickVehicle(v)}
+                      style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 10, border: `1px solid ${pickedHint === v.plate_hint ? C.orange : C.border}`, background: pickedHint === v.plate_hint ? `${C.orange}22` : '#111', color: C.text, fontSize: 14 }}>
+                      <b>{v.make} {v.model}</b> <span style={{ color: C.muted }}> · {v.plate_hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <Field label="Vehicle type">
             <div style={{ display: 'flex', gap: 8 }}>
               {(['car', 'bike'] as const).map(t => (
@@ -243,7 +298,7 @@ export function OnSiteBookPage() {
           </Field>
           <MakeModelFields vType={vType} make={make} setMake={setMake} makeOther={makeOther} setMakeOther={setMakeOther}
             model={model} setModel={setModel} modelOther={modelOther} setModelOther={setModelOther} />
-          <Field label="Plate number">
+          <Field label="Plate number" hint={pickedHint && plate.trim() === '' ? `Type your full plate (it looks like ${pickedHint}).` : undefined}>
             <input style={{ ...inputStyle, textTransform: 'uppercase' }} placeholder="e.g. VAB 1234" value={plate} onChange={e => setPlate(e.target.value)} />
           </Field>
           {tier === 'hub_only' && <Notice tone="warn">This vehicle is serviced at our workshop, not by the van. Please contact Motoverse Garage to book.<ContactLine number={contact} inline /></Notice>}
