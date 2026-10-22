@@ -957,8 +957,20 @@ interface Zone { id: string; name: string; postcodes: string[]; surcharge: numbe
 function ZonesTab({ tenantId }: { tenantId: string }) {
   const [zones, setZones] = useState<Zone[]>([])
   const [loading, setLoading] = useState(true)
+  const [zonesOn, setZonesOn] = useState(true)
+
+  async function toggleZones(on: boolean) {
+    if (!on && !window.confirm('Turn zones off? The van will take bookings from any postcode, with no travel surcharge.')) return
+    if (on && !window.confirm('Turn zones on? Only postcodes inside an active zone below can book online, and each zone surcharge is added.')) return
+    const { error } = await supabase.from('os_settings').update({ zones_enabled: on }).eq('tenant_id', tenantId)
+    if (error) { fail(error); return }
+    setZonesOn(on)
+    toast(on ? 'Zones are on' : 'Zones are off: any postcode can book')
+  }
 
   const load = useCallback(async () => {
+    const st = await supabase.from('os_settings').select('zones_enabled').eq('tenant_id', tenantId).maybeSingle()
+    if (st.data) setZonesOn((st.data as { zones_enabled: boolean }).zones_enabled !== false)
     const { data, error } = await supabase.from('os_zones').select('id, name, postcodes, surcharge, note, sort_order, is_active').eq('tenant_id', tenantId).order('sort_order')
     if (error) fail(error)
     setZones(((data as Zone[]) ?? []).map(z => ({ ...z, surcharge: Number(z.surcharge) })))
@@ -971,12 +983,21 @@ function ZonesTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <label style={{ ...card, display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+        <input type="checkbox" checked={zonesOn} onChange={e => toggleZones(e.target.checked)} style={{ marginTop: 3 }} />
+        <span>
+          <b>Limit the van to the zones below</b>
+          <span style={{ ...helper, display: 'block', margin: '2px 0 0' }}>{zonesOn ? 'On: only postcodes inside an active zone can book online.' : 'Off: the van covers everywhere (KL, Selangor, Klang Valley). Any postcode can book, no travel surcharge. The zones below are ignored.'}</span>
+        </span>
+      </label>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, opacity: zonesOn ? 1 : 0.45 }}>
       <p style={{ ...helper, margin: 0 }}>A postcode matches a zone when it starts with one of these, e.g. 471 covers 47100–47199. The longest match wins. Postcodes outside every active zone cannot book online.</p>
       {zones.length === 0 && <Empty>No zones yet. Add the areas the van covers.</Empty>}
       {zones.map(z => <ZoneEditor key={z.id} zone={z} tenantId={tenantId} nextSort={0} onSaved={load} />)}
       <div style={card}>
         <h3 style={h3}>Add zone</h3>
         <ZoneEditor tenantId={tenantId} nextSort={Math.max(0, ...zones.map(z => z.sort_order)) + 1} onSaved={load} bare />
+      </div>
       </div>
     </div>
   )

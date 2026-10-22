@@ -19,6 +19,7 @@ interface Config {
   settings: { deposit_pct: number; cancel_cutoff_hours: number; refund_due_hours: number; max_reschedules: number; hold_minutes: number; max_job_min?: number | null }
   packages: Pkg[]
   addons?: Addon[]
+  zones_enabled?: boolean
   zones: { name: string; surcharge: number }[]
   makes: { type: string; make: string; model: string | null; tier: string }[]
   bb?: BbConfig | null
@@ -340,7 +341,7 @@ export function OnSiteBookPage() {
           <Field label="Service address">
             <textarea style={{ ...inputStyle, minHeight: 80 }} placeholder="House / building, street, area" value={address} onChange={e => setAddress(e.target.value)} />
           </Field>
-          <Field label="Postcode" hint="We check that the van covers your area.">
+          <Field label="Postcode" hint={cfg.zones_enabled === false ? 'So we can plan the route to you.' : 'We check that the van covers your area.'}>
             <input style={inputStyle} inputMode="numeric" maxLength={5} placeholder="e.g. 47100" value={postcode} onChange={e => setPostcode(e.target.value.replace(/\D/g, ''))} />
           </Field>
           <Field label="Access notes (optional)" hint="Gate code, guard house, parking spot.">
