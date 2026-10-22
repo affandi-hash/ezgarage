@@ -7,6 +7,7 @@ interface Report {
   error?: string
   voided_invoices: Row[]; voided_receipts: Row[]; invoice_changes: Row[]; number_gaps: { series: string; missing: number[] }[]
   jobs_without_invoice: Row[]; jobs_without_invoice_internal?: Row[]; payment_mismatches?: Row[]; payments_without_proof: Row[]; deletions: Row[]; pending_deletions: number
+  job_cancellations?: Row[]; no_charge_jobs?: Row[]; stale_drafts?: Row[]; pending_job_requests?: number
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10)
@@ -65,6 +66,7 @@ export function IntegrityReportPage() {
         <label style={{ color: '#A0A0A0', fontSize: 12 }}>From <input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} style={inp} /></label>
         <label style={{ color: '#A0A0A0', fontSize: 12 }}>To <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)} style={inp} /></label>
         {rep && rep.pending_deletions > 0 && <span style={{ color: '#F59E0B', fontSize: 13, fontWeight: 700 }}>{rep.pending_deletions} deletion request(s) waiting in Approvals</span>}
+        {rep && (rep.pending_job_requests ?? 0) > 0 && <span style={{ color: '#F59E0B', fontSize: 13, fontWeight: 700 }}>{rep.pending_job_requests} job request(s) waiting in Approvals</span>}
       </div>
       {loading && <div style={{ color: '#A0A0A0' }}><Loader2 size={16} /> Loading…</div>}
       {err && <div style={{ color: '#F87171' }}>{err}</div>}
@@ -91,6 +93,15 @@ export function IntegrityReportPage() {
           <Section title="Jobs with no invoice (internal fleet)" hint="Customers or vehicles whose invoices are flagged internal fleet, such as the Brainy Bunch group and Motoverse itself. Often intended, but confirm each is billed internally."
             rows={rep.jobs_without_invoice_internal ?? []} cols={[{ h: 'Job', f: r => String(r.job_number ?? '-') }, { h: 'Customer', f: r => String(r.customer ?? '-') }, { h: 'Plate', f: r => String(r.plate ?? '-') },
               { h: 'Status', f: r => String(r.status).replace('_', ' ') }, { h: 'Since', f: r => when(r.at) }, { h: 'Opened by', f: r => String(r.created_by ?? '-') }]} />
+          <Section title="Cancelled jobs" hint="Every job cancelled in this period, who cancelled it and why. A cancelled job that had an invoice should be explainable."
+            rows={rep.job_cancellations ?? []} cols={[{ h: 'When', f: r => when(r.at) }, { h: 'Job', f: r => String(r.job_number ?? '-') }, { h: 'Plate', f: r => String(r.plate ?? '-') },
+              { h: 'Was at', f: r => String(r.before_cancel ?? '-').replace('_', ' ') }, { h: 'Had invoice', f: r => (r.had_invoice ? 'Yes' : 'No') }, { h: 'By', f: r => String(r.by ?? '-') }, { h: 'Reason', f: r => String(r.reason ?? '-') }]} />
+          <Section title="Jobs delivered with no charge" hint="Approved by the owner. Each one is work given away, so the reason should make sense."
+            rows={rep.no_charge_jobs ?? []} cols={[{ h: 'Approved', f: r => when(r.at) }, { h: 'Job', f: r => String(r.job_number ?? '-') }, { h: 'Plate', f: r => String(r.plate ?? '-') },
+              { h: 'Approved by', f: r => String(r.approved_by ?? '-') }, { h: 'Reason', f: r => String(r.reason ?? '-') }]} />
+          <Section title="Draft invoices left empty" hint="Opened automatically at booking or check-in and still empty after 7 days. Either the job was never priced or it was dropped."
+            rows={rep.stale_drafts ?? []} cols={[{ h: 'Invoice', f: r => String(r.invoice_number ?? '-') }, { h: 'Customer', f: r => String(r.customer ?? '-') }, { h: 'Plate', f: r => String(r.plate ?? '-') },
+              { h: 'Job', f: r => String(r.job ?? '-') }, { h: 'Opened', f: r => when(r.opened) }, { h: 'Days', f: r => String(r.age_days ?? '-') }, { h: 'Opened by', f: r => String(r.opened_by ?? '-') }]} />
           <Section title="Payments with no proof" hint="Cash, transfer or QR payments recorded without a receipt photo or gateway reference."
             rows={rep.payments_without_proof} cols={[{ h: 'When', f: r => when(r.at) }, { h: 'Invoice', f: r => String(r.invoice_number ?? '-') }, { h: 'Amount', f: r => rm(r.amount) },
               { h: 'Method', f: r => String(r.method ?? '-').replace('_', ' ') }, { h: 'Recorded by', f: by }]} />

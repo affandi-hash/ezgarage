@@ -242,7 +242,7 @@ function SidebarContent({
                           <span style={{ background: '#F15A22', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>{pendingProofCount}</span>
                         )}
                         {!collapsed && item.to === '/approvals' && pendingApprovalCount > 0 && (
-                          <span title={`${pendingApprovalCount} deletion request(s) waiting`} style={{ background: '#F15A22', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>{pendingApprovalCount}</span>
+                          <span title={`${pendingApprovalCount} deletion request(s) waiting for approval`} style={{ background: '#F15A22', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>{pendingApprovalCount}</span>
                         )}
                         {item.to === '/onsite-bookings' && onsitePendingCount > 0 && (
                           collapsed ? (
@@ -357,8 +357,11 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
     let cancelled = false
     async function refresh() {
       try {
-        const { count, error } = await supabase.from('deletion_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
-        if (!cancelled && !error) setPendingApprovalCount(count ?? 0)
+        const [a, b] = await Promise.all([
+          supabase.from('deletion_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+          supabase.from('action_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        ])
+        if (!cancelled && !a.error) setPendingApprovalCount((a.count ?? 0) + (b.error ? 0 : (b.count ?? 0)))
       } catch {
         // ignore: the badge is only a hint
       }

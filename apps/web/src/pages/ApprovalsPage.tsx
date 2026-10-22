@@ -2,11 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
+import { canUseMoneyPowers, MONEY_ERRORS } from '@/lib/money'
 import { CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight, ShieldCheck } from 'lucide-react'
 
 interface Req {
   id: string; table_name: string; record_id: string; record_label: string | null; snapshot: Record<string, unknown>
   reason: string; status: 'pending' | 'approved' | 'rejected' | 'withdrawn'; requested_by: string; requested_at: string
+  decided_by: string | null; decided_at: string | null; decision_note: string | null
+}
+interface JobReq {
+  id: string; kind: 'cancel_job' | 'no_charge'; job_id: string; job_label: string | null; reason: string
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn'; requested_by: string; requested_at: string
   decided_by: string | null; decided_at: string | null; decision_note: string | null
 }
 interface Gone {
@@ -51,6 +57,7 @@ export function ApprovalsPage() {
   const [tab, setTab] = useState<'pending' | 'decided' | 'log'>('pending')
   const [reqs, setReqs] = useState<Req[]>([])
   const [gone, setGone] = useState<Gone[]>([])
+  const [jreqs, setJreqs] = useState<JobReq[]>([])
   const [names, setNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
@@ -58,11 +65,13 @@ export function ApprovalsPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [r, g, u] = await Promise.all([
+    const [r, g, u, jr] = await Promise.all([
       supabase.from('deletion_requests').select('*').order('requested_at', { ascending: false }).limit(300),
       supabase.from('deleted_records').select('*').order('deleted_at', { ascending: false }).limit(300),
       supabase.from('users').select('id, full_name'),
+      supabase.from('action_requests').select('*').order('requested_at', { ascending: false }).limit(300),
     ])
+    setJreqs((jr.data ?? []) as JobReq[])
     setReqs((r.data ?? []) as Req[])
     setGone((g.data ?? []) as Gone[])
     setNames(Object.fromEntries((u.data ?? []).map((x: { id: string; full_name: string }) => [x.id, x.full_name])))
@@ -72,6 +81,10 @@ export function ApprovalsPage() {
 
   const pending = useMemo(() => reqs.filter(r => r.status === 'pending'), [reqs])
   const decided = useMemo(() => reqs.filter(r => r.status !== 'pending'), [reqs])
+  const jpending = useMemo(() => jreqs.filter(r => r.status === 'pending'), [jreqs])
+  const jdecided = useMemo(() => jreqs.filter(r => r.status !== 'pending'), [jreqs])
+  const canCancelDecide = canUseMoneyPowers([])
+  const JKIND: Record<JobReq['kind'], string> = { cancel_job: 'Cancel job', no_charge: 'Deliver with no charge' }
   const who = (id: string | null) => (id ? names[id] ?? 'Unknown' : '-')
 
   async function decide(r: Req, approve: boolean) {
@@ -96,6 +109,33 @@ export function ApprovalsPage() {
     load()
   }
 
+  async function decideJob(r: JobReq, approve: boolean) {
+    let note: string | null = null
+    if (approve) {
+      const q = r.kind === 'cancel_job' ? `Approve cancelling job ${r.job_label ?? ''}?` : `Approve job ${r.job_label ?? ''} to be delivered with NO CHARGE? Nothing will be billed for it.`
+      if (!window.confirm(q)) return
+    } else {
+      note = window.prompt('Why is this rejected? (optional)')
+      if (note === null) return
+    }
+    setBusy(r.id)
+    const { data, error } = await supabase.rpc('decide_job_action', { p_request: r.id, p_approve: approve, p_note: note || null })
+    setBusy(null)
+    const res = data as { ok?: boolean; error?: string } | null
+    if (error || !res?.ok) {
+      const msg: Record<string, string> = {
+        ...MONEY_ERRORS,
+        forbidden: r.kind === 'no_charge' ? 'Only the owner (super admin) can approve a no-charge job.' : 'Only the Branch Admin can approve cancelling a job.',
+        already_decided: 'Already decided.', not_cancellable: 'This job can no longer be cancelled.',
+      }
+      toast(msg[res?.error ?? ''] ?? error?.message ?? 'Failed', 'error')
+      load()
+      return
+    }
+    toast(approve ? (r.kind === 'cancel_job' ? 'Job cancelled.' : 'Approved. The job can now be delivered.') : 'Request rejected.')
+    load()
+  }
+
   const tabBtn = (k: typeof tab, label: string, n?: number) => (
     <button onClick={() => setTab(k)} style={{ ...btn, background: tab === k ? '#F15A22' : '#1C1C1C', borderColor: tab === k ? '#F15A22' : '#2A2A2A', color: tab === k ? '#fff' : '#F0F0F0' }}>
       {label}{n ? ` (${n})` : ''}
@@ -112,14 +152,36 @@ export function ApprovalsPage() {
         </p>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        {tabBtn('pending', 'Waiting for approval', pending.length)}
+        {tabBtn('pending', 'Waiting for approval', pending.length + jpending.length)}
         {tabBtn('decided', 'Decided')}
         {tabBtn('log', 'Deleted records')}
       </div>
 
       {loading ? <div style={{ color: '#A0A0A0', padding: 24 }}><Loader2 size={18} className="spin" /> Loading…</div> : (
         <>
-          {tab === 'pending' && (pending.length === 0
+          {tab === 'pending' && jpending.map(r => {
+            const mayDecide = r.kind === 'no_charge' ? isSuper : canCancelDecide
+            return (
+              <div key={r.id} style={card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+                    <div style={{ color: '#F0F0F0', fontWeight: 700, fontSize: 15 }}>{JKIND[r.kind]}: job {r.job_label ?? r.job_id}</div>
+                    <div style={{ color: '#A0A0A0', fontSize: 12, marginTop: 2 }}>Asked by {who(r.requested_by)} on {when(r.requested_at)}</div>
+                    <div style={{ color: '#F0F0F0', fontSize: 13, marginTop: 8 }}><span style={{ color: '#6A6A6A' }}>Reason: </span>{r.reason}</div>
+                    {!mayDecide && <div style={{ color: '#6A6A6A', fontSize: 12, marginTop: 6 }}>{r.kind === 'no_charge' ? 'Only the owner can approve this.' : 'Only the Branch Admin can approve this.'}</div>}
+                  </div>
+                  {mayDecide && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <button disabled={busy === r.id} onClick={() => decideJob(r, true)} style={{ ...btn, background: '#7F1D1D', borderColor: '#991B1B', color: '#fff' }}><CheckCircle2 size={15} /> {r.kind === 'cancel_job' ? 'Approve cancel' : 'Approve no charge'}</button>
+                      <button disabled={busy === r.id} onClick={() => decideJob(r, false)} style={btn}><XCircle size={15} /> Reject</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {tab === 'pending' && (pending.length === 0 && jpending.length === 0
             ? <div style={{ ...card, color: '#A0A0A0' }}>Nothing is waiting for approval.</div>
             : pending.map(r => (
               <div key={r.id} style={card}>
@@ -143,7 +205,17 @@ export function ApprovalsPage() {
               </div>
             )))}
 
-          {tab === 'decided' && (decided.length === 0
+          {tab === 'decided' && jdecided.map(r => (
+            <div key={r.id} style={card}>
+              <div style={{ color: '#F0F0F0', fontWeight: 700 }}>{JKIND[r.kind]}: job {r.job_label ?? r.job_id}
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: r.status === 'approved' ? '#7F1D1D' : r.status === 'rejected' ? '#1E3A5F' : '#2A2A2A', color: '#fff' }}>{r.status}</span>
+              </div>
+              <div style={{ color: '#A0A0A0', fontSize: 12, marginTop: 4 }}>Asked by {who(r.requested_by)} on {when(r.requested_at)}: {r.reason}</div>
+              {r.decided_at && <div style={{ color: '#A0A0A0', fontSize: 12, marginTop: 2 }}>Decided by {who(r.decided_by)} on {when(r.decided_at)}{r.decision_note ? `: ${r.decision_note}` : ''}</div>}
+            </div>
+          ))}
+
+          {tab === 'decided' && (decided.length === 0 && jdecided.length === 0
             ? <div style={{ ...card, color: '#A0A0A0' }}>No decisions yet.</div>
             : decided.map(r => (
               <div key={r.id} style={card}>

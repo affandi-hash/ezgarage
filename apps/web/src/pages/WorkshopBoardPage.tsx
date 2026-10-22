@@ -5,6 +5,7 @@ import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
 import { deleteWithApproval, deletesDirectly } from '@/lib/deletion'
 import { logAudit } from '@/lib/audit'
+import { MONEY_ERRORS } from '@/lib/money'
 import { formatPlate } from '@/lib/formatters'
 import { PhotoUploader, QuickPhotoUpload } from '@/components/ui/PhotoUploader'
 import type { Job, JobStatus, ServiceType, ArrivalMode, PaymentStatus } from '@/types'
@@ -796,15 +797,22 @@ function JobDetailDrawer({ job, approvalHistory, onClose, onRefresh }: {
   async function handleCancelJob() {
     if (!cancelReason.trim()) return
     setCancelling(true)
-    const existingNotes = job.internal_notes ? job.internal_notes + '\n' : ''
-    const cancelNote = `[CANCELLED by ${user?.full_name ?? user?.role ?? 'staff'}] ${cancelReason.trim()}`
-    const { error } = await supabase.from('jobs').update({
-      status: 'cancelled',
-      internal_notes: existingNotes + cancelNote,
-    }).eq('id', job.id)
+    const { data, error } = await supabase.rpc('cancel_job', { p_job: job.id, p_reason: cancelReason.trim() })
     setCancelling(false)
-    if (error) { toast('Failed to cancel job: ' + error.message); return }
-    toast('Job cancelled')
+    const res = data as { ok?: boolean; error?: string; cancelled?: boolean; requested?: boolean; already?: boolean } | null
+    if (error || !res?.ok) {
+      const msg: Record<string, string> = {
+        reason_required: 'Please give the reason for cancelling.',
+        reason_too_short: 'Please give a proper reason, a short sentence that says what happened.',
+        not_cancellable: 'This job can no longer be cancelled.',
+        mfa_required: MONEY_ERRORS.mfa_required,
+        forbidden: 'You do not have permission to cancel this job.',
+      }
+      toast(msg[res?.error ?? ''] ?? error?.message ?? 'Failed to cancel job', 'error')
+      return
+    }
+    if (res.requested) toast('Work has already started, so the Branch Admin must approve this cancellation. Request sent.')
+    else toast('Job cancelled')
     onClose()
     onRefresh()
   }
@@ -2226,7 +2234,20 @@ export function WorkshopBoardPage() {
       return
     }
     if (!confirm(`Mark ${job.plate_number} as Delivered?`)) return
-    await supabase.from('jobs').update({ status: 'delivered', updated_at: new Date().toISOString() }).eq('id', job.id)
+    const { error: dErr } = await supabase.from('jobs').update({ status: 'delivered', updated_at: new Date().toISOString() }).eq('id', job.id)
+    if (dErr) {
+      // The database only lets a job go out once its invoice is issued with an amount, or the owner has approved "no charge".
+      if (/cannot be delivered yet/i.test(dErr.message)) {
+        const reason = window.prompt('This job has no issued invoice with an amount.\n\nIssue the invoice first (Invoices), OR ask the owner to approve "no charge".\n\nTo ask for no charge, type the reason here:')
+        if (reason && reason.trim()) {
+          const { data, error: rErr } = await supabase.rpc('request_job_action', { p_job: job.id, p_kind: 'no_charge', p_reason: reason.trim() })
+          const r = data as { ok?: boolean; error?: string } | null
+          if (rErr || !r?.ok) toast(r?.error === 'reason_too_short' ? 'Please give a proper reason.' : (rErr?.message ?? 'Could not send the request'), 'error')
+          else toast('Sent to the owner for approval. You can deliver once it is approved.')
+        }
+      } else toast(dErr.message, 'error')
+      return
+    }
     logAudit({ action: 'status_change:delivered', module: 'Job', record_id: job.id, record_type: 'job', details: { job_number: job.job_number, plate: job.plate_number, customer: job.customer_name, from_status: 'ready', to_status: 'delivered' }, branch_id: user?.branch_id, user_id: user?.id, tenant_id: user?.tenant_id })
     setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'delivered' } : j))
   }
