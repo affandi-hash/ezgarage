@@ -120,6 +120,8 @@ export const OS_ERRORS: Record<string, string> = {
   slot_required: 'Please choose a date and time.',
   slot_not_found: 'That time is no longer available.',
   slot_taken: 'Sorry, someone just took that slot. Please pick another.',
+  slot_span_invalid: 'That time cannot be booked for this job. Please pick another.',
+  span_not_needed: 'That time is not needed for this job. Please pick another.',
   slot_closed: 'That time is not open for booking.',
   date_blocked: 'We are not working on that date. Please pick another day.',
   day_not_served: 'We do not work on that day. Please pick another day.',
@@ -226,3 +228,31 @@ export const TIER_LABEL: Record<string, string> = {
   harley_sportster: 'Harley-Davidson Sportster', harley_softail: 'Harley-Davidson Softail / Touring', bb: 'BB staff', hub_only: 'Workshop only',
 }
 export const addonLabel = (a: OsAddonLine) => `${a.name}${a.plus_parts ? ' (+ parts)' : ''}`
+
+// ── time slots: one slot, two back-to-back slots, or a night slot stretched later ─────────────
+export interface SlotInfo {
+  slot_id: string; label: string; available: boolean; start?: string; end?: string
+  single_max?: number | null; pair_max?: number | null; extend_max?: number | null
+  extend_label?: string | null; next_id?: string | null; next_label?: string | null; next_available?: boolean
+}
+export interface SlotChoice { key: string; slot_id: string; slot2: string | null; extend: boolean; label: string; available: boolean }
+
+// What the customer can pick for a job of estMin minutes. A job that fits one slot sees every slot. A longer job sees
+// the two-slot windows and any slot that can stretch later. Nothing is offered when the job does not fit (it becomes a request).
+export function slotChoices(slots: SlotInfo[], estMin: number | null | undefined): SlotChoice[] {
+  const out: SlotChoice[] = []
+  for (const s of slots) {
+    const single = s.single_max ?? null
+    if (estMin == null || single == null || estMin <= single) {
+      out.push({ key: s.slot_id, slot_id: s.slot_id, slot2: null, extend: false, label: s.label, available: s.available })
+      continue
+    }
+    if (s.next_id && s.pair_max != null && estMin <= s.pair_max) {
+      out.push({ key: `${s.slot_id}+${s.next_id}`, slot_id: s.slot_id, slot2: s.next_id, extend: false, label: s.next_label ?? s.label, available: s.available && !!s.next_available })
+    }
+    if (s.extend_label && s.extend_max != null && estMin <= s.extend_max) {
+      out.push({ key: `${s.slot_id}~ext`, slot_id: s.slot_id, slot2: null, extend: true, label: s.extend_label, available: s.available })
+    }
+  }
+  return out
+}

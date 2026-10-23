@@ -794,7 +794,7 @@ function VehicleTiersTab({ tenantId }: { tenantId: string }) {
 }
 
 // ── 3. time slots & blackout dates ──────────────────────────────────────
-interface Slot { id: string; label: string; start_time: string; end_time: string; is_open: boolean; days: number[]; sort_order: number }
+interface Slot { id: string; label: string; start_time: string; end_time: string; extend_to: string | null; is_open: boolean; days: number[]; sort_order: number }
 interface Blackout { id: string; blackout_date: string; reason: string | null }
 
 function SlotsTab({ tenantId }: { tenantId: string }) {
@@ -812,7 +812,7 @@ function SlotsTab({ tenantId }: { tenantId: string }) {
     setBranchId(bid)
     if (bid) {
       const [s, b, br] = await Promise.all([
-        supabase.from('os_slots').select('id, label, start_time, end_time, is_open, days, sort_order').eq('tenant_id', tenantId).eq('branch_id', bid).order('start_time'),
+        supabase.from('os_slots').select('id, label, start_time, end_time, extend_to, is_open, days, sort_order').eq('tenant_id', tenantId).eq('branch_id', bid).order('start_time'),
         supabase.from('os_blackouts').select('id, blackout_date, reason').eq('tenant_id', tenantId).eq('branch_id', bid).gte('blackout_date', today).order('blackout_date'),
         supabase.from('branches').select('name').eq('tenant_id', tenantId).eq('id', bid).maybeSingle(),
       ])
@@ -849,8 +849,8 @@ function SlotsTab({ tenantId }: { tenantId: string }) {
 }
 
 function SlotEditor({ slot, tenantId, branchId, nextSort, onSaved, bare }: { slot?: Slot; tenantId: string; branchId: string; nextSort: number; onSaved: () => void; bare?: boolean }) {
-  const blank = { label: '', start: '09:00', end: '11:00', open: true, days: [1, 2, 3, 4, 5, 6] }
-  const init = slot ? { label: slot.label, start: hhmm(slot.start_time), end: hhmm(slot.end_time), open: slot.is_open, days: [...slot.days].sort() } : blank
+  const blank = { label: '', start: '09:00', end: '11:00', extend: '', open: true, days: [1, 2, 3, 4, 5, 6] }
+  const init = slot ? { label: slot.label, start: hhmm(slot.start_time), end: hhmm(slot.end_time), extend: slot.extend_to ? hhmm(slot.extend_to) : '', open: slot.is_open, days: [...slot.days].sort() } : blank
   const [d, setD] = useState(init)
   const [saving, setSaving] = useState(false)
   const dirty = !slot || JSON.stringify(d) !== JSON.stringify(init)
@@ -859,8 +859,9 @@ function SlotEditor({ slot, tenantId, branchId, nextSort, onSaved, bare }: { slo
     const v = { ...d, ...patch }
     if (!v.label.trim()) { toast('Give the slot a label, for example 11am - 1pm', 'error'); return }
     if (!v.start || !v.end || v.end <= v.start) { toast('End time must be after start time', 'error'); return }
+    if (v.extend && v.extend <= v.end) { toast('The later finish must be after the end time', 'error'); return }
     if (v.days.length === 0) { toast('Choose at least one weekday', 'error'); return }
-    const payload = { label: v.label.trim(), start_time: v.start, end_time: v.end, is_open: v.open, days: v.days }
+    const payload = { label: v.label.trim(), start_time: v.start, end_time: v.end, extend_to: v.extend || null, is_open: v.open, days: v.days }
     setSaving(true)
     const { error } = slot
       ? await supabase.from('os_slots').update(payload).eq('id', slot.id).eq('tenant_id', tenantId).eq('branch_id', branchId)
@@ -883,6 +884,7 @@ function SlotEditor({ slot, tenantId, branchId, nextSort, onSaved, bare }: { slo
         <Field label="Label" grow={160}><input style={inp} value={d.label} onChange={e => setD({ ...d, label: e.target.value })} placeholder="11am - 1pm" /></Field>
         <Field label="Start" grow={100}><input style={inp} type="time" value={d.start} onChange={e => setD({ ...d, start: e.target.value })} /></Field>
         <Field label="End" grow={100}><input style={inp} type="time" value={d.end} onChange={e => setD({ ...d, end: e.target.value })} /></Field>
+        <Field label="Can stretch to (long jobs)" grow={130}><input style={inp} type="time" value={d.extend} onChange={e => setD({ ...d, extend: e.target.value })} /></Field>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 6 }}>
           <Switch on={d.open} onChange={v => (slot ? save({ open: v }) : setD({ ...d, open: v }))} disabled={saving} label="Open for booking" />
           <span style={{ fontSize: 12, color: d.open ? C.green : C.mute, minWidth: 44 }}>{d.open ? 'Open' : 'Closed'}</span>

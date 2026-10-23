@@ -42,7 +42,10 @@ const COLS = [
 ].join(',')
 
 interface Tech { id: string; full_name: string; role: string; branch_id: string | null }
-interface SlotRow { id: string; label: string; is_open: boolean; days: number[] }
+interface SlotRow { id: string; label: string; is_open: boolean; days: number[]; start_time: string; end_time: string; extend_to: string | null }
+// what the staff picked: a slot, optionally with the next back-to-back slot or stretched later (night slot)
+export interface SlotSel { id: string; slot2: string | null; extend: boolean; label: string; start: string; end: string }
+const tlabel = (t: string) => { const [h, m] = t.split(':').map(Number); const hh = h % 12 === 0 ? 12 : h % 12; return `${hh}${m ? ':' + String(m).padStart(2, '0') : ''}${h < 12 ? 'am' : 'pm'}` }
 
 type TabKey = 'requests' | 'upcoming' | 'bb' | 'completed' | 'refunds' | 'all'
 type ModalState =
@@ -179,7 +182,7 @@ function Modal({ title, onClose, children, drawer }: { title: string; onClose: (
 // ─── Slot picker (staff may use closed / off-hours slots) ─────────────────────
 
 function SlotPicker({ branchId, date, excludeId, value, onChange }: {
-  branchId: string; date: string; excludeId: string; value: string | null; onChange: (id: string) => void
+  branchId: string; date: string; excludeId: string; value: SlotSel | null; onChange: (sel: SlotSel | null) => void
 }) {
   const [slots, setSlots] = useState<SlotRow[]>([])
   const [taken, setTaken] = useState<Set<string>>(new Set())
@@ -187,7 +190,7 @@ function SlotPicker({ branchId, date, excludeId, value, onChange }: {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.from('os_slots').select('id, label, is_open, days').eq('branch_id', branchId).order('sort_order').order('start_time')
+    supabase.from('os_slots').select('id, label, is_open, days, start_time, end_time, extend_to').eq('branch_id', branchId).order('sort_order').order('start_time')
       .then(({ data }) => setSlots((data as SlotRow[]) ?? []))
   }, [branchId])
 
@@ -196,11 +199,11 @@ function SlotPicker({ branchId, date, excludeId, value, onChange }: {
     let cancelled = false
     setLoading(true)
     Promise.all([
-      supabase.from('os_bookings').select('slot_id').eq('branch_id', branchId).eq('service_date', date).in('status', ALIVE).neq('id', excludeId),
+      supabase.from('os_bookings').select('slot_id, slot_id2').eq('branch_id', branchId).eq('service_date', date).in('status', ALIVE).neq('id', excludeId),
       supabase.from('os_blackouts').select('reason').eq('branch_id', branchId).eq('blackout_date', date).maybeSingle(),
     ]).then(([bk, bo]) => {
       if (cancelled) return
-      setTaken(new Set(((bk.data ?? []) as { slot_id: string | null }[]).map(r => r.slot_id ?? '')))
+      setTaken(new Set(((bk.data ?? []) as { slot_id: string | null; slot_id2: string | null }[]).flatMap(r => [r.slot_id ?? '', r.slot_id2 ?? '']).filter(Boolean)))
       setBlackout(bo.data ? ((bo.data as { reason: string | null }).reason || 'Van not working') : null)
       setLoading(false)
     })
@@ -209,6 +212,11 @@ function SlotPicker({ branchId, date, excludeId, value, onChange }: {
 
   if (!date) return null
   const visible = slots.filter(s => (s.days ?? []).includes(isoDow(date)))
+  const chosen = value ? slots.find(s => s.id === value.id) ?? null : null
+  const nextOf = (s: SlotRow) => visible.find(n => n.start_time === s.end_time && !taken.has(n.id)) ?? null
+  const pick = (s: SlotRow) => onChange({ id: s.id, slot2: null, extend: false, label: s.label, start: s.start_time, end: s.end_time })
+  const pickPair = (s: SlotRow, n: SlotRow) => onChange({ id: s.id, slot2: n.id, extend: false, label: `${tlabel(s.start_time)} - ${tlabel(n.end_time)}`, start: s.start_time, end: n.end_time })
+  const pickExt = (s: SlotRow) => onChange({ id: s.id, slot2: null, extend: true, label: `${tlabel(s.start_time)} - ${tlabel(s.extend_to as string)}`, start: s.start_time, end: s.extend_to as string })
 
   return (
     <div>
@@ -221,9 +229,9 @@ function SlotPicker({ branchId, date, excludeId, value, onChange }: {
           {visible.map(s => {
             const isTaken = taken.has(s.id)
             const off = blackout != null || isTaken
-            const sel = value === s.id
+            const sel = value?.id === s.id
             return (
-              <button key={s.id} disabled={off} onClick={() => onChange(s.id)} style={{
+              <button key={s.id} disabled={off} onClick={() => pick(s)} style={{
                 ...btn(sel ? 'primary' : 'ghost', off), flexDirection: 'column', gap: 2, padding: '8px 10px', minHeight: 48,
               }}>
                 <span>{s.label}</span>
@@ -231,6 +239,14 @@ function SlotPicker({ branchId, date, excludeId, value, onChange }: {
               </button>
             )
           })}
+        </div>
+      )}
+      {chosen && (nextOf(chosen) || chosen.extend_to) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, alignItems: 'center' }}>
+          <span style={{ color: '#A0A0A0', fontSize: 12 }}>Long job?</span>
+          <button onClick={() => pick(chosen)} style={btn(!value?.slot2 && !value?.extend ? 'primary' : 'ghost', false)}>{chosen.label} only</button>
+          {nextOf(chosen) && <button onClick={() => pickPair(chosen, nextOf(chosen) as SlotRow)} style={btn(value?.slot2 ? 'primary' : 'ghost', false)}>Take the next slot too ({tlabel(chosen.start_time)} - {tlabel((nextOf(chosen) as SlotRow).end_time)})</button>}
+          {chosen.extend_to && <button onClick={() => pickExt(chosen)} style={btn(value?.extend ? 'primary' : 'ghost', false)}>Stretch to {tlabel(chosen.extend_to)}</button>}
         </div>
       )}
     </div>
@@ -243,7 +259,7 @@ interface ModalProps { b: Row; onClose: () => void; onDone: () => void }
 
 function ApproveModal({ b, onClose, onDone }: ModalProps) {
   const [date, setDate] = useState(b.service_date ?? ymd(new Date()))
-  const [slot, setSlot] = useState<string | null>(null)
+  const [slot, setSlot] = useState<SlotSel | null>(null)
   const [total, setTotal] = useState(b.price_total != null ? String(b.price_total) : '')
   const [busy, setBusy] = useState(false)
 
@@ -252,7 +268,7 @@ function ApproveModal({ b, onClose, onDone }: ModalProps) {
     if (!slot) return toast('Pick a time slot', 'error')
     if (!total || !(amount > 0)) return toast(osError('price_required'), 'error')
     setBusy(true)
-    const ok = await callRpc('os_approve_request', { p_booking: b.id, p_slot: slot, p_date: date, p_total: amount })
+    const ok = await callRpc('os_approve_request', { p_booking: b.id, p_slot: slot.id, p_slot2: slot.slot2, p_extend: slot.extend, p_date: date, p_total: amount })
     setBusy(false)
     if (ok) { toast('Request approved; the customer can now pay the deposit'); onDone() }
   }
@@ -365,16 +381,14 @@ function NoShowModal({ b, onClose, onDone }: ModalProps) {
 
 function RescheduleModal({ b, onClose, onDone }: ModalProps) {
   const [date, setDate] = useState(b.service_date ?? ymd(new Date()))
-  const [slot, setSlot] = useState<string | null>(null)
+  const [slot, setSlot] = useState<SlotSel | null>(null)
   const [busy, setBusy] = useState(false)
 
   async function submit() {
     if (!slot) return toast('Pick a time slot', 'error')
     setBusy(true)
-    const { data: s } = await supabase.from('os_slots').select('id, label, start_time, end_time').eq('id', slot).single()
-    if (!s) { setBusy(false); return toast(osError('slot_not_found'), 'error') }
     const { error } = await supabase.from('os_bookings').update({
-      slot_id: s.id, slot_label: s.label, service_date: date, slot_start: s.start_time, slot_end: s.end_time,
+      slot_id: slot.id, slot_id2: slot.slot2, slot_label: slot.label, service_date: date, slot_start: slot.start, slot_end: slot.end,
     }).eq('id', b.id)
     setBusy(false)
     if (error) return toast(error.code === '23505' ? 'That slot is already booked' : error.message, 'error')

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { CheckCircle2, ChevronLeft, Loader2, Truck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { makeOptionsFor, modelOptionsFor, OTHER } from '@/lib/vehicleMakes'
-import { clearDraft, draftStr, fmtDate, loadDraft, normStaffId, osError, rm, rmShort, saveDraft, staffIdOk, type BbDay } from '@/lib/onsite'
+import { clearDraft, draftStr, fmtDate, loadDraft, normStaffId, osError, rm, rmShort, saveDraft, slotChoices, staffIdOk, type BbDay, type SlotInfo } from '@/lib/onsite'
 import { BbDayPicker, Button, C, Card, ContactLine, Field, inputStyle, Notice, Page, PAYMENT_METHODS, startPayment, usePageMeta, usePublicContact } from '@/components/onsite/OsUi'
 
 interface Pkg {
@@ -29,7 +29,7 @@ interface Quote {
   error: string | null; tier: string | null; base: number | null; zone_name: string | null; zone_surcharge: number; total: number | null; deposit: number | null
   addons?: QuoteAddon[]; addons_total?: number; est_duration_min?: number; max_job_min?: number | null; estimate?: boolean
 }
-interface Day { date: string; slots: { slot_id: string; label: string; available: boolean }[] }
+interface Day { date: string; slots: SlotInfo[] }
 
 const STEPS = ['Vehicle', 'Package', 'Address', 'Time', 'Confirm']
 const BB_STEPS = ['Details', 'Car', 'Day', 'Confirm']
@@ -194,11 +194,11 @@ export function OnSiteBookPage() {
     const { data, error } = await supabase.rpc('os_create_booking', {
       p_tenant_slug: slug, p_name: name, p_phone: phone, p_email: email, p_type: vType, p_make: makeValue, p_model: modelValue, p_plate: plate,
       p_package: pkgId, p_grade: gradeId || null, p_address: address, p_postcode: postcode, p_access_notes: access || null,
-      p_slot: special ? null : slotId, p_date: special ? null : date, p_special_reason: reason, p_addons: addonIds,
+      p_slot: special ? null : choice?.slot_id, p_slot2: special ? null : choice?.slot2 ?? null, p_extend: special ? false : choice?.extend ?? false, p_date: special ? null : date, p_special_reason: reason, p_addons: addonIds,
     })
     if (error || !data) return reset('Something went wrong. Please try again.')
     if (data.error) {
-      if (data.error === 'slot_taken' || data.error === 'too_soon') { setStep(3); setDate(''); setSlotId('') }
+      if (data.error === 'slot_taken' || data.error === 'too_soon' || data.error === 'slot_span_invalid' || data.error === 'span_not_needed') { setStep(3); setDate(''); setSlotId('') }
       return reset(osError(data.error))
     }
     draftDone.current = true
@@ -231,6 +231,11 @@ export function OnSiteBookPage() {
   if (bb && flow === 'bb') return <Page><BbFlow slug={slug} bb={bb} onChoice={() => setFlow(null)} /><ContactLine number={contact} /></Page>
 
   const selectedDay = days.find(d => d.date === date)
+  // one slot for a short job; two back-to-back slots (or a stretched night slot) for a longer one
+  const estForSlots = quote?.est_duration_min ?? null
+  const choices = slotChoices(selectedDay?.slots ?? [], estForSlots)
+  const choice = choices.find(c => c.key === slotId)
+  const longVisit = estForSlots != null && (selectedDay?.slots[0]?.single_max ?? null) != null && estForSlots > (selectedDay?.slots[0]?.single_max ?? 0)
   const back = () => {
     setErr(''); setRequestMode(null)
     // the request form lives on the Address step: Back goes to the address fields, not the Package step
@@ -420,7 +425,7 @@ export function OnSiteBookPage() {
               {days.length === 0 && <div style={{ color: C.muted, fontSize: 14 }}>No times are open right now. Please check back soon.</div>}
               <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6 }}>
                 {days.map(d => {
-                  const free = d.slots.some(s => s.available)
+                  const free = slotChoices(d.slots, estForSlots).some(c => c.available)
                   const dt = new Date(d.date + 'T00:00:00')
                   return (
                     <button key={d.date} disabled={!free} onClick={() => { setDate(d.date); setSlotId('') }}
@@ -436,12 +441,14 @@ export function OnSiteBookPage() {
             </Field>
             {selectedDay && (
               <Field label="Pick a time">
+                {longVisit && <div style={{ color: C.muted, fontSize: 13, marginBottom: 8, lineHeight: 1.4 }}>This is a longer job (about {estForSlots} min), so your visit takes {choices.some(c => c.slot2) ? 'two time slots in a row' : 'a longer time window'}.</div>}
+                {choices.length === 0 && <div style={{ color: C.muted, fontSize: 14 }}>No time fits this job on this day. Pick another day, or send us a request below.</div>}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {selectedDay.slots.map(s => (
-                    <button key={s.slot_id} disabled={!s.available} onClick={() => setSlotId(s.slot_id)}
-                      style={{ flex: '1 1 40%', padding: 12, borderRadius: 10, border: `1px solid ${slotId === s.slot_id ? C.orange : C.border}`, background: slotId === s.slot_id ? `${C.orange}22` : '#111',
-                        color: s.available ? C.text : '#555', fontWeight: 700, textDecoration: s.available ? 'none' : 'line-through' }}>
-                      {s.label}
+                  {choices.map(c => (
+                    <button key={c.key} disabled={!c.available} onClick={() => setSlotId(c.key)}
+                      style={{ flex: '1 1 40%', padding: 12, borderRadius: 10, border: `1px solid ${slotId === c.key ? C.orange : C.border}`, background: slotId === c.key ? `${C.orange}22` : '#111',
+                        color: c.available ? C.text : '#555', fontWeight: 700, textDecoration: c.available ? 'none' : 'line-through' }}>
+                      {c.label}
                     </button>
                   ))}
                 </div>
@@ -464,7 +471,7 @@ export function OnSiteBookPage() {
             {chosenAddons.length > 0 && <Row k="Extras" v={chosenAddons.map(a => a.name).join(', ')} />}
             {quote.est_duration_min ? <Row k="Estimated time" v={`about ${quote.est_duration_min} min`} /> : null}
             <Row k="Where" v={address} />
-            <Row k="When" v={`${fmtDate(date)}, ${selectedDay?.slots.find(s => s.slot_id === slotId)?.label}`} />
+            <Row k="When" v={`${fmtDate(date)}, ${choice?.label}`} />
             <div style={{ borderTop: `1px solid ${C.border}`, margin: '10px 0' }} />
             <PriceLines quote={quote} depositPct={cfg.settings.deposit_pct} compact />
           </Card>

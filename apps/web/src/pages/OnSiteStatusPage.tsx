@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Car, Check, Loader2, Truck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { BB_STATUS_LABEL, fmtDate, OS_STATUS_COLOR, OS_STATUS_LABEL, osError, rm, rmShort, type BbDay, type OsStatus } from '@/lib/onsite'
+import { BB_STATUS_LABEL, fmtDate, OS_STATUS_COLOR, OS_STATUS_LABEL, osError, rm, rmShort, slotChoices, type BbDay, type OsStatus, type SlotInfo } from '@/lib/onsite'
 import { BbDayPicker, Button, C, Card, ContactLine, Field, Notice, Page, PAYMENT_METHODS, startPayment, usePageMeta, usePublicContact } from '@/components/onsite/OsUi'
 
 interface BillPlan {
@@ -32,7 +32,7 @@ interface Booking {
   technician_name: string | null
   hub_quote: { quote_number: string; total: number } | null
 }
-interface Day { date: string; slots: { slot_id: string; label: string; available: boolean }[] }
+interface Day { date: string; slots: SlotInfo[] }
 
 const STAGES: { key: OsStatus[]; label: string }[] = [
   { key: ['awaiting_deposit', 'requested'], label: 'Booked' },
@@ -139,7 +139,7 @@ export function OnSiteStatusPage() {
 
   async function change(action: 'cancel' | 'reschedule') {
     setBusy(true); setErr('')
-    const { data, error } = await supabase.rpc('os_change_booking', { p_token: token, p_action: action, p_slot: slotId || null, p_date: date || null, p_reason: null })
+    const { data, error } = await supabase.rpc('os_change_booking', { p_token: token, p_action: action, p_slot: choice?.slot_id ?? null, p_slot2: choice?.slot2 ?? null, p_extend: choice?.extend ?? false, p_date: date || null, p_reason: null })
     setBusy(false)
     if (error || !data) { setErr('Something went wrong. Please try again.'); return }
     if (data.error) {
@@ -160,6 +160,8 @@ export function OnSiteStatusPage() {
   const stageIdx = stages.findIndex(s => s.key.includes(b.status))
   const holdLeft = b.hold_expires_at ? Math.max(0, Math.floor((new Date(b.hold_expires_at).getTime() - now) / 1000)) : 0
   const selectedDay = days.find(d => d.date === date)
+  const choices = slotChoices(selectedDay?.slots ?? [], b?.est_duration_min ?? null)
+  const choice = choices.find(c => c.key === slotId)
   const statusColor = OS_STATUS_COLOR[b.status]
   const bill = isBb ? b.bill ?? null : null
 
@@ -318,7 +320,7 @@ export function OnSiteStatusPage() {
           <Field label="Pick a day">
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6 }}>
               {days.map(d => {
-                const free = d.slots.some(s => s.available)
+                const free = slotChoices(d.slots, b?.est_duration_min ?? null).some(c => c.available)
                 const dt = new Date(d.date + 'T00:00:00')
                 return (
                   <button key={d.date} disabled={!free} onClick={() => { setDate(d.date); setSlotId('') }}
@@ -334,12 +336,13 @@ export function OnSiteStatusPage() {
           {selectedDay && (
             <Field label="Pick a time">
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {selectedDay.slots.map(s => (
-                  <button key={s.slot_id} disabled={!s.available} onClick={() => setSlotId(s.slot_id)}
-                    style={{ flex: '1 1 40%', padding: 12, borderRadius: 10, border: `1px solid ${slotId === s.slot_id ? C.orange : C.border}`, background: slotId === s.slot_id ? `${C.orange}22` : '#111', color: s.available ? C.text : '#555', fontWeight: 700 }}>
-                    {s.label}
+                {choices.map(c => (
+                  <button key={c.key} disabled={!c.available} onClick={() => setSlotId(c.key)}
+                    style={{ flex: '1 1 40%', padding: 12, borderRadius: 10, border: `1px solid ${slotId === c.key ? C.orange : C.border}`, background: slotId === c.key ? `${C.orange}22` : '#111', color: c.available ? C.text : '#555', fontWeight: 700 }}>
+                    {c.label}
                   </button>
                 ))}
+                {choices.length === 0 && <div style={{ color: C.muted, fontSize: 14 }}>No time fits this job on this day. Pick another day.</div>}
               </div>
             </Field>
           )}
