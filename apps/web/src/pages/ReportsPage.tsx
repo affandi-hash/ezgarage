@@ -302,7 +302,6 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
 
 export function ReportsPage() {
   const user = useAuthStore((s) => s.user)
-  const isSuperAdmin = user?.role === 'super_admin'
   const outlet = useOutletContext<{ selectedBranchId?: string | null } | null>()
   const viewScope = useViewScope()
   const branchFilter = scopedBranchId(user, outlet?.selectedBranchId ?? null)
