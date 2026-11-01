@@ -6,6 +6,7 @@ import { canSeeAllBranches } from '@/lib/branchScope'
 import { supabase } from '@/lib/supabase'
 import { ROLE_LABELS } from '@/types'
 import type { Branch } from '@/types'
+import { useViewScope } from '@/store/viewScopeStore'
 
 const ROUTE_LABELS: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -50,12 +51,17 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange, onM
   const pathParts = location.pathname.split('/').filter(Boolean)
 
   const seesAllBranches = canSeeAllBranches(user?.role)
+  // the platform owner works across every business and picks all, one business or one branch
+  const isPlatform = !!user?.is_platform_admin && user?.role === 'super_admin'
+  const scope = useViewScope()
+
+  useEffect(() => { if (isPlatform) scope.load() }, [isPlatform]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // super_admin's RLS bypass is project-wide, not tenant-scoped (see the
     // 115-policy audit) — without this explicit filter, a second tenant's
     // branch would show up here by name, indistinguishable from your own.
-    if (seesAllBranches && user?.tenant_id) {
+    if (seesAllBranches && user?.tenant_id && !isPlatform) {
       supabase
         .from('branches')
         .select('id, name, address, phone')
@@ -64,7 +70,7 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange, onM
           if (data) setBranches(data as Branch[])
         })
     }
-  }, [seesAllBranches, user?.tenant_id])
+  }, [seesAllBranches, user?.tenant_id, isPlatform])
 
   const initials = user?.full_name
     ? user.full_name
@@ -153,7 +159,27 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange, onM
       {/* Right: branch selector + notifications + user menu */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {/* Branch selector (roles that can see every branch of the tenant) */}
-        {seesAllBranches && onBranchChange && (
+        {isPlatform && (
+          <select
+            value={scope.selection}
+            onChange={(e) => scope.setSelection(e.target.value)}
+            style={{
+              backgroundColor: '#1E1E1E', border: '1px solid #2A2A2A', color: '#F0F0F0', fontSize: 14, borderRadius: 8,
+              padding: '6px 12px', outline: 'none', cursor: 'pointer', lineHeight: 1.5, maxWidth: 260,
+            }}
+          >
+            <option value="all">{scope.tenants.length > 1 ? 'All businesses' : 'All Branches'}</option>
+            {scope.tenants.map((t) => (
+              <optgroup key={t.id} label={t.name}>
+                {scope.tenants.length > 1 && <option value={`t:${t.id}`}>All {t.name} branches</option>}
+                {scope.branches.filter((b) => b.tenant_id === t.id).map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        )}
+        {!isPlatform && seesAllBranches && onBranchChange && (
           <select
             value={selectedBranchId ?? 'all'}
             onChange={(e) => onBranchChange(e.target.value === 'all' ? null : e.target.value)}

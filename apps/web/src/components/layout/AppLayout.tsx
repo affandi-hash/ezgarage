@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { useAuthStore } from '@/store/authStore'
 import { canSeeAllBranches } from '@/lib/branchScope'
 import { MfaGate } from '@/components/auth/MfaGate'
+import { useViewScope, viewScopeOf } from '@/store/viewScopeStore'
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
@@ -22,6 +23,10 @@ export function AppLayout() {
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(
     seesAllBranches ? null : (user?.branch_id ?? null)
   )
+  const isPlatform = !!user?.is_platform_admin && user?.role === 'super_admin'
+  const view = useViewScope()
+  // the platform owner's header choice (all / one business / one branch) decides the branch filter for every page
+  const ownerBranchId = viewScopeOf(view.selection, view.branches).branchId
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const isMobile = useIsMobile()
 
@@ -40,7 +45,10 @@ export function AppLayout() {
         />
         <main style={{ flex: 1, overflow: 'hidden', backgroundColor: '#0E0E0E', display: 'flex', flexDirection: 'column' }}>
           <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
-            <Outlet context={{ selectedBranchId }} />
+            {/* keyed by the choice so a page reloads its data when the owner switches business or branch */}
+            <Fragment key={isPlatform ? view.selection : 'fixed'}>
+              <Outlet context={{ selectedBranchId: isPlatform ? ownerBranchId : selectedBranchId }} />
+            </Fragment>
           </div>
         </main>
       </div>

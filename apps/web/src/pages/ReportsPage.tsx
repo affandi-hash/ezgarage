@@ -19,7 +19,9 @@ import {
   Receipt,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
-import { canSeeAllBranches } from '@/lib/branchScope'
+import { canSeeAllBranches, scopedBranchId } from '@/lib/branchScope'
+import { useOutletContext } from 'react-router-dom'
+import { useViewScope, viewScopeLabel } from '@/store/viewScopeStore'
 import { supabase } from '@/lib/supabase'
 
 const BG = '#0E0E0E'
@@ -301,7 +303,12 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
 export function ReportsPage() {
   const user = useAuthStore((s) => s.user)
   const isSuperAdmin = user?.role === 'super_admin'
-  const branchFilter = canSeeAllBranches(user?.role) ? null : user?.branch_id ?? null
+  const outlet = useOutletContext<{ selectedBranchId?: string | null } | null>()
+  const viewScope = useViewScope()
+  const branchFilter = scopedBranchId(user, outlet?.selectedBranchId ?? null)
+  const scopeText = user?.is_platform_admin && user.role === 'super_admin'
+    ? viewScopeLabel(viewScope.selection, viewScope.tenants, viewScope.branches)
+    : canSeeAllBranches(user?.role) ? 'All branches' : 'Your branch'
 
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [dateRange, setDateRange] = useState<DateRange>('this_month')
@@ -796,7 +803,7 @@ export function ReportsPage() {
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT_PRIMARY, margin: 0 }}>Reports</h1>
             <p style={{ fontSize: 13, color: TEXT_SECONDARY, marginTop: 3 }}>
-              {isSuperAdmin ? 'All branches' : 'Your branch'}
+              {scopeText}
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
