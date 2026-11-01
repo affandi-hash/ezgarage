@@ -1,5 +1,5 @@
 ﻿import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
+import { registerCompanyLock, supabase } from '@/lib/supabase'
 import type { UserProfile, Tenant } from '@/types'
 
 interface AuthState {
@@ -67,3 +67,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ user: null, tenant: null })
   },
 }))
+
+// A super admin's access spans every company, so pin what the app shows to the company they belong to.
+registerCompanyLock(() => {
+  const u = useAuthStore.getState().user
+  return u?.role === 'super_admin' && u.tenant_id ? u.tenant_id : null
+})
