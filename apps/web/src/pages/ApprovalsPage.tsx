@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 import { toast } from '@/components/ui/Toast'
 import { canUseMoneyPowers, MONEY_ERRORS } from '@/lib/money'
+import { openProofFile, PROOF_REQUEST_ERRORS } from '@/lib/paymentProof'
 import { CheckCircle2, XCircle, Loader2, ChevronDown, ChevronRight, ShieldCheck } from 'lucide-react'
 
 interface Req {
@@ -15,6 +16,12 @@ interface JobReq {
   status: 'pending' | 'approved' | 'rejected' | 'withdrawn'; requested_by: string; requested_at: string
   decided_by: string | null; decided_at: string | null; decision_note: string | null
 }
+interface ProofReq {
+  id: string; receipt_id: string; invoice_id: string | null; kind: 'replace' | 'add'; path: string; reason: string
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn'; requested_by: string; requested_at: string
+  decided_by: string | null; decided_at: string | null; decision_note: string | null
+}
+interface ProofInfo { amount: number; payment_method: string; proof_url: string | null; proof_bucket: string | null; invoice_number: string | null; customer_name: string | null }
 interface Gone {
   id: string; table_name: string; record_id: string | null; record_label: string | null; snapshot: Record<string, unknown>
   kind: 'approved' | 'super_admin' | 'direct' | 'system'; reason: string | null; deleted_by: string | null; approved_by: string | null; deleted_at: string
@@ -58,6 +65,8 @@ export function ApprovalsPage() {
   const [reqs, setReqs] = useState<Req[]>([])
   const [gone, setGone] = useState<Gone[]>([])
   const [jreqs, setJreqs] = useState<JobReq[]>([])
+  const [preqs, setPreqs] = useState<ProofReq[]>([])
+  const [pinfo, setPinfo] = useState<Record<string, ProofInfo>>({})
   const [names, setNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
@@ -65,12 +74,22 @@ export function ApprovalsPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [r, g, u, jr] = await Promise.all([
+    const [r, g, u, jr, pr] = await Promise.all([
       supabase.from('deletion_requests').select('*').order('requested_at', { ascending: false }).limit(300),
       supabase.from('deleted_records').select('*').order('deleted_at', { ascending: false }).limit(300),
       supabase.from('users').select('id, full_name'),
       supabase.from('action_requests').select('*').order('requested_at', { ascending: false }).limit(300),
+      supabase.from('proof_requests').select('*').order('requested_at', { ascending: false }).limit(300),
     ])
+    const prs = (pr.data ?? []) as ProofReq[]
+    setPreqs(prs)
+    if (prs.length > 0) {
+      const rc = await supabase.from('receipts').select('id, amount, payment_method, proof_url, proof_bucket, invoice_id').in('id', [...new Set(prs.map(x => x.receipt_id))])
+      const recs = (rc.data ?? []) as { id: string; amount: number; payment_method: string; proof_url: string | null; proof_bucket: string | null; invoice_id: string }[]
+      const iv = recs.length ? await supabase.from('invoices').select('id, invoice_number, customer_name').in('id', [...new Set(recs.map(x => x.invoice_id))]) : { data: [] }
+      const invs = Object.fromEntries(((iv.data ?? []) as { id: string; invoice_number: string; customer_name: string }[]).map(x => [x.id, x]))
+      setPinfo(Object.fromEntries(recs.map(x => [x.id, { amount: x.amount, payment_method: x.payment_method, proof_url: x.proof_url, proof_bucket: x.proof_bucket, invoice_number: invs[x.invoice_id]?.invoice_number ?? null, customer_name: invs[x.invoice_id]?.customer_name ?? null }])))
+    }
     setJreqs((jr.data ?? []) as JobReq[])
     setReqs((r.data ?? []) as Req[])
     setGone((g.data ?? []) as Gone[])
@@ -81,6 +100,8 @@ export function ApprovalsPage() {
 
   const pending = useMemo(() => reqs.filter(r => r.status === 'pending'), [reqs])
   const decided = useMemo(() => reqs.filter(r => r.status !== 'pending'), [reqs])
+  const ppending = useMemo(() => preqs.filter(r => r.status === 'pending'), [preqs])
+  const pdecided = useMemo(() => preqs.filter(r => r.status !== 'pending'), [preqs])
   const jpending = useMemo(() => jreqs.filter(r => r.status === 'pending'), [jreqs])
   const jdecided = useMemo(() => jreqs.filter(r => r.status !== 'pending'), [jreqs])
   const canCancelDecide = canUseMoneyPowers([])
@@ -106,6 +127,24 @@ export function ApprovalsPage() {
       return
     }
     toast(approve ? 'Approved and deleted.' : 'Request rejected.')
+    load()
+  }
+
+  async function decideProof(r: ProofReq, approve: boolean) {
+    let note: string | null = null
+    if (approve) {
+      const q = r.kind === 'replace' ? 'Replace the proof on this payment with the new file? The current proof is kept in its history.' : 'Keep the new file as a second document on this payment?'
+      if (!window.confirm(q)) return
+    } else {
+      note = window.prompt('Why is this rejected? (optional)')
+      if (note === null) return
+    }
+    setBusy(r.id)
+    const { data, error } = await supabase.rpc('decide_proof_request', { p_request: r.id, p_approve: approve, p_note: note || null })
+    setBusy(null)
+    const res = data as { ok?: boolean; error?: string } | null
+    if (error || !res?.ok) { toast(PROOF_REQUEST_ERRORS[res?.error ?? ''] ?? error?.message ?? 'Failed', 'error'); load(); return }
+    toast(approve ? (r.kind === 'replace' ? 'Proof replaced.' : 'Document added.') : 'Request rejected.')
     load()
   }
 
@@ -136,6 +175,38 @@ export function ApprovalsPage() {
     load()
   }
 
+  const proofCard = (r: ProofReq, withActions: boolean) => {
+    const info = pinfo[r.receipt_id]
+    return (
+      <div key={r.id} style={card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+            <div style={{ color: '#F0F0F0', fontWeight: 700, fontSize: 15 }}>
+              {r.kind === 'replace' ? 'Replace proof of payment' : 'Add a second document'}: {info?.invoice_number ?? 'payment'}{info?.customer_name ? ` · ${info.customer_name}` : ''}
+              {!withActions && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: r.status === 'approved' ? '#7F1D1D' : r.status === 'rejected' ? '#1E3A5F' : '#2A2A2A', color: '#fff' }}>{r.status}</span>}
+            </div>
+            <div style={{ color: '#A0A0A0', fontSize: 12, marginTop: 2 }}>
+              {info ? `RM ${Number(info.amount).toFixed(2)} · ${info.payment_method.replace('_', ' ')} · ` : ''}Asked by {who(r.requested_by)} on {when(r.requested_at)}
+            </div>
+            <div style={{ color: '#F0F0F0', fontSize: 13, marginTop: 8 }}><span style={{ color: '#6A6A6A' }}>Reason: </span>{r.reason}</div>
+            <div style={{ display: 'flex', gap: 14, marginTop: 8, flexWrap: 'wrap' }}>
+              <button onClick={async () => { if (!(await openProofFile(r.path))) toast('Could not open the new file', 'error') }} style={{ background: 'none', border: 'none', padding: 0, color: '#F15A22', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>View the new file</button>
+              {info?.proof_url && <button onClick={async () => { if (!(await openProofFile(info.proof_url as string, info.proof_bucket))) toast('Could not open the current proof', 'error') }} style={{ background: 'none', border: 'none', padding: 0, color: '#F15A22', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>View the current proof</button>}
+            </div>
+            {!withActions && r.decided_at && <div style={{ color: '#A0A0A0', fontSize: 12, marginTop: 6 }}>Decided by {who(r.decided_by)} on {when(r.decided_at)}{r.decision_note ? `: ${r.decision_note}` : ''}</div>}
+            {withActions && !canCancelDecide && <div style={{ color: '#6A6A6A', fontSize: 12, marginTop: 6 }}>Only the Branch Admin can approve this.</div>}
+          </div>
+          {withActions && canCancelDecide && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <button disabled={busy === r.id} onClick={() => decideProof(r, true)} style={{ ...btn, background: '#7F1D1D', borderColor: '#991B1B', color: '#fff' }}><CheckCircle2 size={15} /> {r.kind === 'replace' ? 'Approve replace' : 'Approve document'}</button>
+              <button disabled={busy === r.id} onClick={() => decideProof(r, false)} style={btn}><XCircle size={15} /> Reject</button>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   const tabBtn = (k: typeof tab, label: string, n?: number) => (
     <button onClick={() => setTab(k)} style={{ ...btn, background: tab === k ? '#F15A22' : '#1C1C1C', borderColor: tab === k ? '#F15A22' : '#2A2A2A', color: tab === k ? '#fff' : '#F0F0F0' }}>
       {label}{n ? ` (${n})` : ''}
@@ -152,13 +223,15 @@ export function ApprovalsPage() {
         </p>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        {tabBtn('pending', 'Waiting for approval', pending.length + jpending.length)}
+        {tabBtn('pending', 'Waiting for approval', pending.length + jpending.length + ppending.length)}
         {tabBtn('decided', 'Decided')}
         {tabBtn('log', 'Deleted records')}
       </div>
 
       {loading ? <div style={{ color: '#A0A0A0', padding: 24 }}><Loader2 size={18} className="spin" /> Loading…</div> : (
         <>
+          {tab === 'pending' && ppending.map(r => proofCard(r, true))}
+
           {tab === 'pending' && jpending.map(r => {
             const mayDecide = r.kind === 'no_charge' ? isSuper : canCancelDecide
             return (
@@ -181,7 +254,7 @@ export function ApprovalsPage() {
             )
           })}
 
-          {tab === 'pending' && (pending.length === 0 && jpending.length === 0
+          {tab === 'pending' && (pending.length === 0 && jpending.length === 0 && ppending.length === 0
             ? <div style={{ ...card, color: '#A0A0A0' }}>Nothing is waiting for approval.</div>
             : pending.map(r => (
               <div key={r.id} style={card}>
@@ -205,6 +278,8 @@ export function ApprovalsPage() {
               </div>
             )))}
 
+          {tab === 'decided' && pdecided.map(r => proofCard(r, false))}
+
           {tab === 'decided' && jdecided.map(r => (
             <div key={r.id} style={card}>
               <div style={{ color: '#F0F0F0', fontWeight: 700 }}>{JKIND[r.kind]}: job {r.job_label ?? r.job_id}
@@ -215,7 +290,7 @@ export function ApprovalsPage() {
             </div>
           ))}
 
-          {tab === 'decided' && (decided.length === 0 && jdecided.length === 0
+          {tab === 'decided' && (decided.length === 0 && jdecided.length === 0 && pdecided.length === 0
             ? <div style={{ ...card, color: '#A0A0A0' }}>No decisions yet.</div>
             : decided.map(r => (
               <div key={r.id} style={card}>

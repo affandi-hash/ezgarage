@@ -357,11 +357,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen?: boolean; o
     let cancelled = false
     async function refresh() {
       try {
-        const [a, b] = await Promise.all([
+        const [a, b, c] = await Promise.all([
           supabase.from('deletion_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
           supabase.from('action_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+          supabase.from('proof_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         ])
-        if (!cancelled && !a.error) setPendingApprovalCount((a.count ?? 0) + (b.error ? 0 : (b.count ?? 0)))
+        if (!cancelled && !a.error) setPendingApprovalCount((a.count ?? 0) + (b.error ? 0 : (b.count ?? 0)) + (c.error ? 0 : (c.count ?? 0)))
       } catch {
         // ignore: the badge is only a hint
       }

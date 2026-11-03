@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { controlsOn } from '@/lib/deletion'
 import { canUseMoneyPowers, MONEY_ERRORS } from '@/lib/money'
-import { attachReceiptProof, canManageProof, proofMissing, proofRequired, uploadPaymentProof, discardPaymentProof, PAYMENT_ERRORS } from '@/lib/paymentProof'
+import { attachReceiptProof, addReceiptDocument, requestProofChange, openProofFile, PROOF_REQUEST_ERRORS, canManageProof, proofMissing, proofRequired, proofFileError as checkProofFile, uploadPaymentProof, discardPaymentProof, PAYMENT_ERRORS } from '@/lib/paymentProof'
 import { useAuthStore } from '@/store/authStore'
 import { canSeeAllBranches } from '@/lib/branchScope'
 import { FileText, Plus, X, Printer, CreditCard, Check, ChevronRight, Search, Send, Ban, Wrench, Paperclip, Loader2, Tag } from 'lucide-react'
@@ -462,9 +462,60 @@ export function InvoicesPage() {
     setProofFile(file)
   }
 
+  // extra documents on a payment, and changes waiting for approval
+  const [extraProofs, setExtraProofs] = useState<Record<string, { id: string; proof_url: string; proof_bucket: string; note: string | null }[]>>({})
+  const [proofRequests, setProofRequests] = useState<Record<string, { id: string; kind: string; requested_by: string }>>({})
+  const [changeFor, setChangeFor] = useState<string | null>(null)
+  const [changeKind, setChangeKind] = useState<'replace' | 'add'>('replace')
+  const [changeFile, setChangeFile] = useState<File | null>(null)
+  const [changeReason, setChangeReason] = useState('')
+  const [changeBusy, setChangeBusy] = useState(false)
+  const [addingDocId, setAddingDocId] = useState<string | null>(null)
+
   async function loadPaymentHistory(invoiceId: string) {
     const { data } = await supabase.from('receipts').select('id, amount, payment_method, payment_date, proof_url, proof_bucket, voided_at, void_reason, gateway_ref, reference_number, notes').eq('invoice_id', invoiceId).order('payment_date', { ascending: false })
     setPaymentHistory(data ?? [])
+    const ids = (data ?? []).map((r: { id: string }) => r.id)
+    if (ids.length === 0) { setExtraProofs({}); setProofRequests({}); return }
+    const [ex, rq] = await Promise.all([
+      supabase.from('receipt_extra_proofs').select('id, receipt_id, proof_url, proof_bucket, note').in('receipt_id', ids).order('added_at'),
+      supabase.from('proof_requests').select('id, receipt_id, kind, requested_by').in('receipt_id', ids).eq('status', 'pending'),
+    ])
+    const exMap: Record<string, { id: string; proof_url: string; proof_bucket: string; note: string | null }[]> = {}
+    for (const e of (ex.data ?? []) as { id: string; receipt_id: string; proof_url: string; proof_bucket: string; note: string | null }[]) (exMap[e.receipt_id] ??= []).push(e)
+    setExtraProofs(exMap)
+    setProofRequests(Object.fromEntries(((rq.data ?? []) as { id: string; receipt_id: string; kind: string; requested_by: string }[]).map(q => [q.receipt_id, q])))
+  }
+
+  async function handleSubmitChange() {
+    if (!changeFor || !changeFile) return
+    const bad = checkProofFile(changeFile)
+    if (bad) { toast.error(bad); return }
+    if (changeReason.trim().length < 10) { toast.error(PROOF_REQUEST_ERRORS.reason_too_short); return }
+    setChangeBusy(true)
+    const res = await requestProofChange(changeFor, changeFile, changeKind, changeReason.trim())
+    setChangeBusy(false)
+    if (!res.ok) { toast.error(res.error ?? 'Could not send the request'); return }
+    toast.success('Sent to the Branch Admin for approval')
+    setChangeFor(null); setChangeFile(null); setChangeReason('')
+    if (editInvoice) await loadPaymentHistory(editInvoice.id)
+  }
+
+  async function handleAddDocument(receiptId: string, file: File | null) {
+    if (!file) return
+    setAddingDocId(receiptId)
+    const res = await addReceiptDocument(receiptId, file)
+    setAddingDocId(null)
+    if (!res.ok) { toast.error(res.error ?? 'Could not add the document'); return }
+    toast.success('Document added')
+    if (editInvoice) await loadPaymentHistory(editInvoice.id)
+  }
+
+  async function handleWithdrawRequest(requestId: string) {
+    const { data, error } = await supabase.rpc('withdraw_proof_request', { p_request: requestId })
+    if (error || data?.error) { toast.error(PROOF_REQUEST_ERRORS[data?.error] ?? 'Could not withdraw'); return }
+    toast.success('Request withdrawn')
+    if (editInvoice) await loadPaymentHistory(editInvoice.id)
   }
 
   async function loadPaymentFailures(invoiceId: string) {
@@ -1785,6 +1836,29 @@ export function InvoicesPage() {
         </div>
       )}
 
+      {changeFor && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, width: '100%', maxWidth: 440, color: C.text }}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Request a proof change</div>
+            <div style={{ color: C.text2, fontSize: 12, marginBottom: 14 }}>The Branch Admin approves it. Until then the current proof stays as it is, and nothing is deleted.</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {([['replace', 'Replace the proof (wrong file)'], ['add', 'Add another document']] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setChangeKind(k)} style={{ flex: 1, padding: '8px 6px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${changeKind === k ? C.orange : C.border}`, background: changeKind === k ? 'rgba(241,90,34,0.15)' : 'transparent', color: C.text }}>{label}</button>
+              ))}
+            </div>
+            <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>The correct file (photo or PDF)</label>
+            <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf" onChange={e => setChangeFile(e.target.files?.[0] ?? null)} style={{ marginBottom: 12, fontSize: 12, color: C.text }} />
+            <label style={{ fontSize: 12, color: C.text2, fontWeight: 600, display: 'block', marginBottom: 6 }}>What went wrong? (required)</label>
+            <textarea rows={3} value={changeReason} onChange={e => setChangeReason(e.target.value)} placeholder="e.g. I uploaded another customer's slip by mistake"
+              style={{ width: '100%', boxSizing: 'border-box', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 13, padding: '8px 10px', resize: 'none', outline: 'none', marginBottom: 14 }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { setChangeFor(null); setChangeFile(null); setChangeReason('') }} style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', color: C.text2, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleSubmitChange} disabled={changeBusy || !changeFile || changeReason.trim().length < 10} style={{ flex: 2, padding: '9px 0', borderRadius: 8, border: 'none', background: C.orange, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: changeBusy || !changeFile || changeReason.trim().length < 10 ? 0.5 : 1 }}>{changeBusy ? 'Sending…' : 'Send for approval'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSplitModal && editInvoice && (
         <SplitPaymentModal
           invoiceId={editInvoice.id}
@@ -1909,6 +1983,28 @@ export function InvoicesPage() {
                                 <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf" style={{ display: 'none' }} disabled={attachingProofId === r.id}
                                   onChange={e => { const f = e.target.files?.[0] ?? null; e.target.value = ''; handleAttachProof(r.id, f, !!r.proof_url) }} />
                               </label>
+                            )}
+                            {(extraProofs[r.id] ?? []).map((x, i) => (
+                              <button key={x.id} title={x.note ?? ''} onClick={async () => { if (!(await openProofFile(x.proof_url, x.proof_bucket))) toast.error('Failed to open the document') }} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: C.orange, cursor: 'pointer', fontSize: 12 }}>
+                                <Paperclip size={11} /> Doc {i + 2}
+                              </button>
+                            ))}
+                            {!r.voided_at && canManageProof(user?.role) && (
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.orange, cursor: addingDocId === r.id ? 'wait' : 'pointer', fontSize: 12 }}>
+                                {addingDocId === r.id ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Add document
+                                <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf" style={{ display: 'none' }} disabled={addingDocId === r.id}
+                                  onChange={e => { const f = e.target.files?.[0] ?? null; e.target.value = ''; handleAddDocument(r.id, f) }} />
+                              </label>
+                            )}
+                            {!r.voided_at && !canManageProof(user?.role) && controlsOn() && !r.gateway_ref && (
+                              proofRequests[r.id]
+                                ? <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: '#F59E0B', border: '1px solid #F59E0B66', borderRadius: 4, padding: '1px 6px' }}>CHANGE REQUESTED</span>
+                                    {proofRequests[r.id].requested_by === user?.id && <button onClick={() => handleWithdrawRequest(proofRequests[r.id].id)} style={{ background: 'none', border: 'none', padding: 0, color: C.text2, cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}>Withdraw</button>}
+                                  </span>
+                                : <button onClick={() => { setChangeFor(r.id); setChangeKind(r.proof_url ? 'replace' : 'add'); setChangeFile(null); setChangeReason('') }} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: C.orange, cursor: 'pointer', fontSize: 12 }}>
+                                    <Paperclip size={11} /> Request proof change
+                                  </button>
                             )}
                             {!r.voided_at && canVoidPayments && (
                               <button onClick={() => handleVoidReceipt(r.id)} disabled={voidingId === r.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, color: '#EF4444', cursor: 'pointer', fontSize: 12 }}>
