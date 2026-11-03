@@ -50,6 +50,10 @@ export interface UserProfile {
   is_platform_admin: boolean
   // the person trusted with the money powers (voiding payments, changing issued invoices ...); set by a super admin
   is_branch_admin?: boolean
+  // set only while the platform owner is working inside another business: tenant_id/branch_id then name that business,
+  // and these keep the owner's own
+  home_tenant_id?: string
+  home_branch_id?: string | null
 }
 
 export interface Tenant {

@@ -9,7 +9,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-acting-tenant',
 }
 
 Deno.serve(async (req) => {
@@ -28,6 +28,16 @@ Deno.serve(async (req) => {
     if (!caller) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
 
     const { data: callerProfile } = await anonClient.from('users').select('role, tenant_id, is_platform_admin, is_branch_admin').eq('id', caller.id).single()
+
+    // the platform owner can act inside another business: the app sends x-acting-tenant, honoured only for them
+    async function actingTenant(profile: { role: string; is_platform_admin?: boolean; tenant_id: string }): Promise<string> {
+      const a = req.headers.get('x-acting-tenant')
+      if (!a || !(profile.is_platform_admin && profile.role === 'super_admin') || !/^[0-9a-f-]{36}$/i.test(a)) return profile.tenant_id
+      const adm = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+      const { data: t } = await adm.from('tenants').select('id').eq('id', a).maybeSingle()
+      return t ? a : profile.tenant_id
+    }
+    if (callerProfile) callerProfile.tenant_id = await actingTenant(callerProfile)
     if (!callerProfile || !(['super_admin', 'ops_manager'].includes(callerProfile.role) || callerProfile.is_platform_admin)) {
       return new Response(JSON.stringify({ error: 'Insufficient permissions' }), { status: 403, headers: corsHeaders })
     }

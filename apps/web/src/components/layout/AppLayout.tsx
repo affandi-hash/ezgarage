@@ -26,7 +26,11 @@ export function AppLayout() {
   const isPlatform = !!user?.is_platform_admin && user?.role === 'super_admin'
   const view = useViewScope()
   // the platform owner's header choice (all / one business / one branch) decides the branch filter for every page
-  const ownerBranchId = viewScopeOf(view.selection, view.branches).branchId
+  const ownerBranchId = viewScopeOf(view.selection).branchId
+  const tenant = useAuthStore((s) => s.tenant)
+  // wait until the user and business rules match the business being worked in, so no page briefly acts as the wrong one
+  const wantTenant = (viewScopeOf(view.selection).tenantId) ?? (user?.home_tenant_id ?? user?.tenant_id)
+  const switching = isPlatform && !!user && (user.tenant_id !== wantTenant || tenant?.id !== wantTenant)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const isMobile = useIsMobile()
 
@@ -47,7 +51,9 @@ export function AppLayout() {
           <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
             {/* keyed by the choice so a page reloads its data when the owner switches business or branch */}
             <Fragment key={isPlatform ? view.selection : 'fixed'}>
-              <Outlet context={{ selectedBranchId: isPlatform ? ownerBranchId : selectedBranchId }} />
+              {switching
+                ? <div style={{ color: '#A0A0A0', padding: 24 }}>Switching business…</div>
+                : <Outlet context={{ selectedBranchId: isPlatform ? ownerBranchId : selectedBranchId }} />}
             </Fragment>
           </div>
         </main>

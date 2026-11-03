@@ -32,6 +32,10 @@ const BRANCH_TABLES = new Set([
 export interface ViewScope { tenantId: string | null; branchId: string | null }
 let currentScope: () => ViewScope | null = () => null
 export function registerViewScope(fn: () => ViewScope | null) { currentScope = fn }
+// The business the platform owner is working inside (null = their own). Sent on every request so the database and the
+// background functions act for that business; the database ignores it for anyone who is not the platform owner.
+let actingTenant: () => string | null = () => null
+export function registerActingTenant(fn: () => string | null) { actingTenant = fn }
 
 export function scopeUrl(rawUrl: string, method: string, scope: ViewScope | null): string {
   if (!scope || (!scope.tenantId && !scope.branchId) || method === 'POST') return rawUrl
@@ -49,15 +53,34 @@ export function scopeUrl(rawUrl: string, method: string, scope: ViewScope | null
   }
 }
 
+// The database, and the two account functions below, understand the header. Other background functions do not list it as an
+// allowed header, so it is not sent to them.
+const ACTING_PATHS = ['/rest/v1/', '/functions/v1/invite-user', '/functions/v1/reset-user-password']
+function sendsActingHeader(raw: string): boolean {
+  try {
+    const u = new URL(raw)
+    return u.origin === new URL(supabaseUrl).origin && ACTING_PATHS.some(p => u.pathname.startsWith(p))
+  } catch {
+    return false
+  }
+}
+
 const scopedFetch: typeof fetch = (input, init) => {
   const scope = currentScope()
-  if (!scope) return fetch(input, init)
+  const acting = actingTenant()
+  if (!scope && !acting) return fetch(input, init)
   const isReq = typeof Request !== 'undefined' && input instanceof Request
   const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url
   const method = (init?.method ?? (isReq ? (input as Request).method : 'GET')).toUpperCase()
   const next = scopeUrl(raw, method, scope)
-  if (next === raw) return fetch(input, init)
-  return fetch(isReq ? new Request(next, input as Request) : next, init)
+  let nextInit = init
+  if (acting && typeof supabaseUrl === 'string' && sendsActingHeader(raw)) {
+    const headers = new Headers(init?.headers ?? (isReq ? (input as Request).headers : undefined))
+    headers.set('x-acting-tenant', acting)
+    nextInit = { ...init, headers }
+  }
+  if (next === raw) return fetch(input, nextInit)
+  return fetch(isReq ? new Request(next, input as Request) : next, nextInit)
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: scopedFetch } })

@@ -173,7 +173,7 @@ export function Header({ title: titleProp, selectedBranchId, onBranchChange, onM
               <optgroup key={t.id} label={t.name}>
                 {scope.tenants.length > 1 && <option value={`t:${t.id}`}>All {t.name} branches</option>}
                 {scope.branches.filter((b) => b.tenant_id === t.id).map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
+                  <option key={b.id} value={`b:${t.id}:${b.id}`}>{b.name}</option>
                 ))}
               </optgroup>
             ))}

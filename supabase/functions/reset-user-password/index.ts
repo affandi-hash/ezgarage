@@ -8,7 +8,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // The new password is temporary: the person must choose their own at the next sign-in.
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-acting-tenant',
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
@@ -25,6 +25,15 @@ Deno.serve(async (req) => {
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const { data: me } = await admin.from('users').select('role, tenant_id, is_active, is_branch_admin').eq('id', caller.id).single()
     if (!me || !me.is_active) return json({ error: 'Insufficient permissions' }, 403)
+    {
+      // the platform owner can act inside another business: the app sends x-acting-tenant, honoured only for them
+      const a = req.headers.get('x-acting-tenant')
+      const { data: pa } = await admin.from('users').select('is_platform_admin').eq('id', caller.id).single()
+      if (a && /^[0-9a-f-]{36}$/i.test(a) && pa?.is_platform_admin && me.role === 'super_admin') {
+        const { data: t } = await admin.from('tenants').select('id').eq('id', a).maybeSingle()
+        if (t) me.tenant_id = a
+      }
+    }
 
     const { user_id, new_password } = await req.json()
     if (!user_id || !new_password || new_password.length < 8) return json({ error: 'user_id and new_password (min 8 chars) required' }, 400)
