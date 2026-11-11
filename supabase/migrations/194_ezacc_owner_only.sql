@@ -1,17 +1,21 @@
--- 194: the ezAcc bank feed (who was paid, how much, bank references) is for the owner only.
--- "Owner" = the super admin login and the Branch Admin login. Other staff, including ops managers and finance, can no longer
--- read the feed tables or act on it through the functions.
+-- 194: the ezAcc bank feed (who was paid, how much, bank references) is private.
+-- "Owner" = the super admin login and the Branch Admin login. The owner can read it and act on it (match, ignore, restore, sync).
+-- Finance can read it (to compare). Everyone else, including ops managers and foremen, can no longer read it, and only the owner can act.
 CREATE OR REPLACE FUNCTION is_owner_login() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT coalesce((SELECT u.is_active AND (u.role = 'super_admin' OR u.is_branch_admin) FROM users u WHERE u.id = auth.uid()), false)
 $$;
 GRANT EXECUTE ON FUNCTION is_owner_login() TO authenticated;
+CREATE OR REPLACE FUNCTION can_read_ezacc() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT coalesce((SELECT u.is_active AND (u.role IN ('super_admin', 'finance') OR u.is_branch_admin) FROM users u WHERE u.id = auth.uid()), false)
+$$;
+GRANT EXECUTE ON FUNCTION can_read_ezacc() TO authenticated;
 
 DROP POLICY IF EXISTS ezacc_payments_select ON ezacc_payments;
-CREATE POLICY ezacc_payments_select ON ezacc_payments FOR SELECT TO authenticated USING (is_owner_login() AND tenant_id = get_my_tenant());
+CREATE POLICY ezacc_payments_select ON ezacc_payments FOR SELECT TO authenticated USING (can_read_ezacc() AND tenant_id = get_my_tenant());
 DROP POLICY IF EXISTS ezacc_allocations_select ON ezacc_allocations;
-CREATE POLICY ezacc_allocations_select ON ezacc_allocations FOR SELECT TO authenticated USING (is_owner_login() AND tenant_id = get_my_tenant());
+CREATE POLICY ezacc_allocations_select ON ezacc_allocations FOR SELECT TO authenticated USING (can_read_ezacc() AND tenant_id = get_my_tenant());
 DROP POLICY IF EXISTS ezacc_ignored_payees_select ON ezacc_ignored_payees;
-CREATE POLICY ezacc_ignored_payees_select ON ezacc_ignored_payees FOR SELECT TO authenticated USING (is_owner_login() AND tenant_id = get_my_tenant());
+CREATE POLICY ezacc_ignored_payees_select ON ezacc_ignored_payees FOR SELECT TO authenticated USING (can_read_ezacc() AND tenant_id = get_my_tenant());
 
 CREATE OR REPLACE FUNCTION public.ezacc_resolve(p_payment uuid, p_idx integer, p_action text, p_invoice uuid DEFAULT NULL::uuid)
  RETURNS jsonb

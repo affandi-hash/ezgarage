@@ -79,9 +79,10 @@ interface Props {
 }
 
 export function EzAccPanel({ tenantId, role, onChanged }: Props) {
-  // the bank feed is for the owner only (super admin and Branch Admin); the database enforces the same
-  const allowed = isOwnerLogin() && !!role
-  const canRemove = allowed
+  // the bank feed is read by the owner (super admin, Branch Admin) and finance; only the owner's logins can act on it. The database enforces the same.
+  const canAct = isOwnerLogin()
+  const allowed = (canAct || role === 'finance') && !!role
+  const canRemove = canAct
 
   const [rows, setRows] = useState<UnmatchedAlloc[]>([])
   const [invInfo, setInvInfo] = useState<Record<string, InvoiceLite>>({})
@@ -327,7 +328,7 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
 
   if (!allowed || !loaded) return null
 
-  const syncButton = (
+  const syncButton = !canAct ? null : (
     <button onClick={handleSync} disabled={syncing} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 6, opacity: syncing ? 0.6 : 1 }}>
       {syncing ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={12} />}
       Sync now
@@ -490,7 +491,7 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
                         </p>
                       )}
                     </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {canAct && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       {busy && <Loader2 size={14} style={{ color: '#F15A22', animation: 'spin 1s linear infinite' }} />}
                       {review ? (
                         confirmRemove === key ? (
@@ -546,7 +547,7 @@ export function EzAccPanel({ tenantId, role, onChanged }: Props) {
                           )}
                         </>
                       )}
-                    </div>
+                    </div>}
                   </div>
                 )
               })}
