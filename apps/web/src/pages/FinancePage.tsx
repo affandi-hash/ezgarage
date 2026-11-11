@@ -778,6 +778,8 @@ function DetailPanel({
   const [slipError, setSlipError] = useState<string | null>(null)
   const slipInputRef = useRef<HTMLInputElement>(null)
   const slipRole = useAuthStore.getState().user?.role ?? ''
+  // once a bill is paid, only the Branch Admin (or super admin) can replace its file
+  const fileLocked = !!invoice.file_url && (invoice.status === 'paid' || invoice.amount_paid > 0) && controlsOn() && !canUseMoneyPowers(['super_admin'])
   const canAddSlip = ['super_admin', 'ops_manager', 'finance', 'parts_admin'].includes(slipRole) && invoice.status !== 'voided'
 
   const loadSlips = useCallback(async () => {
@@ -957,7 +959,10 @@ function DetailPanel({
         .select('*, suppliers(*)')
         .single()
 
-      if (updErr) throw updErr
+      if (updErr) {
+        await supabase.storage.from('supplier-invoices').remove([path])
+        throw new Error(updErr.code === '42501' || /paid/i.test(updErr.message) ? 'This bill has been paid, so its file can only be replaced by the Branch Admin.' : updErr.message)
+      }
       onInvoiceUpdated(updInv as SupplierInvoice)
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed')
@@ -1142,6 +1147,7 @@ function DetailPanel({
               >
                 {viewingFile ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <FileText size={14} />} View Invoice
               </button>
+              {fileLocked ? <span title="This bill has been paid" style={{ alignSelf: 'center', fontSize: 11, color: '#6B7280' }}>Locked: bill paid</span> : (
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
@@ -1161,6 +1167,7 @@ function DetailPanel({
                 {uploading ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={13} />}
                 Replace
               </button>
+              )}
             </div>
           ) : (
             <button
