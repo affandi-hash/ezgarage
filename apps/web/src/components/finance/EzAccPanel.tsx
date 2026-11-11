@@ -1,3 +1,4 @@
+import { isOwnerLogin } from '@/lib/money'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Loader2, RefreshCw, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -78,8 +79,9 @@ interface Props {
 }
 
 export function EzAccPanel({ tenantId, role, onChanged }: Props) {
-  const allowed = ['super_admin', 'ops_manager', 'finance'].includes(role)
-  const canRemove = ['super_admin', 'ops_manager'].includes(role)
+  // the bank feed is for the owner only (super admin and Branch Admin); the database enforces the same
+  const allowed = isOwnerLogin() && !!role
+  const canRemove = allowed
 
   const [rows, setRows] = useState<UnmatchedAlloc[]>([])
   const [invInfo, setInvInfo] = useState<Record<string, InvoiceLite>>({})

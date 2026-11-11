@@ -27,8 +27,9 @@ Deno.serve(async (req) => {
     if (!isService) {
       const { data: u } = await db.auth.getUser(token)
       if (!u?.user) return json(401, { error: 'sign in first' })
-      const { data: me } = await db.from('users').select('tenant_id, role').eq('id', u.user.id).maybeSingle()
-      if (!me || !['super_admin', 'ops_manager', 'finance'].includes(me.role)) return json(403, { error: 'not allowed' })
+      const { data: me } = await db.from('users').select('tenant_id, role, is_branch_admin').eq('id', u.user.id).maybeSingle()
+      // only the owner's own logins (super admin, Branch Admin) may trigger a pull by hand
+      if (!me || !(me.role === 'super_admin' || me.is_branch_admin)) return json(403, { error: 'not allowed' })
       onlyTenant = me.tenant_id
     }
   }

@@ -25,3 +25,9 @@ export function canManageUsers(): boolean {
   if (user.role === 'super_admin' || user.is_platform_admin || user.is_branch_admin) return true
   return tenant?.tight_controls === false && user.role === 'ops_manager'
 }
+
+// The owner's own logins: the super admin and the Branch Admin. Used for things only the owner may see, such as the ezAcc bank feed.
+export function isOwnerLogin(): boolean {
+  const { user } = useAuthStore.getState()
+  return !!user && (user.role === 'super_admin' || !!user.is_branch_admin)
+}

@@ -1843,7 +1843,7 @@ export function FinancePage() {
           </button>
         </div>
 
-        {/* ── ezAcc payments needing review (hidden unless finance/ops/super_admin) ── */}
+        {/* ── ezAcc payments needing review (owner only: super admin and Branch Admin) ── */}
         <EzAccPanel
           tenantId={tenantId}
           role={user?.role ?? ''}
