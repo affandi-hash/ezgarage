@@ -772,6 +772,48 @@ function DetailPanel({
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
+  // Payment slips: add-only (nobody can replace or delete one afterwards)
+  const [slips, setSlips] = useState<{ id: string; file_url: string; note: string | null; uploaded_by: string | null; uploaded_at: string }[]>([])
+  const [slipUploading, setSlipUploading] = useState(false)
+  const [slipError, setSlipError] = useState<string | null>(null)
+  const slipInputRef = useRef<HTMLInputElement>(null)
+  const slipRole = useAuthStore.getState().user?.role ?? ''
+  const canAddSlip = ['super_admin', 'ops_manager', 'finance', 'parts_admin'].includes(slipRole) && invoice.status !== 'voided'
+
+  const loadSlips = useCallback(async () => {
+    const { data } = await supabase.from('supplier_invoice_slips').select('id, file_url, note, uploaded_by, uploaded_at').eq('supplier_invoice_id', invoice.id).order('uploaded_at')
+    setSlips((data ?? []) as typeof slips)
+  }, [invoice.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadSlips() }, [loadSlips])
+
+  async function handleSlipUpload(file: File) {
+    setSlipError(null)
+    if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) { setSlipError('Only JPG, PNG, WEBP or PDF files are allowed'); return }
+    if (file.size > 10 * 1024 * 1024) { setSlipError('File must be under 10 MB'); return }
+    setSlipUploading(true)
+    const path = `${invoice.id}/slip-${Date.now()}.${(file.name.split('.').pop() || 'jpg').toLowerCase()}`
+    try {
+      const { error: upErr } = await supabase.storage.from('supplier-invoices').upload(path, file, { upsert: false, contentType: file.type })
+      if (upErr) throw upErr
+      const { data, error } = await supabase.rpc('add_supplier_slip', { p_invoice: invoice.id, p_path: path, p_note: null })
+      if (error || data?.error) {
+        await supabase.storage.from('supplier-invoices').remove([path])
+        throw new Error(data?.error === 'forbidden' ? 'You do not have permission to add a payment slip' : (error?.message ?? 'Could not add the slip'))
+      }
+      await loadSlips()
+    } catch (err) {
+      setSlipError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setSlipUploading(false)
+    }
+  }
+
+  async function openSlip(path: string) {
+    const { data, error } = await supabase.storage.from('supplier-invoices').createSignedUrl(path, 3600)
+    if (error || !data?.signedUrl) { setSlipError('Failed to open the slip'); return }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+  }
+
   // File upload
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -1162,6 +1204,30 @@ function DetailPanel({
           {uploadError && (
             <p style={{ fontSize: 12, color: '#EF4444', marginTop: 6 }}>{uploadError}</p>
           )}
+        </div>
+
+        {/* Payment slips (add-only) */}
+        <div>
+          <p style={sectionHead}>Payment Slips</p>
+          {slips.length === 0 && <p style={{ color: '#6B7280', fontSize: 12, margin: '0 0 8px' }}>No payment slip yet.</p>}
+          {slips.map((sl, i) => (
+            <div key={sl.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 8, padding: '8px 12px', marginBottom: 6, fontSize: 12 }}>
+              <button onClick={() => openSlip(sl.file_url)} style={{ background: 'none', border: 'none', padding: 0, color: '#F15A22', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Slip {i + 1}</button>
+              <span style={{ color: '#A0A0A0' }}>{new Date(sl.uploaded_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            </div>
+          ))}
+          {canAddSlip && (
+            <>
+              <button onClick={() => slipInputRef.current?.click()} disabled={slipUploading}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1E1E1E', border: '1px solid #2A2A2A', color: '#F15A22', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: slipUploading ? 'not-allowed' : 'pointer' }}>
+                {slipUploading ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={13} />} {slipUploading ? 'Uploading…' : 'Add payment slip'}
+              </button>
+              <input ref={slipInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSlipUpload(f); e.target.value = '' }} />
+              <p style={{ color: '#6B7280', fontSize: 11, margin: '6px 0 0' }}>A slip cannot be replaced or deleted once added.</p>
+            </>
+          )}
+          {slipError && <p style={{ fontSize: 12, color: '#EF4444', marginTop: 6 }}>{slipError}</p>}
         </div>
 
         {/* Payment history */}
