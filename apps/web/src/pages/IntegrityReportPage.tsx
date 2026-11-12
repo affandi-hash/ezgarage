@@ -7,6 +7,7 @@ interface Report {
   error?: string
   voided_invoices: Row[]; voided_receipts: Row[]; invoice_changes: Row[]; number_gaps: { series: string; missing: number[] }[]
   jobs_without_invoice: Row[]; jobs_without_invoice_internal?: Row[]; payment_mismatches?: Row[]; payments_without_proof: Row[]; deletions: Row[]; pending_deletions: number
+  marked_paid?: Row[]
   job_cancellations?: Row[]; no_charge_jobs?: Row[]; stale_drafts?: Row[]; pending_job_requests?: number
 }
 
@@ -51,7 +52,19 @@ export function IntegrityReportPage() {
     const { data, error } = await supabase.rpc('integrity_report', { p_from: from, p_to: to })
     const r = data as Report | null
     if (error || !r || r.error) setErr(error?.message ?? (r?.error === 'forbidden' ? 'You do not have access to this report.' : 'Could not load the report.'))
-    else setRep(r)
+    else {
+      // supplier bills that staff marked paid with a payment slip (instead of a payment recorded by the Branch Admin or the bank feed)
+      const au = await supabase.from('audit_logs').select('created_at, user_id, details').eq('action', 'supplier_bill_marked_paid')
+        .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`).order('created_at', { ascending: false }).limit(200)
+      const ids = [...new Set(((au.data ?? []) as { user_id: string | null }[]).map(x => x.user_id).filter(Boolean))] as string[]
+      const us = ids.length ? await supabase.from('users').select('id, full_name').in('id', ids) : { data: [] }
+      const nm = Object.fromEntries(((us.data ?? []) as { id: string; full_name: string }[]).map(u => [u.id, u.full_name]))
+      const marked = ((au.data ?? []) as { created_at: string; user_id: string | null; details: Record<string, unknown> }[]).map(x => ({
+        at: x.created_at, invoice_number: x.details?.invoice_number ?? null, amount: x.details?.amount ?? null, method: x.details?.method ?? null,
+        slips: x.details?.slips ?? null, by: x.user_id ? nm[x.user_id] ?? 'Unknown' : null,
+      }))
+      setRep({ ...r, marked_paid: marked })
+    }
     setLoading(false)
   }, [from, to])
   useEffect(() => { load() }, [load])
@@ -102,6 +115,9 @@ export function IntegrityReportPage() {
           <Section title="Draft invoices left empty" hint="Opened automatically at booking or check-in and still empty after 7 days. Either the job was never priced or it was dropped."
             rows={rep.stale_drafts ?? []} cols={[{ h: 'Invoice', f: r => String(r.invoice_number ?? '-') }, { h: 'Customer', f: r => String(r.customer ?? '-') }, { h: 'Plate', f: r => String(r.plate ?? '-') },
               { h: 'Job', f: r => String(r.job ?? '-') }, { h: 'Opened', f: r => when(r.opened) }, { h: 'Days', f: r => String(r.age_days ?? '-') }, { h: 'Opened by', f: r => String(r.opened_by ?? '-') }]} />
+          <Section title="Supplier bills marked paid by staff" hint="A bill an ops manager or finance marked as paid after uploading a payment slip. Check the slip matches the amount."
+            rows={rep.marked_paid ?? []} cols={[{ h: 'When', f: r => when(r.at) }, { h: 'Bill', f: r => String(r.invoice_number ?? '-') }, { h: 'Amount', f: r => rm(r.amount) },
+              { h: 'Method', f: r => String(r.method ?? '-') }, { h: 'Slips', f: r => String(r.slips ?? '-') }, { h: 'By', f: r => String(r.by ?? '-') }]} />
           <Section title="Payments with no proof" hint="Cash, transfer or QR payments recorded without a receipt photo or gateway reference."
             rows={rep.payments_without_proof} cols={[{ h: 'When', f: r => when(r.at) }, { h: 'Invoice', f: r => String(r.invoice_number ?? '-') }, { h: 'Amount', f: r => rm(r.amount) },
               { h: 'Method', f: r => String(r.method ?? '-').replace('_', ' ') }, { h: 'Recorded by', f: by }]} />

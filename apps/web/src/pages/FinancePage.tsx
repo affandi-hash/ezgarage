@@ -810,6 +810,29 @@ function DetailPanel({
     }
   }
 
+  // Mark the bill as paid once a payment slip is on it (ops managers and finance; the Branch Admin and super admin have the full Add Payment form)
+  const [markOpen, setMarkOpen] = useState(false)
+  const [markMethod, setMarkMethod] = useState<'transfer' | 'cash' | 'cheque'>('transfer')
+  const [markRef, setMarkRef] = useState('')
+  const [markBusy, setMarkBusy] = useState(false)
+  const [markError, setMarkError] = useState<string | null>(null)
+  const canMarkPaid = ['ops_manager', 'finance'].includes(slipRole) && !canRecordPayment && !['paid', 'voided'].includes(invoice.status)
+
+  async function handleMarkPaid() {
+    setMarkBusy(true); setMarkError(null)
+    const { data, error } = await supabase.rpc('mark_supplier_bill_paid', { p_invoice: invoice.id, p_method: markMethod, p_date: null, p_reference: markRef.trim() || null })
+    setMarkBusy(false)
+    if (error || data?.error) {
+      const msgs: Record<string, string> = { slip_required: 'Add a payment slip first.', forbidden: 'You do not have permission to do this.', not_available: 'This bill is already paid or voided.', bad_method: 'Choose a payment method.' }
+      setMarkError(msgs[data?.error as string] ?? error?.message ?? 'Could not mark the bill as paid')
+      return
+    }
+    setMarkOpen(false); setMarkRef('')
+    const { data: fresh } = await supabase.from('supplier_invoices').select('*, suppliers(*)').eq('id', invoice.id).single()
+    if (fresh) onInvoiceUpdated(fresh as SupplierInvoice)
+    onPaymentSaved()
+  }
+
   async function openSlip(path: string) {
     const { data, error } = await supabase.storage.from('supplier-invoices').createSignedUrl(path, 3600)
     if (error || !data?.signedUrl) { setSlipError('Failed to open the slip'); return }
@@ -1235,6 +1258,35 @@ function DetailPanel({
             </>
           )}
           {slipError && <p style={{ fontSize: 12, color: '#EF4444', marginTop: 6 }}>{slipError}</p>}
+          {canMarkPaid && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #2A2A2A' }}>
+              {slips.length === 0 ? (
+                <p style={{ color: '#6B7280', fontSize: 12, margin: 0 }}>Add a payment slip first, then you can mark this bill as paid.</p>
+              ) : !markOpen ? (
+                <button onClick={() => { setMarkOpen(true); setMarkError(null) }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.5)', color: '#22C55E', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  Mark as paid
+                </button>
+              ) : (
+                <div style={{ background: '#1E1E1E', border: '1px solid #2A2A2A', borderRadius: 8, padding: 12 }}>
+                  <p style={{ margin: '0 0 8px', fontSize: 13, color: '#F0F0F0' }}>Mark this bill as paid in full: <b>{formatRM(balance)}</b>. This is logged under your name.</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                    <select value={markMethod} onChange={(e) => setMarkMethod(e.target.value as 'transfer' | 'cash' | 'cheque')} style={{ background: '#0E0E0E', border: '1px solid #2A2A2A', color: '#F0F0F0', borderRadius: 6, padding: '6px 10px', fontSize: 13 }}>
+                      <option value="transfer">Transfer</option>
+                      <option value="cash">Cash</option>
+                      <option value="cheque">Cheque</option>
+                    </select>
+                    <input value={markRef} onChange={(e) => setMarkRef(e.target.value)} placeholder="Reference (optional)" style={{ flex: 1, minWidth: 140, background: '#0E0E0E', border: '1px solid #2A2A2A', color: '#F0F0F0', borderRadius: 6, padding: '6px 10px', fontSize: 13 }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setMarkOpen(false)} disabled={markBusy} style={{ background: 'none', border: '1px solid #2A2A2A', color: '#A0A0A0', borderRadius: 8, padding: '7px 14px', fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+                    <button onClick={handleMarkPaid} disabled={markBusy} style={{ background: '#22C55E', border: 'none', color: '#0E0E0E', borderRadius: 8, padding: '7px 16px', fontSize: 13, fontWeight: 700, cursor: markBusy ? 'wait' : 'pointer', opacity: markBusy ? 0.6 : 1 }}>{markBusy ? 'Saving…' : 'Yes, mark as paid'}</button>
+                  </div>
+                </div>
+              )}
+              {markError && <p style={{ fontSize: 12, color: '#EF4444', marginTop: 6 }}>{markError}</p>}
+            </div>
+          )}
         </div>
 
         {/* Payment history */}
